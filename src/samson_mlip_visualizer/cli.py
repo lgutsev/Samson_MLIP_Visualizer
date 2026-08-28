@@ -14,6 +14,7 @@ from pathlib import Path
 from .calculators import create_calculator
 from .compat import assert_model_covers_structure
 from .engine import evaluate, relax
+from .provenance import collect_provenance
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -60,6 +61,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     atoms.calc = calculator
 
+    provenance = collect_provenance(
+        backend=args.backend, model_path=args.model, device=args.device, dtype=args.dtype
+    )
+    print(provenance.as_text())
+    print()
+
     supported = assert_model_covers_structure(calculator, atoms)
     if supported is not None:
         print("Model training elements:", ", ".join(supported))
@@ -84,6 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Max force: {evaluation.max_force_ev_per_angstrom:.6f} eV/A")
 
     if args.output is not None:
+        atoms.info.update(provenance.as_dict())
         write(args.output, atoms)
         print(f"Wrote {args.output}")
     return 0

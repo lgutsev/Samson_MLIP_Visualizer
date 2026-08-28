@@ -7,6 +7,7 @@ from pathlib import Path
 from .calculators import create_calculator
 from .compat import assert_model_covers_structure
 from .engine import evaluate, relax
+from .provenance import collect_provenance
 from .samson_bridge import extract_structure, sync_positions
 
 _WINDOW = None
@@ -20,12 +21,23 @@ def _qt():
     return QtCore, QtWidgets
 
 
+def _samson_main_window():
+    """Best-effort handle to SAMSON's main window, so the panel docks sensibly."""
+    try:
+        from samson import SAMSON
+
+        getter = getattr(SAMSON, "getMainWindow", None)
+        return getter() if callable(getter) else None
+    except Exception:
+        return None
+
+
 def _make_window():
     QtCore, QtWidgets = _qt()
 
     class MLIPWindow(QtWidgets.QDialog):
-        def __init__(self):
-            super().__init__()
+        def __init__(self, parent=None):
+            super().__init__(parent)
             self.setWindowTitle("SAMSON MLIP Visualizer")
             self.setMinimumWidth(520)
             self._stop_requested = False
@@ -115,12 +127,17 @@ def _make_window():
 
         def _prepare(self):
             model_file = Path(self.model_path.text()).expanduser()
-            calculator = create_calculator(
-                self.backend.currentText().lower(),
-                model_file,
-                device=self.device.currentText(),
-                dtype=self.dtype.currentText(),
-            )
+            backend = self.backend.currentText().lower()
+            device = self.device.currentText()
+            dtype = self.dtype.currentText()
+            calculator = create_calculator(backend, model_file, device=device, dtype=dtype)
+            try:
+                provenance = collect_provenance(
+                    backend=backend, model_path=model_file, device=device, dtype=dtype
+                )
+                self._log("Run provenance:\n" + provenance.as_text())
+            except OSError as exc:
+                self._log(f"Could not hash the model file for provenance: {exc}")
             structure = extract_structure()
             structure.ase_atoms.calc = calculator
             supported = assert_model_covers_structure(calculator, structure.ase_atoms)
@@ -196,7 +213,7 @@ def _make_window():
             self._log(f"ERROR: {exc}")
             QtWidgets.QMessageBox.critical(self, "SAMSON MLIP Visualizer", str(exc))
 
-    return MLIPWindow()
+    return MLIPWindow(_samson_main_window())
 
 
 def show():

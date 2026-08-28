@@ -140,6 +140,8 @@ the project testable in a standard Python environment.
 - No automatic model download or model-specific preprocessing.
 - Geometry updates from a relaxation are grouped into one SAMSON undo
   transaction. Saving the source document before long runs is still recommended.
+- Every run logs its provenance (model SHA-256, device, dtype, package
+  versions); the CLI also writes it into the output structure's metadata.
 
 ## Roadmap
 
@@ -154,13 +156,15 @@ Planned, roughly in priority order:
   SAMSON's interactive simulator, minimizer, and atom dragging run on the MLIP.
   This is the real path to interactive use and needs a SAMSON SDK module rather
   than a Python package.
+- Run energy/force calls off the UI thread. The calculator can move to a worker
+  thread cleanly; the difficulty is that `sync_positions` and `SAMSON.holding`
+  must stay on the main thread, so per-step live updates need a marshalling
+  layer. Needs to be developed and tested inside SAMSON.
 - Write results back as SAMSON data: total energy on the model, per-atom force
-  vectors for arrow display.
-- Publish the relaxation as a SAMSON path so the trajectory can be scrubbed in
-  the animation bar.
-- Run energy/force calls off the UI thread.
-- Embed model path, file hash, device, and backend versions in the document for
-  reproducibility.
+  vectors for arrow display. Blocked on confirming the property/visual API.
+- Publish the relaxation as a SAMSON path (`node.type path`) so the trajectory
+  can be scrubbed in the animation bar. Blocked on the path-creation API.
+- Embed the run provenance in the SAMSON document itself, not just the log.
 
 ## License
 
