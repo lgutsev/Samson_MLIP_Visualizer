@@ -12,6 +12,20 @@ class CalculatorLoadError(RuntimeError):
     """Raised when an MLIP calculator cannot be imported or initialized."""
 
 
+def _assert_cuda_available() -> None:
+    """Fail early with a clear message when 'cuda' is picked without a GPU."""
+    try:
+        import torch
+    except ImportError:
+        return  # A missing torch is reported by the backend import path.
+    if not torch.cuda.is_available():
+        raise CalculatorLoadError(
+            "device='cuda' was requested but torch reports no usable CUDA device "
+            "(torch.cuda.is_available() is False). Select 'cpu', or repair the "
+            "CUDA-enabled PyTorch installation in SAMSON's Python environment."
+        )
+
+
 def create_calculator(
     backend: Backend,
     model_path: str | Path,
@@ -32,6 +46,8 @@ def create_calculator(
         if backend == "mace":
             from mace.calculators import MACECalculator
 
+            if str(device).startswith("cuda"):
+                _assert_cuda_available()
             return MACECalculator(
                 model_paths=str(path),
                 device=device,
@@ -41,6 +57,8 @@ def create_calculator(
             from deepmd.calculator import DP
 
             return DP(model=str(path))
+    except CalculatorLoadError:
+        raise
     except ImportError as exc:
         package = "mace-torch" if backend == "mace" else "deepmd-kit"
         raise CalculatorLoadError(

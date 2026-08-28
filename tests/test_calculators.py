@@ -18,6 +18,21 @@ def test_unknown_backend(tmp_path):
         create_calculator("unknown", model)
 
 
+def _install_fake_mace(monkeypatch, calculator_cls):
+    package = ModuleType("mace")
+    calculators = ModuleType("mace.calculators")
+    calculators.MACECalculator = calculator_cls
+    monkeypatch.setitem(__import__("sys").modules, "mace", package)
+    monkeypatch.setitem(__import__("sys").modules, "mace.calculators", calculators)
+
+
+def _install_fake_torch(monkeypatch, *, cuda_available):
+    torch = ModuleType("torch")
+    torch.cuda = ModuleType("torch.cuda")
+    torch.cuda.is_available = lambda: cuda_available
+    monkeypatch.setitem(__import__("sys").modules, "torch", torch)
+
+
 def test_mace_factory_is_lazy(monkeypatch, tmp_path):
     model = tmp_path / "model.model"
     model.write_bytes(b"test")
@@ -27,11 +42,8 @@ def test_mace_factory_is_lazy(monkeypatch, tmp_path):
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
-    package = ModuleType("mace")
-    calculators = ModuleType("mace.calculators")
-    calculators.MACECalculator = FakeMACECalculator
-    monkeypatch.setitem(__import__("sys").modules, "mace", package)
-    monkeypatch.setitem(__import__("sys").modules, "mace.calculators", calculators)
+    _install_fake_mace(monkeypatch, FakeMACECalculator)
+    _install_fake_torch(monkeypatch, cuda_available=True)
 
     calculator = create_calculator("mace", model, device="cuda", dtype="float32")
 
@@ -41,6 +53,21 @@ def test_mace_factory_is_lazy(monkeypatch, tmp_path):
         "device": "cuda",
         "default_dtype": "float32",
     }
+
+
+def test_mace_cuda_without_device_is_rejected(monkeypatch, tmp_path):
+    model = tmp_path / "model.model"
+    model.write_bytes(b"test")
+
+    class FakeMACECalculator:
+        def __init__(self, **kwargs):
+            raise AssertionError("should not be constructed without a CUDA device")
+
+    _install_fake_mace(monkeypatch, FakeMACECalculator)
+    _install_fake_torch(monkeypatch, cuda_available=False)
+
+    with pytest.raises(CalculatorLoadError, match="no usable CUDA device"):
+        create_calculator("mace", model, device="cuda")
 
 
 def test_deepmd_factory_is_lazy(monkeypatch, tmp_path):

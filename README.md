@@ -70,6 +70,23 @@ Then:
 The panel keeps the SAMSON interface responsive between optimization steps. Its
 **Stop** button takes effect after the current energy/force call returns.
 
+Before it evaluates anything, the panel reads the element list the model reports
+(MACE `z_table`, DeepMD `type_map`) and refuses structures containing an element
+the model was not trained on. When the element list cannot be read it says so and
+proceeds; that check is a convenience, not a guarantee.
+
+## Check a model without SAMSON
+
+The calculator and optimization layers do not need SAMSON. After installing the
+package and a backend, a console script runs the same single-point and FIRE
+relaxation on any ASE-readable structure file, which is the fastest way to
+sanity-check a new model:
+
+```bash
+samson-mlip structure.cif model.model --backend mace
+samson-mlip structure.xyz model.pb --backend deepmd --relax --fmax 0.03 -o relaxed.xyz
+```
+
 ## Surface and passivant models
 
 This workflow is compatible with passivated surface models when the potential is
@@ -116,11 +133,34 @@ the project testable in a standard Python environment.
 ## Current scope
 
 - One complete SAMSON structural model per run.
+- Pseudo-atoms in the selected model are rejected, not silently evaluated.
+- Model element coverage is checked when the backend exposes it.
 - Atomic energies and forces; no stress or cell optimization.
 - FIRE geometry optimization; no molecular dynamics yet.
 - No automatic model download or model-specific preprocessing.
 - Geometry updates from a relaxation are grouped into one SAMSON undo
   transaction. Saving the source document before long runs is still recommended.
+
+## Roadmap
+
+This tool owns the optimization loop and uses SAMSON only as a structure source
+and sink. It does **not** interoperate with SAMSON's own interactive simulation
+(`Edit → Add simulator`, `Edit → Minimize`): that is SAMSON driving its own force
+field frame by frame, and the two loops should not be run on one model at once.
+
+Planned, roughly in priority order:
+
+- Expose the MACE/DeepMD calculator as a native SAMSON interaction model so
+  SAMSON's interactive simulator, minimizer, and atom dragging run on the MLIP.
+  This is the real path to interactive use and needs a SAMSON SDK module rather
+  than a Python package.
+- Write results back as SAMSON data: total energy on the model, per-atom force
+  vectors for arrow display.
+- Publish the relaxation as a SAMSON path so the trajectory can be scrubbed in
+  the animation bar.
+- Run energy/force calls off the UI thread.
+- Embed model path, file hash, device, and backend versions in the document for
+  reproducibility.
 
 ## License
 

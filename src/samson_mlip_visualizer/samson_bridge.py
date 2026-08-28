@@ -62,6 +62,33 @@ def _vector_angstrom(vector: Any) -> list[float]:
     return [_angstrom(vector[index]) for index in range(3)]
 
 
+def _require_active_document(samson: Any) -> None:
+    getter = getattr(samson, "getActiveDocument", None)
+    if getter is None:
+        return
+    try:
+        document = getter()
+    except (AttributeError, TypeError):
+        return
+    if document is None:
+        raise SamsonBridgeError("No active SAMSON document. Open or build a structure first.")
+
+
+def _reject_pseudo_atoms(model: Any) -> None:
+    getter = getattr(model, "getNodes", None)
+    if getter is None:
+        return
+    try:
+        pseudo_atoms = list(getter("node.type pseudoAtom"))
+    except (AssertionError, AttributeError, TypeError):
+        return
+    if pseudo_atoms:
+        raise SamsonBridgeError(
+            f"The selected model contains {len(pseudo_atoms)} pseudo-atom(s). A local MLIP "
+            "needs real atomic environments; convert or remove pseudo-atoms before evaluating."
+        )
+
+
 def choose_structural_model(samson: Any) -> Any:
     """Choose the selected structural model, or the only model in the document."""
     models = list(samson.getNodes("node.type structuralModel"))
@@ -85,7 +112,9 @@ def extract_structure(samson: Any | None = None) -> SamsonStructure:
     if samson is None:
         from samson import SAMSON as samson
 
+    _require_active_document(samson)
     model = choose_structural_model(samson)
+    _reject_pseudo_atoms(model)
     source_atoms = list(model.getNodes("node.type atom"))
     if not source_atoms:
         raise SamsonBridgeError("The selected structural model contains no atoms")

@@ -18,6 +18,9 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Chemistry",
 ]
 
+[project.scripts]
+samson-mlip = "samson_mlip_visualizer.cli:main"
+
 [project.optional-dependencies]
 mace = ["mace-torch>=0.3"]
 deepmd = ["deepmd-kit>=3.0"]

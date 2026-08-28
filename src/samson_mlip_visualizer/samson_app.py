@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .calculators import create_calculator
+from .compat import assert_model_covers_structure
 from .engine import evaluate, relax
 from .samson_bridge import extract_structure, sync_positions
 
@@ -122,6 +123,14 @@ def _make_window():
             )
             structure = extract_structure()
             structure.ase_atoms.calc = calculator
+            supported = assert_model_covers_structure(calculator, structure.ase_atoms)
+            if supported is not None:
+                self._log("Model training elements: " + ", ".join(supported))
+            else:
+                self._log(
+                    "Could not read the model's element list. Confirm manually that it "
+                    "was trained for every element and environment in this structure."
+                )
             return structure
 
         def _evaluate(self):

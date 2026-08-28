@@ -75,13 +75,17 @@ class Atom:
 
 
 class Model:
-    def __init__(self, atoms, selected=False):
+    def __init__(self, atoms, selected=False, pseudo_atoms=()):
         self.atoms = atoms
         self.selectionFlag = selected
+        self.pseudo_atoms = list(pseudo_atoms)
 
     def getNodes(self, query):
-        assert query == "node.type atom"
-        return self.atoms
+        if query == "node.type atom":
+            return self.atoms
+        if query == "node.type pseudoAtom":
+            return self.pseudo_atoms
+        raise AssertionError(f"unexpected query: {query!r}")
 
     def hasFiniteUnitCell(self):
         return True
@@ -121,6 +125,13 @@ def test_extracts_cell_pbc_and_fixed_atoms():
     assert structure.ase_atoms.get_pbc().tolist() == [True, True, False]
     assert structure.ase_atoms.cell.lengths().tolist() == pytest.approx([5, 6, 20])
     assert structure.ase_atoms.constraints[0].get_indices().tolist() == [0]
+
+
+def test_rejects_pseudo_atoms():
+    atoms = [Atom("Si", [0, 0, 0])]
+    model = Model(atoms, pseudo_atoms=[object()])
+    with pytest.raises(SamsonBridgeError, match="pseudo-atom"):
+        extract_structure(FakeSamson([model]))
 
 
 def test_syncs_positions(monkeypatch):
