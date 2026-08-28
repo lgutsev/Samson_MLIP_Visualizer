@@ -2,8 +2,12 @@
 
 Run local [MACE](https://github.com/ACEsuit/mace) and
 [DeepMD-kit](https://github.com/deepmodeling/deepmd-kit) models on structures in
-[SAMSON](https://www.samson-connect.net/), using ASE as the common calculator and
+**[SAMSON Connect](https://www.samson-connect.net/)** — the molecular modeling and
+nanoscience platform by OneAngstrom — using ASE as the common calculator and
 optimization layer.
+
+Every reference to "SAMSON" in this repository means SAMSON Connect. It is
+unrelated to any other product, company, or library that shares the name.
 
 The first release provides:
 
