@@ -12,7 +12,9 @@ unrelated to any other product, company, or library that shares the name.
 The first release provides:
 
 - single-point energy and force evaluation;
-- position-only FIRE relaxation with live geometry synchronization to SAMSON;
+- position-only relaxation (FIRE / LBFGS / BFGS / PreconLBFGS) with live
+  geometry synchronization to SAMSON;
+- optional model-committee uncertainty and geometry-sanity guards;
 - periodic cell and per-axis PBC transfer from SAMSON to ASE;
 - `FixAtoms` constraints derived from SAMSON fixed-atom flags;
 - local MACE and DeepMD model files, with CPU or CUDA selection for MACE;
@@ -63,29 +65,53 @@ Then:
 2. If the document contains multiple structural models, select exactly one
    complete model in Document View.
 3. Mark immobile atoms with SAMSON's fixed-atom flag.
-4. Choose MACE or DeepMD and select the trained model file.
+4. Choose MACE or DeepMD and select the trained model file. Selecting several
+   MACE checkpoints builds an uncertainty committee (see below).
 5. Run **Single point** first. Check that the energy and forces are plausible.
-6. Set the force threshold and maximum steps, then choose **Relax positions**.
+6. Pick an optimizer, set the force threshold and maximum steps, then choose
+   **Relax positions**.
 
 The panel keeps the SAMSON interface responsive between optimization steps. Its
 **Stop** button takes effect after the current energy/force call returns.
 
-Before it evaluates anything, the panel reads the element list the model reports
-(MACE `z_table`, DeepMD `type_map`) and refuses structures containing an element
-the model was not trained on. When the element list cannot be read it says so and
-proceeds; that check is a convenience, not a guarantee.
+### Guards
+
+- **Elements.** The panel reads the element list the model reports (MACE
+  `z_table`, DeepMD `type_map`) and refuses structures containing an element the
+  model was not trained on. When the list cannot be read it says so and proceeds.
+- **Geometry.** A relaxation aborts if two atoms come closer than *Min. atom
+  distance* — MLIPs have out-of-distribution "holes" where forces go unphysical
+  and an optimizer will collapse atoms into them.
+- **Uncertainty.** With a committee, the panel logs the per-atom force spread and,
+  if *Max committee force σ* is set, aborts the relaxation when it is exceeded —
+  the standard signal that the model is extrapolating.
+- **Precision.** MACE recommends `float64` for geometry optimization; the panel
+  warns if you relax with `float32`.
+
+### Optimizers
+
+`FIRE` is the robust default. `LBFGS` / `BFGS` converge in far fewer force calls
+(each call is one MLIP inference), and `PreconLBFGS` adds a preconditioner that
+helps most on large slabs. On a rattled Al(111) slab here: FIRE 43 steps, LBFGS
+29, PreconLBFGS 8.
 
 ## Check a model without SAMSON
 
 The calculator and optimization layers do not need SAMSON. After installing the
-package and a backend, a console script runs the same single-point and FIRE
+package and a backend, a console script runs the same single-point and
 relaxation on any ASE-readable structure file, which is the fastest way to
 sanity-check a new model:
 
 ```bash
 samson-mlip structure.cif model.model --backend mace
 samson-mlip structure.xyz model.pb --backend deepmd --relax --fmax 0.03 -o relaxed.xyz
+samson-mlip slab.xyz m1.model m2.model m3.model --relax --optimizer LBFGS --max-force-std 0.15
 ```
+
+Several MACE files form a committee; `--max-force-std` aborts when the committee
+force spread exceeds the threshold. `--min-distance` / `--max-drift` guard the
+geometry. With `-o`, the run provenance is written into the output file's
+metadata.
 
 ## Surface and passivant models
 
@@ -136,12 +162,25 @@ the project testable in a standard Python environment.
 - Pseudo-atoms in the selected model are rejected, not silently evaluated.
 - Model element coverage is checked when the backend exposes it.
 - Atomic energies and forces; no stress or cell optimization.
-- FIRE geometry optimization; no molecular dynamics yet.
+- FIRE / LBFGS / BFGS / PreconLBFGS geometry optimization; no molecular
+  dynamics yet.
+- MACE committee uncertainty (multiple checkpoints); DeepMD committee not yet.
+- Close-contact and drift guards abort a runaway relaxation.
 - No automatic model download or model-specific preprocessing.
 - Geometry updates from a relaxation are grouped into one SAMSON undo
   transaction. Saving the source document before long runs is still recommended.
 - Every run logs its provenance (model SHA-256, device, dtype, package
   versions); the CLI also writes it into the output structure's metadata.
+
+## Interpreting the numbers
+
+- Foundation-model total energies are referenced to isolated atoms; only
+  **relative** energies along a relaxation are meaningful here.
+- A stable relaxation is not an accurate one. Universal MLIPs frequently need
+  fine-tuning for quantitative properties; the provenance log records which
+  model (by hash) produced a result.
+- Net charge and non-ground spin states are outside the training distribution of
+  essentially all of these models, the same as an untrained element.
 
 ## Roadmap
 
@@ -165,6 +204,12 @@ Planned, roughly in priority order:
 - Publish the relaxation as a SAMSON path (`node.type path`) so the trajectory
   can be scrubbed in the animation bar. Blocked on the path-creation API.
 - Embed the run provenance in the SAMSON document itself, not just the log.
+- Cell / stress relaxation, if added, should use ASE's `FrechetCellFilter` (the
+  current robust choice for variable-cell relaxation with universal MLIPs).
+- D3 dispersion toggle: foundation models are PBE-level and miss van der Waals,
+  which matters for physisorbed adsorbates, passivants, and layered materials
+  (`mace_mp(dispersion=True)`, or a D3 term added via `SumCalculator`).
+- DeepMD committee support via `deepmd.infer.calc_model_devi`.
 
 ## License
 

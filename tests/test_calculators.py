@@ -89,3 +89,42 @@ def test_deepmd_factory_is_lazy(monkeypatch, tmp_path):
 
     assert isinstance(calculator, FakeDP)
     assert captured == {"model": str(Path(model))}
+
+
+def test_mace_committee_passes_a_list_of_paths(monkeypatch, tmp_path):
+    models = [tmp_path / "a.model", tmp_path / "b.model"]
+    for model in models:
+        model.write_bytes(b"test")
+    captured = {}
+
+    class FakeMACECalculator:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    _install_fake_mace(monkeypatch, FakeMACECalculator)
+
+    create_calculator("mace", models, device="cpu")
+
+    assert captured["model_paths"] == [str(m) for m in models]
+
+
+def test_deepmd_committee_is_rejected(monkeypatch, tmp_path):
+    models = [tmp_path / "a.pb", tmp_path / "b.pb"]
+    for model in models:
+        model.write_bytes(b"test")
+
+    package = ModuleType("deepmd")
+    calculator_module = ModuleType("deepmd.calculator")
+    calculator_module.DP = object
+    monkeypatch.setitem(__import__("sys").modules, "deepmd", package)
+    monkeypatch.setitem(__import__("sys").modules, "deepmd.calculator", calculator_module)
+
+    with pytest.raises(CalculatorLoadError, match="not supported yet"):
+        create_calculator("deepmd", models)
+
+
+def test_missing_model_in_committee_is_reported(monkeypatch, tmp_path):
+    good = tmp_path / "a.model"
+    good.write_bytes(b"test")
+    with pytest.raises(CalculatorLoadError, match="does not exist"):
+        create_calculator("mace", [good, tmp_path / "missing.model"])

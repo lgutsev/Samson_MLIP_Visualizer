@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
 Backend = Literal["mace", "deepmd"]
+
+ModelPaths = str | Path | Sequence[str | Path]
 
 
 class CalculatorLoadError(RuntimeError):
@@ -26,21 +29,33 @@ def _assert_cuda_available() -> None:
         )
 
 
+def _resolve_model_paths(model_path: ModelPaths) -> list[Path]:
+    entries = [model_path] if isinstance(model_path, (str, Path)) else list(model_path)
+    if not entries:
+        raise CalculatorLoadError("No model file was provided")
+    resolved: list[Path] = []
+    for entry in entries:
+        path = Path(entry).expanduser()
+        if not path.is_file():
+            raise CalculatorLoadError(f"Model file does not exist: {path}")
+        resolved.append(path)
+    return resolved
+
+
 def create_calculator(
     backend: Backend,
-    model_path: str | Path,
+    model_path: ModelPaths,
     *,
     device: str = "cpu",
     dtype: str = "float64",
 ):
     """Create an ASE calculator without importing unused ML frameworks.
 
-    Parameters are deliberately small and stable so the SAMSON UI does not
-    depend on backend-specific implementation details.
+    ``model_path`` may be a single file or several. Passing several MACE
+    checkpoints builds a committee: ``atoms.calc.results`` then carries
+    ``energy_comm`` / ``forces_comm``, whose spread is an extrapolation signal.
     """
-    path = Path(model_path).expanduser()
-    if not path.is_file():
-        raise CalculatorLoadError(f"Model file does not exist: {path}")
+    paths = _resolve_model_paths(model_path)
 
     try:
         if backend == "mace":
@@ -48,15 +63,20 @@ def create_calculator(
 
             if str(device).startswith("cuda"):
                 _assert_cuda_available()
+            model_arg = str(paths[0]) if len(paths) == 1 else [str(p) for p in paths]
             return MACECalculator(
-                model_paths=str(path),
+                model_paths=model_arg,
                 device=device,
                 default_dtype=dtype,
             )
         if backend == "deepmd":
             from deepmd.calculator import DP
 
-            return DP(model=str(path))
+            if len(paths) > 1:
+                raise CalculatorLoadError(
+                    "DeepMD committee evaluation is not supported yet; select one model file."
+                )
+            return DP(model=str(paths[0]))
     except CalculatorLoadError:
         raise
     except ImportError as exc:
@@ -66,7 +86,7 @@ def create_calculator(
             "in SAMSON's Python package manager."
         ) from exc
     except Exception as exc:
-        message = f"Could not load {backend.upper()} model '{path}': {exc}"
+        message = f"Could not load {backend.upper()} model '{paths[0]}': {exc}"
         raise CalculatorLoadError(message) from exc
 
     raise ValueError(f"Unsupported backend: {backend!r}")
