@@ -84,7 +84,9 @@ The panel keeps the SAMSON interface responsive between optimization steps. Its
   and an optimizer will collapse atoms into them.
 - **Uncertainty.** With a committee, the panel logs the per-atom force spread and,
   if *Max committee force σ* is set, aborts the relaxation when it is exceeded —
-  the standard signal that the model is extrapolating.
+  the standard signal that the model is extrapolating. A committee multiplies
+  inference time and memory by the number of models, so on a laptop keep it to
+  two or three small checkpoints.
 - **Precision.** MACE recommends `float64` for geometry optimization; the panel
   warns if you relax with `float32`.
 
