@@ -7,3 +7,6 @@ __pycache__/
 build/
 dist/
 *.traj
+
+# SAMSON API probe report (scripts/probe_samson_api.py)
+samson_api_probe.json

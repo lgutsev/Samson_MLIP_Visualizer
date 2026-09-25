@@ -134,10 +134,11 @@ projected out when no atom is fixed. Small imaginary modes (< 100 cm⁻¹) usual
 mean a floppy, loosely converged geometry; re-optimize to Fmax ≤ 0.001 eV/Å in
 float64.
 
-Example, ammonia umbrella inversion with MACE-MP-0 small: from a pyramid
-flattened to 0.3 Å, the Hessian-guided dimer converges in ~10 steps to the
-planar transition state with one imaginary mode (−580 cm⁻¹). Its 0.13 eV barrier
-is below experiment (~0.25 eV): a model-accuracy limit, not a search failure.
+Try it on [`examples/nh3_ts_guess.xyz`](examples/nh3_ts_guess.xyz): ammonia
+with its pyramid flattened to 0.3 Å. With MACE-MP-0 small, the Hessian-guided
+dimer converges in 10–15 steps to the planar umbrella-inversion transition state
+with one imaginary mode (−580 cm⁻¹). Its 0.13 eV barrier is below experiment
+(~0.25 eV): a model-accuracy limit, not a search failure.
 
 ### Guards
 
@@ -175,12 +176,14 @@ samson-mlip structure.xyz model.pb --backend deepmd --relax --fmax 0.03 -o relax
 samson-mlip slab.xyz m1.model m2.model m3.model --relax --optimizer LBFGS --max-force-std 0.15
 samson-mlip water.xyz model.model --md --temperature 300 --timestep 0.5 --md-steps 2000 --trajectory md.extxyz
 samson-mlip dimer.xyz model.model --md --fix-distance 0-3:2.9 --seed 1
-samson-mlip guess.xyz model.model --ts --fmax 0.005 --freq
+samson-mlip examples/nh3_ts_guess.xyz model.model --ts --fmax 0.005 --freq
+samson-mlip complex.xyz model.model --ts --ts-pair 4-9 --max-steps 500
 samson-mlip molecule.xyz model.model --relax --fmax 0.001 --freq
 ```
 
 Several MACE files form a committee; `--max-force-std` aborts when the committee
-force spread exceeds the threshold. `--min-distance` / `--max-drift` guard the
+force spread exceeds the threshold. `--ts` starts along the softest Hessian mode
+unless `--ts-pair` or `--ts-start random` is given. `--min-distance` / `--max-drift` guard the
 geometry. With `-o`, the run provenance is written into the output file's
 metadata.
 
@@ -282,6 +285,11 @@ Planned, roughly in priority order:
   API; until then, open the written `.extxyz` trajectory.
 - Harmonic distance restraints (umbrella sampling), NEB between two selected
   structures, NPT MD, and Sella as an alternative TS optimizer.
+- A local API so notebooks, scripts, and coding assistants can drive a running
+  SAMSON: proposal in [`docs/samson_api.md`](docs/samson_api.md) (not
+  implemented). [`scripts/probe_samson_api.py`](scripts/probe_samson_api.py) is a
+  read-only survey of SAMSON's Python API for this and the items above; run it in
+  SAMSON's code editor.
 - Embed the run provenance in the SAMSON document itself, not just the log.
 - Cell / stress relaxation, if added, should use ASE's `FrechetCellFilter` (the
   current robust choice for variable-cell relaxation with universal MLIPs).

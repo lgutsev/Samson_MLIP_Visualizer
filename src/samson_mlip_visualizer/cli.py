@@ -104,10 +104,17 @@ def _build_parser() -> argparse.ArgumentParser:
     md.add_argument("--report-interval", type=int, default=10, help="Print every N steps")
     ts = parser.add_argument_group("transition-state search (--ts)")
     ts.add_argument(
+        "--ts-start",
+        choices=["hessian", "pair", "random"],
+        default=None,
+        help="Initial dimer direction: the softest Hessian mode (default), a stretched "
+        "atom pair (default when --ts-pair is given), or a random displacement",
+    )
+    ts.add_argument(
         "--ts-pair",
         default=None,
         metavar="I-J",
-        help="Initial dimer direction: stretch this 0-based atom pair (default: random)",
+        help="0-based atom pair to stretch for --ts-start pair",
     )
     ts.add_argument(
         "--ts-displacement", type=float, default=0.05, help="Initial displacement norm (A)"
@@ -232,15 +239,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         _run_md(args, atoms)
         evaluation = evaluate(atoms)
     elif args.ts:
+        start = args.ts_start or ("pair" if args.ts_pair else "hessian")
         pair = None
-        if args.ts_pair:
+        if start == "pair":
+            if not args.ts_pair:
+                raise SystemExit("--ts-start pair needs --ts-pair I-J")
             (constraint,) = parse_pairs(args.ts_pair)
             pair = (constraint.i, constraint.j)
+        print(f"Dimer search starting along the {start} direction")
         result = dimer_search(
             atoms,
             fmax=args.fmax,
             max_steps=args.max_steps,
             pair=pair,
+            use_hessian=start == "hessian",
             displacement=args.ts_displacement,
             seed=args.seed,
             min_distance=args.min_distance if args.min_distance > 0 else None,

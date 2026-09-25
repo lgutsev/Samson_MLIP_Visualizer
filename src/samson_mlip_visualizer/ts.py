@@ -67,6 +67,8 @@ def initial_mode(
     vector = np.zeros((len(atoms), 3))
     if use_hessian:
         frequencies = harmonic_frequencies(atoms)
+        if not len(frequencies.modes):
+            raise ValueError("No vibrational mode to start from; use an atom pair or random")
         vector[list(frequencies.free_indices)] = frequencies.modes[0]
     elif pair is not None:
         i, j = pair

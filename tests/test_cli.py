@@ -164,7 +164,11 @@ def test_cli_ts_and_frequencies(monkeypatch, tmp_path, capsys):
 
     monkeypatch.setattr(cli, "create_calculator", lambda *a, **k: DoubleWell())
 
-    exit_code = cli.main([str(structure), str(model), "--ts", "--fmax", "0.001", "--seed", "0"])
+    # A lone atom in an external field has no vibrational modes, so start at random.
+    exit_code = cli.main(
+        [str(structure), str(model), "--ts", "--ts-start", "random"]
+        + ["--fmax", "0.001", "--seed", "0"]
+    )
     out = capsys.readouterr().out
 
     assert exit_code == 0
@@ -194,3 +198,42 @@ def test_cli_relax_then_frequencies(monkeypatch, tmp_path, capsys):
 def test_cli_modes_are_exclusive(tmp_path):
     with pytest.raises(SystemExit):
         cli.main([str(tmp_path / "x.xyz"), str(tmp_path / "m"), "--md", "--relax"])
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ([], {"use_hessian": True, "pair": None}),
+        (["--ts-pair", "0-1"], {"use_hessian": False, "pair": (0, 1)}),
+        (["--ts-start", "random"], {"use_hessian": False, "pair": None}),
+    ],
+)
+def test_cli_ts_start_direction(monkeypatch, tmp_path, extra, expected):
+    from samson_mlip_visualizer.ts import TSResult
+
+    structure = tmp_path / "h2.xyz"
+    model = tmp_path / "model.model"
+    _write_structure(structure)
+    model.write_bytes(b"x")
+    seen = {}
+
+    def spy_dimer(atoms, **kwargs):
+        seen.update(kwargs)
+        return TSResult(cli.evaluate(atoms), -1.0, 1, True, False)
+
+    monkeypatch.setattr(cli, "create_calculator", lambda *a, **k: ConstantCalculator())
+    monkeypatch.setattr(cli, "dimer_search", spy_dimer)
+
+    assert cli.main([str(structure), str(model), "--ts", *extra]) == 0
+    assert {key: seen[key] for key in expected} == expected
+
+
+def test_cli_ts_pair_start_requires_pair(monkeypatch, tmp_path):
+    structure = tmp_path / "h2.xyz"
+    model = tmp_path / "model.model"
+    _write_structure(structure)
+    model.write_bytes(b"x")
+    monkeypatch.setattr(cli, "create_calculator", lambda *a, **k: ConstantCalculator())
+
+    with pytest.raises(SystemExit, match="--ts-pair"):
+        cli.main([str(structure), str(model), "--ts", "--ts-start", "pair"])
