@@ -24,6 +24,7 @@ The panel provides:
   constraint force;
 - transition-state search with the dimer method, and finite-difference
   frequencies to classify minima and saddle points;
+- normal-mode display in SAMSON: an animated path and displacement arrows;
 - an opt-in local bridge so scripts, notebooks, and coding assistants can read
   and edit the open SAMSON document;
 - optional model-committee uncertainty and geometry-sanity guards;
@@ -147,6 +148,29 @@ with its pyramid flattened to 0.3 Å. With MACE-MP-0 small, the Hessian-guided
 dimer converges in 10–15 steps to the planar umbrella-inversion transition state
 with one imaginary mode (−580 cm⁻¹). Its 0.13 eV barrier is below experiment
 (~0.25 eV): a model-accuracy limit, not a search failure.
+
+### Viewing normal modes
+
+After **Frequencies** (or a converged TS search with the frequency check), the
+**Normal mode** row under the tabs lists every mode; imaginary ones are marked
+*i*. For the chosen mode:
+
+- **Animate** adds a SAMSON path that oscillates the structure along the mode
+  (24 frames, largest atom displacement 0.3 Å) and loops it until **Stop
+  animation**, which returns the atoms to the computed geometry. The path stays
+  in Document View, where SAMSON's own path controls can scrub it.
+- **Arrows** adds a mesh of displacement arrows, one per atom, the longest as
+  long as the length box beside it; delete it in Document View when done.
+
+SAMSON has no built-in normal-mode or vector display, so these are built from
+its path (`SBConformation` / `SBPath`) and mesh (`SBSurface` / `SBMesh`) APIs.
+Each is one undo step.
+
+![Ammonia inversion transition state in SAMSON with arrows for its imaginary mode and the frequency check in the panel log](docs/images/nh3_ts_panel.png)
+
+*The TS search on [`examples/nh3_ts_guess.xyz`](examples/nh3_ts_guess.xyz)
+converged to planar (D3h) ammonia; the frequency check finds one imaginary
+mode (−579 cm⁻¹), drawn as arrows. MACE-MP-0 small on CUDA.*
 
 ### Guards
 

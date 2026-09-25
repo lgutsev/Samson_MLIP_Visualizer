@@ -44,6 +44,7 @@ _REMEMBERED = (
     "ts_fmax",
     "ts_steps",
     "ts_check",
+    "arrow_length",
     "tabs",
 )
 
@@ -219,14 +220,37 @@ def _make_window():
             bridge_row.addWidget(self.bridge_exec)
             bridge_row.addWidget(self.bridge_status, 1)
 
+            self._modes = None
+            self._mode_nodes = {}
+            self._player = None
+            self.mode_choice = QtWidgets.QComboBox()
+            self.mode_choice.setToolTip(
+                "Modes from the last frequency calculation (Frequencies button, or the TS "
+                "search's check). Imaginary modes are marked i."
+            )
+            self.animate_button = QtWidgets.QPushButton("Animate")
+            self.animate_button.clicked.connect(self._toggle_mode_animation)
+            self.arrow_length = spin(2, 0.1, 5.0, 1.0, " Å", "Length of the longest arrow.")
+            self.arrows_button = QtWidgets.QPushButton("Arrows")
+            self.arrows_button.setToolTip("Add displacement arrows for the chosen mode.")
+            self.arrows_button.clicked.connect(self._add_mode_arrows)
+            modes_row = QtWidgets.QHBoxLayout()
+            modes_row.addWidget(QtWidgets.QLabel("Normal mode"))
+            modes_row.addWidget(self.mode_choice, 1)
+            modes_row.addWidget(self.animate_button)
+            modes_row.addWidget(self.arrow_length)
+            modes_row.addWidget(self.arrows_button)
+
             layout = QtWidgets.QVBoxLayout(self)
             layout.addLayout(settings)
             layout.addWidget(self.tabs)
+            layout.addLayout(modes_row)
             layout.addWidget(note)
             layout.addLayout(bridge_row)
             layout.addWidget(self.stop_button)
             layout.addWidget(self.status, 1)
             self._refresh_bridge()
+            self._refresh_modes()
 
             self._run_buttons = [
                 self.evaluate_button,
@@ -600,8 +624,13 @@ def _make_window():
         def _run_task(self, task):
             from .remote import qt_server
 
+            bridge = qt_server.status()
+            if bridge is not None and bridge["busy"]:
+                self._show_error(RuntimeError(f"SAMSON is busy: {bridge['busy']}."))
+                return
             try:
                 self._stop_requested = False
+                self._stop_mode_animation()  # a job must start from the real geometry
                 self._set_running(True)
                 # Remote reads stay live during a job; remote edits wait until it ends.
                 qt_server.set_busy("an MLIP job is running in the panel")
@@ -642,7 +671,8 @@ def _make_window():
                     + (" · Python execution ON" if state["allow_exec"] else "")
                 )
 
-        def _report_frequencies(self, atoms):
+        def _report_frequencies(self, structure):
+            atoms = structure.ase_atoms
             free = len(_free_indices(atoms))
             self._log(f"Frequencies: {6 * free} force calls…")
             step = max(1, 3 * free // 10)
@@ -663,7 +693,84 @@ def _make_window():
             hint = result.soft_mode_hint()
             if hint:
                 self._log(f"Note: {hint}")
+            self._set_modes(structure, result)
             return result
+
+        # --- normal-mode display -----------------------------------------------------
+
+        def _set_modes(self, structure, frequencies):
+            self._stop_mode_animation()
+            self._modes = (structure, frequencies)
+            self._mode_nodes = {}
+            self.mode_choice.clear()
+            for index, value in enumerate(frequencies.wavenumbers_cm):
+                shown = f"{abs(value):.1f}i" if value < 0 else f"{value:.1f}"
+                self.mode_choice.addItem(f"Mode {index + 1}: {shown} cm⁻¹")
+            self._refresh_modes()
+
+        def _refresh_modes(self):
+            available = self._modes is not None and self.mode_choice.count() > 0
+            for widget in (self.mode_choice, self.animate_button, self.arrows_button):
+                widget.setEnabled(available)
+            playing = self._player is not None and self._player.playing
+            self.animate_button.setText("Stop animation" if playing else "Animate")
+
+        def _mode_label(self, kind):
+            return f"{self.mode_choice.currentText()} {kind}"
+
+        def _chosen_mode(self):
+            from .samson_modes import full_mode
+
+            structure, frequencies = self._modes
+            return structure, full_mode(structure, frequencies, self.mode_choice.currentIndex())
+
+        def _toggle_mode_animation(self):
+            try:
+                if self._player is not None and self._player.playing:
+                    self._stop_mode_animation()
+                    return
+                from .samson_modes import PathPlayer, add_mode_path
+
+                key = ("path", self.mode_choice.currentIndex())
+                if key not in self._mode_nodes:
+                    structure, mode = self._chosen_mode()
+                    self._mode_nodes[key] = add_mode_path(
+                        structure, mode, name=self._mode_label("animation")
+                    )
+                if self._player is None:
+                    self._player = PathPlayer()
+                self._player.play(self._mode_nodes[key])
+                self._log(
+                    f"Animating {self.mode_choice.currentText()}. The path is in Document "
+                    "View; stopping returns the atoms to the computed geometry."
+                )
+            except Exception as exc:
+                self._show_error(exc)
+            self._refresh_modes()
+
+        def _stop_mode_animation(self):
+            if self._player is not None:
+                self._player.stop()
+            if hasattr(self, "animate_button"):
+                self._refresh_modes()
+
+        def _add_mode_arrows(self):
+            try:
+                from .samson_modes import add_mode_arrows
+
+                structure, mode = self._chosen_mode()
+                add_mode_arrows(
+                    structure,
+                    mode,
+                    name=self._mode_label("arrows"),
+                    max_length=self.arrow_length.value(),
+                )
+                self._log(
+                    f"Added arrows for {self.mode_choice.currentText()} (longest "
+                    f"{self.arrow_length.value():.2f} Å). Delete them in Document View."
+                )
+            except Exception as exc:
+                self._show_error(exc)
 
         # --- tasks -----------------------------------------------------------------
 
@@ -725,7 +832,7 @@ def _make_window():
             def task():
                 structure = self._prepare()
                 self._warn_float32("finite-difference frequencies")
-                self._report_frequencies(structure.ase_atoms)
+                self._report_frequencies(structure)
 
             self._run_task(task)
 
@@ -861,7 +968,7 @@ def _make_window():
                     f"curvature {result.curvature:+.4f} eV/Å²"
                 )
                 if result.converged and self.ts_check.isChecked():
-                    frequencies = self._report_frequencies(atoms)
+                    frequencies = self._report_frequencies(structure)
                     if frequencies.n_imaginary != 1:
                         self._log(
                             "Warning: not a first-order saddle point. Try another starting "
