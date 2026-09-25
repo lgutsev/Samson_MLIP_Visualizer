@@ -16,6 +16,52 @@ from .vibrations import _free_indices, harmonic_frequencies
 
 _WINDOW = None
 _TS_DIRECTIONS = ("Softest Hessian mode", "Stretch atom pair", "Random")
+SETTINGS_ENV = "SAMSON_MLIP_SETTINGS"
+# Panel inputs remembered between sessions; attribute names double as settings keys.
+# Structure-specific inputs (atom pairs, trajectory path) and the Python-execution
+# opt-in of the remote bridge are deliberately not remembered.
+_REMEMBERED = (
+    "backend",
+    "model_path",
+    "device",
+    "dtype",
+    "min_distance",
+    "max_force_std",
+    "optimizer",
+    "fmax",
+    "steps",
+    "ensemble",
+    "temperature",
+    "timestep",
+    "md_steps",
+    "friction",
+    "tdamp",
+    "seed",
+    "report_interval",
+    "max_temperature",
+    "ts_direction",
+    "ts_displacement",
+    "ts_fmax",
+    "ts_steps",
+    "ts_check",
+    "tabs",
+)
+
+
+def settings_path() -> Path:
+    """Per-user file where the panel remembers its settings."""
+    override = os.environ.get(SETTINGS_ENV)
+    if override:
+        return Path(override)
+    from .remote.protocol import data_dir
+
+    return data_dir() / "panel.ini"
+
+
+def _default_model_path() -> str:
+    """MACE-MP-0 small, if MACE has already downloaded it to its usual cache."""
+    candidate = Path.home() / ".cache" / "mace" / "20231210mace128L0_energy_epoch249model"
+    return str(candidate) if candidate.is_file() else ""
 
 
 def _qt():
@@ -59,6 +105,28 @@ def _make_window():
             widget.setToolTip(tooltip)
         return widget
 
+    def grid(rows):
+        """Rows of (label, field) pairs in two aligned columns.
+
+        A row holding one pair spans the full width; ``None`` leaves a cell empty.
+        """
+        layout = QtWidgets.QGridLayout()
+        layout.setHorizontalSpacing(10)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(3, 1)
+        for row, pairs in enumerate(rows):
+            span = 3 if len(pairs) == 1 else 1
+            for column, pair in enumerate(pairs):
+                if pair is None:
+                    continue
+                label, field = pair
+                layout.addWidget(QtWidgets.QLabel(label), row, 2 * column)
+                if isinstance(field, QtWidgets.QLayout):
+                    layout.addLayout(field, row, 2 * column + 1, 1, span)
+                else:
+                    layout.addWidget(field, row, 2 * column + 1, 1, span)
+        return layout
+
     class MLIPWindow(QtWidgets.QDialog):
         def __init__(self, parent=None):
             super().__init__(parent)
@@ -96,13 +164,17 @@ def _make_window():
                 "Abort a committee run when the per-atom force spread exceeds this. 0 disables.",
             )
 
-            form = QtWidgets.QFormLayout()
-            form.addRow("Backend", self.backend)
-            form.addRow("Model file(s)", model_row)
-            form.addRow("MACE device", self.device)
-            form.addRow("MACE dtype", self.dtype)
-            form.addRow("Min. atom distance", self.min_distance)
-            form.addRow("Max committee force σ", self.max_force_std)
+            settings = grid(
+                [
+                    [("Backend", self.backend)],
+                    [("Model file(s)", model_row)],
+                    [("MACE device", self.device), ("MACE dtype", self.dtype)],
+                    [
+                        ("Min. atom distance", self.min_distance),
+                        ("Max committee σ", self.max_force_std),
+                    ],
+                ]
+            )
 
             self.tabs = QtWidgets.QTabWidget()
             self.tabs.addTab(self._relax_tab(), "Relax")
@@ -114,6 +186,10 @@ def _make_window():
             self.stop_button.clicked.connect(self._request_stop)
 
             note = QtWidgets.QLabel(
+                "Runs on the selected structural models (or the only one) as one system; "
+                "atoms fixed in SAMSON stay fixed."
+            )
+            note.setToolTip(
                 "Operates on complete structural models. When the document holds several, "
                 "select every model that belongs to the system in Document View; they are "
                 "evaluated together. SAMSON fixed-atom flags become ASE FixAtoms constraints."
@@ -122,6 +198,8 @@ def _make_window():
             self.status = QtWidgets.QPlainTextEdit()
             self.status.setReadOnly(True)
             self.status.setMaximumBlockCount(2000)
+            self.status.setPlaceholderText("Run output and remote-bridge activity appear here.")
+            self.status.setMinimumHeight(8 * self.status.fontMetrics().lineSpacing())
 
             self.bridge_button = QtWidgets.QPushButton("Start bridge")
             self.bridge_button.setToolTip(
@@ -142,7 +220,7 @@ def _make_window():
             bridge_row.addWidget(self.bridge_status, 1)
 
             layout = QtWidgets.QVBoxLayout(self)
-            layout.addLayout(form)
+            layout.addLayout(settings)
             layout.addWidget(self.tabs)
             layout.addWidget(note)
             layout.addLayout(bridge_row)
@@ -160,6 +238,15 @@ def _make_window():
             self.backend.currentTextChanged.connect(self._backend_changed)
             self._backend_changed(self.backend.currentText())
 
+            path = settings_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._settings = QtCore.QSettings(str(path), QtCore.QSettings.Format.IniFormat)
+            self.model_path.setText(_default_model_path())
+            self._restore_settings()
+            self._remember_settings()
+            self.tabs.currentChanged.connect(self._fit_tabs)
+            self._fit_tabs(self.tabs.currentIndex())
+
         # --- tab construction ------------------------------------------------------
 
         def _relax_tab(self):
@@ -168,10 +255,6 @@ def _make_window():
             self.optimizer.addItems(["FIRE", "LBFGS", "BFGS", "PreconLBFGS"])
             self.fmax = spin(4, 0.0001, 10.0, 0.05, " eV/Å")
             self.steps = int_spin(1, 100000, 250)
-            form = QtWidgets.QFormLayout()
-            form.addRow("Optimizer", self.optimizer)
-            form.addRow("Force threshold", self.fmax)
-            form.addRow("Maximum steps", self.steps)
 
             self.evaluate_button = QtWidgets.QPushButton("Single point")
             self.relax_button = QtWidgets.QPushButton("Relax positions")
@@ -189,9 +272,15 @@ def _make_window():
             actions.addWidget(self.frequency_button)
 
             layout = QtWidgets.QVBoxLayout(page)
-            layout.addLayout(form)
+            layout.addLayout(
+                grid(
+                    [
+                        [("Optimizer", self.optimizer)],
+                        [("Force threshold", self.fmax), ("Maximum steps", self.steps)],
+                    ]
+                )
+            )
             layout.addLayout(actions)
-            layout.addStretch(1)
             return page
 
         def _md_tab(self):
@@ -237,31 +326,27 @@ def _make_window():
             trajectory_row.addWidget(self.trajectory, 1)
             trajectory_row.addWidget(browse)
 
-            form = QtWidgets.QFormLayout()
-            form.addRow("Ensemble", self.ensemble)
-            form.addRow("Temperature", self.temperature)
-            form.addRow("Timestep", self.timestep)
-            form.addRow("Steps", self.md_steps)
-            form.addRow("Friction", self.friction)
-            form.addRow("Thermostat time", self.tdamp)
-            form.addRow("Seed", self.seed)
-            form.addRow("Update every", self.report_interval)
-            form.addRow("Max temperature", self.max_temperature)
-            form.addRow("Fixed distances", pair_row)
-            form.addRow("Trajectory file", trajectory_row)
+            settings = grid(
+                [
+                    [("Ensemble", self.ensemble), ("Temperature", self.temperature)],
+                    [("Timestep", self.timestep), ("Steps", self.md_steps)],
+                    [("Friction", self.friction), ("Thermostat time", self.tdamp)],
+                    [("Seed", self.seed), ("Max temperature", self.max_temperature)],
+                    [("Update every", self.report_interval), None],
+                    [("Fixed distances", pair_row)],
+                    [("Trajectory file", trajectory_row)],
+                ]
+            )
 
             self.md_button = QtWidgets.QPushButton("Run MD")
             self.md_button.clicked.connect(self._run_md)
-            hint = QtWidgets.QLabel(
-                "Relax the structure first: an unrelaxed start releases its strain as heat."
-            )
-            hint.setWordWrap(True)
+            # One line, no word wrap: a wrapped label inside a tab defeats _fit_tabs.
+            hint = QtWidgets.QLabel("Relax first: an unrelaxed start releases its strain as heat.")
 
             layout = QtWidgets.QVBoxLayout(page)
-            layout.addLayout(form)
+            layout.addLayout(settings)
             layout.addWidget(hint)
             layout.addWidget(self.md_button)
-            layout.addStretch(1)
             self.ensemble.currentTextChanged.connect(self._ensemble_changed)
             self._ensemble_changed(self.ensemble.currentText())
             return page
@@ -287,27 +372,31 @@ def _make_window():
             self.ts_check = QtWidgets.QCheckBox("Check with frequencies afterwards")
             self.ts_check.setChecked(True)
 
-            form = QtWidgets.QFormLayout()
-            form.addRow("Initial direction", self.ts_direction)
-            form.addRow("Atom pair", pair_row)
-            form.addRow("Initial displacement", self.ts_displacement)
-            form.addRow("Force threshold", self.ts_fmax)
-            form.addRow("Maximum steps", self.ts_steps)
-            form.addRow("", self.ts_check)
+            settings = grid(
+                [
+                    [("Initial direction", self.ts_direction)],
+                    [("Atom pair", pair_row)],
+                    [
+                        ("Initial displacement", self.ts_displacement),
+                        ("Force threshold", self.ts_fmax),
+                    ],
+                    [("Maximum steps", self.ts_steps), ("", self.ts_check)],
+                ]
+            )
 
             self.ts_button = QtWidgets.QPushButton("Search transition state")
             self.ts_button.clicked.connect(self._search_ts)
-            hint = QtWidgets.QLabel(
-                "Dimer method: start from a geometry near the transition state, not from a "
-                "minimum. A transition state has exactly one imaginary frequency."
+            hint = QtWidgets.QLabel("Start near the transition state, not at a minimum.")
+            hint.setToolTip(
+                "Dimer method: it climbs from the current geometry to the nearest first-order "
+                "saddle point. A transition state has exactly one imaginary frequency, which "
+                "the frequency check confirms."
             )
-            hint.setWordWrap(True)
 
             layout = QtWidgets.QVBoxLayout(page)
-            layout.addLayout(form)
+            layout.addLayout(settings)
             layout.addWidget(hint)
             layout.addWidget(self.ts_button)
-            layout.addStretch(1)
             self.ts_direction.currentTextChanged.connect(
                 lambda text: self.ts_pair.setEnabled(text == "Stretch atom pair")
             )
@@ -325,6 +414,68 @@ def _make_window():
             self.temperature.setEnabled(text != "NVE")
             self.friction.setEnabled(text == "Langevin")
             self.tdamp.setEnabled(text in ("Bussi", "NoseHooverChain"))
+
+        def _fit_tabs(self, index):
+            # A QTabWidget is as tall as its tallest page; size it to the visible one
+            # so the log below gets the rest of the height.
+            policy = QtWidgets.QSizePolicy.Policy
+            for page in range(self.tabs.count()):
+                size = policy.Preferred if page == index else policy.Ignored
+                self.tabs.widget(page).setSizePolicy(size, size)
+            self.tabs.setMaximumHeight(self.tabs.minimumSizeHint().height())
+
+        def _restore_settings(self):
+            for name in _REMEMBERED:
+                if not self._settings.contains(name):
+                    continue
+                widget, value = getattr(self, name), self._settings.value(name)
+                try:
+                    if isinstance(widget, QtWidgets.QComboBox):
+                        index = widget.findText(str(value))
+                        if index >= 0:
+                            widget.setCurrentIndex(index)
+                    elif isinstance(widget, QtWidgets.QLineEdit):
+                        widget.setText(str(value))
+                    elif isinstance(widget, QtWidgets.QDoubleSpinBox):
+                        widget.setValue(float(value))
+                    elif isinstance(widget, QtWidgets.QSpinBox):
+                        widget.setValue(int(value))
+                    elif isinstance(widget, QtWidgets.QCheckBox):
+                        widget.setChecked(str(value).lower() in ("true", "1"))
+                    elif 0 <= int(value) < widget.count():
+                        widget.setCurrentIndex(int(value))
+                except (TypeError, ValueError):
+                    continue  # an unreadable entry keeps the default
+
+        def _save_setting(self, name):
+            widget = getattr(self, name)
+            if isinstance(widget, QtWidgets.QComboBox):
+                value = widget.currentText()
+            elif isinstance(widget, QtWidgets.QLineEdit):
+                value = widget.text()
+            elif isinstance(widget, (QtWidgets.QDoubleSpinBox, QtWidgets.QSpinBox)):
+                value = widget.value()
+            elif isinstance(widget, QtWidgets.QCheckBox):
+                value = widget.isChecked()
+            else:
+                value = widget.currentIndex()
+            self._settings.setValue(name, value)
+            self._settings.sync()
+
+        def _remember_settings(self):
+            for name in _REMEMBERED:
+                widget = getattr(self, name)
+                if isinstance(widget, QtWidgets.QComboBox):
+                    signal = widget.currentTextChanged
+                elif isinstance(widget, QtWidgets.QLineEdit):
+                    signal = widget.textChanged
+                elif isinstance(widget, (QtWidgets.QDoubleSpinBox, QtWidgets.QSpinBox)):
+                    signal = widget.valueChanged
+                elif isinstance(widget, QtWidgets.QCheckBox):
+                    signal = widget.toggled
+                else:
+                    signal = widget.currentChanged
+                signal.connect(lambda *_, name=name: self._save_setting(name))
 
         def _browse(self):
             filenames, _ = QtWidgets.QFileDialog.getOpenFileNames(self, "Choose MLIP model(s)")

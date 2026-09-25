@@ -89,6 +89,12 @@ The panel keeps the SAMSON interface responsive between steps. Its **Stop**
 button takes effect after the current energy/force call returns. Every task
 (relaxation, MD, TS search) is one SAMSON undo transaction.
 
+The panel remembers its settings between sessions in
+`%LOCALAPPDATA%\samson-mlip-visualizer\panel.ini` (model, device, dtype, and
+every task parameter), except atom pairs, the trajectory path, and the remote
+bridge's Python-execution opt-in. With no saved model, it picks up MACE-MP-0
+small if MACE has already downloaded it to `~/.cache/mace`.
+
 ### Molecular dynamics (MD tab)
 
 - **Ensembles.** `Langevin` (default; robust NVT), `Bussi` (stochastic velocity

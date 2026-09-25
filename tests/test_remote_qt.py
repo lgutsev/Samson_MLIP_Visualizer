@@ -1,11 +1,14 @@
 """The Qt transport with a real QTcpServer; skipped where PySide6 is not installed."""
 
+import os
 import threading
 import time
 
 import pytest
 
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtCore = pytest.importorskip("PySide6.QtCore")
+QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 pytest.importorskip("PySide6.QtNetwork")
 
 from samson_fakes import install_samson_module, water_document  # noqa: E402
@@ -17,7 +20,8 @@ from samson_mlip_visualizer.remote.protocol import BUSY, BridgeError  # noqa: E4
 
 @pytest.fixture
 def app():
-    return QtCore.QCoreApplication.instance() or QtCore.QCoreApplication([])
+    # A full QApplication, so widget tests can share the process.
+    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
 def call_while_spinning(function):
