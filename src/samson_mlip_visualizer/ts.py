@@ -1,4 +1,12 @@
-"""Single-ended transition-state search with ASE's dimer method.
+"""Single-ended transition-state searches: P-RFO (Sella) and the dimer method.
+
+:func:`prfo_search` is the default: partitioned rational-function optimization in
+internal coordinates (Sella; Hermes et al., J. Chem. Theory Comput. 2022), the
+open counterpart of Gaussian's ``Opt=TS`` (Berny) eigenvector following. It
+maximizes along the lowest Hessian mode and minimizes along all others, and
+usually converges in a few tens of steps from a reasonable guess.
+
+:func:`dimer_search` is a force-only alternative using ASE's dimer method.
 
 The dimer method climbs from a guess geometry to the nearest first-order saddle
 point using only forces: it rotates a short "dimer" to find the lowest-curvature
@@ -46,6 +54,86 @@ class _StopSearch(Exception):
 
 class _Converged(Exception):
     pass
+
+
+def prfo_search(
+    atoms: Atoms,
+    *,
+    fmax: float = 0.01,
+    max_steps: int = 300,
+    internal: bool | None = None,
+    min_distance: float | None = 0.5,
+    trajectory: str | Path | None = None,
+    on_progress: Callable[[int, float, float, float, np.ndarray], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> TSResult:
+    """Search for a first-order saddle point with Sella's P-RFO optimizer.
+
+    ``internal`` (default: for non-periodic systems) works in redundant internal
+    coordinates, which suits molecules best. ``on_progress`` has the same
+    signature as for :func:`dimer_search`; ``curvature`` is Sella's current
+    estimate of the lowest Hessian eigenvalue (``nan`` when unavailable).
+    Convergence is judged on the true forces.
+    """
+    try:
+        from sella import Sella
+    except ImportError as exc:
+        raise ImportError(
+            "P-RFO needs the 'sella' package; install it in SAMSON's Python "
+            "(python -m pip install sella) or use the dimer method."
+        ) from exc
+    if fmax <= 0:
+        raise ValueError("fmax must be positive")
+    if max_steps < 1:
+        raise ValueError("max_steps must be at least 1")
+    if internal is None:
+        internal = not atoms.pbc.any()
+
+    optimizer = Sella(
+        atoms,
+        order=1,
+        internal=internal,
+        logfile=None,
+        trajectory=str(trajectory) if trajectory else None,
+    )
+
+    def curvature() -> float:
+        try:
+            return float(np.min(optimizer.pes.H.evals))
+        except Exception:  # noqa: BLE001 - Sella internals vary between versions
+            return float("nan")
+
+    state = {"step": 0}
+
+    def report() -> None:
+        if should_stop and should_stop():
+            raise _StopSearch
+        check_sane(atoms, min_distance=min_distance)
+        current = evaluate(atoms)
+        if on_progress:
+            on_progress(
+                state["step"],
+                current.energy_ev,
+                current.max_force_ev_per_angstrom,
+                curvature(),
+                atoms.get_positions().copy(),
+            )
+        state["step"] += 1
+
+    optimizer.attach(report, interval=1)
+    stopped = False
+    try:
+        optimizer.run(fmax=fmax, steps=max_steps)
+    except _StopSearch:
+        stopped = True
+    final = evaluate(atoms)
+    return TSResult(
+        evaluation=final,
+        curvature=curvature(),
+        steps=max(0, state["step"] - 1),
+        converged=not stopped and final.max_force_ev_per_angstrom <= fmax,
+        stopped=stopped,
+    )
 
 
 def initial_mode(

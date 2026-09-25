@@ -42,6 +42,21 @@ def add_mode_path(
 
     Frame 0 is the current geometry, so stepping the path back to 0 restores it.
     """
+    x0 = structure.ase_atoms.get_positions()
+    return add_frames_path(
+        structure,
+        mode_frames(x0, mode, max_displacement=max_displacement, frames=frames),
+        name=name,
+    )
+
+
+def add_frames_path(structure: SamsonStructure, frames, *, name: str) -> Any:
+    """Add a SAMSON path through ``frames`` (each an ``(n_atoms, 3)`` array in Å).
+
+    Every frame becomes one step of the path, in order, so SAMSON's path controls
+    (or :class:`PathPlayer`) can scrub or animate it. The atoms are returned to
+    their current positions afterwards. One undo step.
+    """
     import samson
 
     SAMSON = _samson()
@@ -49,9 +64,7 @@ def add_mode_path(
     conformations = samson.SBNodeIndexer()
     with SAMSON.holding(f"Add {name}"):
         try:
-            for index, positions in enumerate(
-                mode_frames(x0, mode, max_displacement=max_displacement, frames=frames)
-            ):
+            for index, positions in enumerate(frames):
                 sync_positions(structure, positions, samson=SAMSON, process_events=False)
                 atoms = samson.SBNodeIndexer()
                 for atom in structure.samson_atoms:
@@ -108,22 +121,25 @@ class PathPlayer:
         self._timer.setInterval(interval_ms)
         self._timer.timeout.connect(self._advance)
         self.path = None
+        self.home_step = 0
 
     @property
     def playing(self) -> bool:
         return self._timer.isActive()
 
-    def play(self, path: Any) -> None:
+    def play(self, path: Any, home_step: int = 0) -> None:
+        """Loop ``path``; stopping returns it to ``home_step`` (the original geometry)."""
         self.stop()
         self.path = path
+        self.home_step = home_step
         self._timer.start()
 
     def stop(self) -> None:
-        """Stop and return the structure to frame 0 (the original geometry)."""
+        """Stop and return the structure to the home frame (the original geometry)."""
         self._timer.stop()
         if self.path is not None:
             try:
-                self.path.currentStep = 0
+                self.path.currentStep = self.home_step
             except Exception:  # noqa: BLE001 - the path may have been deleted
                 pass
         self.path = None

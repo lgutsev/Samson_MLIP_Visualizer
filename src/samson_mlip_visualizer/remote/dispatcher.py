@@ -196,7 +196,8 @@ class Dispatcher:
             "job.start": (
                 self._job_start,
                 "Start an MLIP job; returns at once. params: kind (single_point|relax|md|ts|"
-                "frequencies), model?, backend?, device?, dtype?, models?, and kind options.",
+                "frequencies|irc|qst), model?, backend?, device?, dtype?, models?, and kind "
+                "options.",
             ),
             "job.status": (
                 self._job_status,

@@ -26,6 +26,8 @@ samson-mcp = "samson_mlip_visualizer.remote.mcp_server:main"
 [project.optional-dependencies]
 mace = ["mace-torch>=0.3"]
 deepmd = ["deepmd-kit>=3.0"]
+# P-RFO transition-state searches (TS search, QST refinement); pulls in jax.
+ts = ["sella>=2.6"]
 test = ["pytest>=8", "ruff>=0.6"]
 
 [project.urls]

@@ -125,16 +125,22 @@ Constraints work with Langevin, Bussi and NVE.
 
 ### Transition states and frequencies (TS search tab)
 
-The dimer method climbs from a guess geometry to the nearest first-order saddle
-point using forces only. It needs a starting geometry **near** the transition
-state (it will not find one from a minimum) and an initial direction:
+Both methods climb from a guess geometry to the nearest first-order saddle point,
+so start **near** the transition state (neither finds one from a minimum; use
+**Reaction path** below when you have the two minima instead).
 
-- **Softest Hessian mode** (default): computes a Hessian at the guess
-  (6 force calls per atom) and starts along its softest vibration. Most robust
-  for molecules, whose rotations otherwise attract the dimer.
-- **Stretch atom pair**: a bond that forms or breaks; cheap for large systems.
-  Select the two atoms and press **Use selected pair**.
-- **Random**: a random displacement of the free atoms.
+- **P-RFO (Sella)** (default): partitioned rational-function optimization in
+  redundant internal coordinates ([Sella](https://github.com/zadorlab/sella)),
+  the open counterpart of Gaussian's `Opt=TS` (Berny eigenvector following). It
+  maximizes along the lowest Hessian mode and minimizes along all others; on the
+  ammonia example it converges in about 10 steps. Needs `sella` (`pip install
+  sella`, or the package's `ts` extra) in SAMSON's Python.
+- **Dimer**: force-only climbing along an initial direction:
+  - **Softest Hessian mode**: a Hessian at the guess (6 force calls per atom),
+    starting along its softest vibration; most robust for molecules.
+  - **Stretch atom pair**: a bond that forms or breaks; cheap for large systems.
+    Select the two atoms and press **Use selected pair**.
+  - **Random**: a random displacement of the free atoms.
 
 After a converged search the panel computes frequencies and reports whether the
 result has exactly one imaginary mode. The **Frequencies** button on the Relax
@@ -144,10 +150,33 @@ mean a floppy, loosely converged geometry; re-optimize to Fmax ≤ 0.001 eV/Å i
 float64.
 
 Try it on [`examples/nh3_ts_guess.xyz`](examples/nh3_ts_guess.xyz): ammonia
-with its pyramid flattened to 0.3 Å. With MACE-MP-0 small, the Hessian-guided
-dimer converges in 10–15 steps to the planar umbrella-inversion transition state
-with one imaginary mode (−580 cm⁻¹). Its 0.13 eV barrier is below experiment
-(~0.25 eV): a model-accuracy limit, not a search failure.
+with its pyramid flattened to 0.3 Å. With MACE-MP-0 small, P-RFO converges in
+about 10 steps (the Hessian-guided dimer in 10–15) to the planar umbrella-inversion
+transition state with one imaginary mode (−580 cm⁻¹). Its 0.13 eV barrier is
+below experiment (~0.25 eV): a model-accuracy limit, not a search failure.
+
+### Reaction paths: QST2/QST3 and IRC (Reaction path tab)
+
+- **QST2 / QST3**, the counterparts of Gaussian's `Opt=QST2` / `QST3`: select
+  the reactant and product models (QST2), or reactant, TS guess, and product
+  (QST3), in Document View, in document order. They must hold the same atoms in
+  the same order and should be relaxed minima. The panel interpolates a path
+  (IDPP), relaxes it as a climbing-image nudged elastic band, and refines the
+  highest image with P-RFO. It adds the band as a **path on the reactant model**
+  (frame 0 = reactant) and the refined transition state as a **new structural
+  model**, checked with frequencies. On ammonia inversion QST2 takes ~4 s and
+  finds the same TS and 0.132 eV barrier as P-RFO.
+- **IRC** (Gaussian's `IRC`), from a transition state: frequencies give the
+  imaginary mode, then the path is followed downhill both ways by mass-weighted
+  steepest descent (step in Å·amu½), optionally relaxing both end points to
+  report the minima. **Every step is kept**: the panel adds an **IRC path** with
+  all frames in order (reverse end → TS → forward end), which SAMSON's path
+  controls can scrub, and **Animate last path** loops (stopping returns to the
+  TS). On ammonia it reaches both pyramids in 49 steps per side.
+
+`samson-mlip --irc --trajectory irc.extxyz` and `--qst PRODUCT [--qst-guess
+GUESS]` do the same headlessly and write every frame (IRC) or image (band),
+with per-frame energies, to the trajectory file.
 
 ### Viewing normal modes
 
@@ -211,12 +240,14 @@ samson-mlip water.xyz model.model --md --temperature 300 --timestep 0.5 --md-ste
 samson-mlip dimer.xyz model.model --md --fix-distance 0-3:2.9 --seed 1
 samson-mlip examples/nh3_ts_guess.xyz model.model --ts --fmax 0.005 --freq
 samson-mlip complex.xyz model.model --ts --ts-pair 4-9 --max-steps 500
+samson-mlip ts.xyz model.model --irc --trajectory irc.extxyz
+samson-mlip reactant.xyz model.model --qst product.xyz --trajectory band.extxyz -o ts.xyz
 samson-mlip molecule.xyz model.model --relax --fmax 0.001 --freq
 ```
 
 Several MACE files form a committee; `--max-force-std` aborts when the committee
-force spread exceeds the threshold. `--ts` starts along the softest Hessian mode
-unless `--ts-pair` or `--ts-start random` is given. `--min-distance` / `--max-drift` guard the
+force spread exceeds the threshold. `--ts` uses P-RFO unless `--ts-method
+dimer` (or a dimer option such as `--ts-pair` or `--ts-start`) is given. `--min-distance` / `--max-drift` guard the
 geometry. With `-o`, the run provenance is written into the output file's
 metadata.
 
@@ -308,7 +339,8 @@ it.
 - FIRE / LBFGS / BFGS / PreconLBFGS geometry optimization.
 - NVT / NVE molecular dynamics; fixed-distance constraints (no harmonic
   restraints / umbrella sampling yet).
-- Dimer transition-state search; no NEB (which needs two endpoint structures).
+- Transition states by P-RFO (Sella) or the dimer method, QST2/QST3-style NEB
+  path searches, and IRC.
 - Finite-difference frequencies (6 force calls per free atom): meant for
   molecules and small clusters.
 - MACE committee uncertainty (multiple checkpoints); DeepMD committee not yet.
@@ -352,8 +384,7 @@ Planned, roughly in priority order:
 - Publish relaxations and MD runs as a SAMSON path (`node.type path`) so the
   trajectory can be scrubbed in the animation bar. Blocked on the path-creation
   API; until then, open the written `.extxyz` trajectory.
-- Harmonic distance restraints (umbrella sampling), NEB between two selected
-  structures, NPT MD, and Sella as an alternative TS optimizer.
+- Harmonic distance restraints (umbrella sampling) and NPT MD.
 - Remote bridge: unit-cell editing, change notifications, and a command
   listing ([`docs/samson_api.md`](docs/samson_api.md)).
   [`scripts/probe_samson_api.py`](scripts/probe_samson_api.py) is a read-only

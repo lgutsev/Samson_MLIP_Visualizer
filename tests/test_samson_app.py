@@ -72,7 +72,7 @@ def test_tab_area_fits_the_open_tab(home):
     for index in range(window.tabs.count()):
         window.tabs.setCurrentIndex(index)
         heights.append(window.tabs.maximumHeight())
-    relax, md, ts = heights
-    assert md > relax and md > ts
+    relax, md, ts, path = heights
+    assert md > relax and md > ts and md > path
     # The Relax tab no longer reserves room for the taller MD page.
     assert relax < window.tabs.widget(1).sizeHint().height()

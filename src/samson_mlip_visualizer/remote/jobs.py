@@ -24,12 +24,12 @@ from ..compat import assert_model_covers_structure
 from ..engine import evaluate, relax
 from ..md import ENSEMBLES, md_warnings, parse_pairs, run_md
 from ..provenance import collect_provenance
-from ..samson_bridge import extract_structure, sync_positions
-from ..ts import dimer_search
+from ..samson_bridge import choose_structural_models, extract_structure, sync_positions
+from ..ts import dimer_search, prfo_search
 from ..vibrations import harmonic_frequencies
 
-KINDS = ("single_point", "relax", "md", "ts", "frequencies")
-_MOVES_ATOMS = ("relax", "md", "ts")
+KINDS = ("single_point", "relax", "md", "ts", "frequencies", "irc", "qst")
+_MOVES_ATOMS = ("relax", "md", "ts", "irc")
 _MISSING = object()
 
 
@@ -56,6 +56,18 @@ def _get(params: dict[str, Any], name: str, kind: type | tuple, default: Any = _
 
 def _number(params: dict[str, Any], name: str, default: float) -> float:
     return float(_get(params, name, (int, float), default))
+
+
+def _finite(value: float) -> float | None:
+    """JSON has no NaN or infinity; report them as null."""
+    return float(value) if np.isfinite(value) else None
+
+
+def _publish_path(structure, frames, name: str) -> dict[str, Any]:
+    from ..samson_modes import add_frames_path
+
+    add_frames_path(structure, frames, name=name)
+    return {"path": name, "path_frames": len(frames)}
 
 
 @dataclass
@@ -172,7 +184,19 @@ class JobManager:
             calculator, provenance = self._calculator(job.params)
             which = _get(job.params, "models", str, "auto")
             models = None
-            if which == "all":
+            if job.kind == "qst":
+                # Reactant, (guess,) product: the selected models in document order.
+                selected = choose_structural_models(samson)
+                if len(selected) not in (2, 3):
+                    raise JobSpecError(
+                        "qst needs 2 (QST2) or 3 (QST3) selected structural models: reactant, "
+                        f"(guess,) product in document order; {len(selected)} are selected"
+                    )
+                models = selected[:1]
+                self._endpoints = [
+                    extract_structure(samson, models=[model]).ase_atoms for model in selected[1:]
+                ]
+            elif which == "all":
                 models = list(samson.getNodes("node.type structuralModel"))
             elif which != "auto":
                 raise JobSpecError("models must be 'auto' or 'all'")
@@ -181,6 +205,8 @@ class JobManager:
             atoms.calc = calculator
             assert_model_covers_structure(calculator, atoms)
             job.log.append(f"{job.kind}: {len(atoms)} atoms from {len(structure.models)} model(s)")
+            self._structure = structure
+            self._publish: list[Callable[[], dict[str, Any]]] = []
 
             def pump() -> bool:
                 with contextlib.suppress(Exception):
@@ -206,6 +232,13 @@ class JobManager:
                 if job.kind in _MOVES_ATOMS:
                     show(atoms.get_positions())
             result["moved_atoms"] = not np.array_equal(atoms.get_positions(), start)
+            # SAMSON nodes (paths, new models) are added after the job's undo step closes,
+            # each as its own undo step; failures are reported without failing the job.
+            for publish in self._publish:
+                try:
+                    result.update(publish())
+                except Exception as exc:  # noqa: BLE001
+                    result.setdefault("publish_errors", []).append(f"{type(exc).__name__}: {exc}")
             job.result = {**result, "provenance": provenance}
             job.state = "stopped" if result.get("stopped") else "finished"
         except _Stopped:
@@ -309,6 +342,24 @@ class JobManager:
 
     def _ts(self, job, atoms, pump, show) -> dict[str, Any]:
         params = job.params
+        method = _get(params, "method", str, "prfo")
+        if method not in ("prfo", "dimer"):
+            raise JobSpecError("method must be 'prfo' or 'dimer'")
+        if method == "prfo":
+            return self._ts_summary(
+                job,
+                atoms,
+                pump,
+                show,
+                prfo_search(
+                    atoms,
+                    fmax=_number(params, "fmax", 0.01),
+                    max_steps=int(_number(params, "max_steps", 500)),
+                    min_distance=_number(params, "min_distance", 0.5) or None,
+                    on_progress=self._ts_progress(job, show),
+                    should_stop=pump,
+                ),
+            )
         pair_text = _get(params, "pair", str, "")
         start = _get(params, "start", str, "pair" if pair_text else "hessian")
         if start not in ("hessian", "pair", "random"):
@@ -320,14 +371,6 @@ class JobManager:
                 raise JobSpecError("start='pair' needs pair='I-J'")
             pair = (parsed[0].i, parsed[0].j)
 
-        def progress(step, energy, max_force, curvature, positions):
-            job.step = step
-            job.log.append(
-                f"step {step:4d}  E {energy:.8f} eV  Fmax {max_force:.6f}  "
-                f"curvature {curvature:+.4f}"
-            )
-            show(positions)
-
         result = dimer_search(
             atoms,
             fmax=_number(params, "fmax", 0.01),
@@ -337,19 +380,155 @@ class JobManager:
             displacement=_number(params, "displacement", 0.05),
             seed=_get(params, "seed", int, None),
             min_distance=_number(params, "min_distance", 0.5) or None,
-            on_progress=progress,
+            on_progress=self._ts_progress(job, show),
             should_stop=pump,
         )
+        return self._ts_summary(job, atoms, pump, show, result)
+
+    def _ts_progress(self, job, show):
+        def progress(step, energy, max_force, curvature, positions):
+            job.step = step
+            job.log.append(
+                f"step {step:4d}  E {energy:.8f} eV  Fmax {max_force:.6f}  "
+                f"curvature {curvature:+.4f}"
+            )
+            show(positions)
+
+        return progress
+
+    def _ts_summary(self, job, atoms, pump, show, result) -> dict[str, Any]:
         summary = {
+            "method": job.params.get("method", "prfo"),
             "steps": result.steps,
             "converged": result.converged,
             "stopped": result.stopped,
             "energy_ev": result.evaluation.energy_ev,
             "max_force_ev_per_angstrom": result.evaluation.max_force_ev_per_angstrom,
-            "curvature_ev_per_angstrom2": result.curvature,
+            "curvature_ev_per_angstrom2": _finite(result.curvature),
         }
-        if result.converged and _get(params, "check_frequencies", bool, True):
+        if result.converged and _get(job.params, "check_frequencies", bool, True):
             summary["frequencies"] = self._frequencies(job, atoms, pump, show)
+        return summary
+
+    def _irc(self, job, atoms, pump, show) -> dict[str, Any]:
+        from ..reaction_path import irc
+
+        params = job.params
+        structure = self._structure
+
+        def progress(direction, step, energy, max_force, positions):
+            job.step = step
+            if step % 10 == 0:
+                job.log.append(
+                    f"{direction:7s} step {step:4d}  E {energy:.8f} eV  Fmax {max_force:.5f}"
+                )
+            show(positions)
+
+        job.log.append("Frequencies to find the imaginary mode…")
+        result = irc(
+            atoms,
+            step=_number(params, "step", 0.1),
+            max_steps=int(_number(params, "max_steps", 150)),
+            fmax=_number(params, "fmax", 0.02),
+            relax_ends=_get(params, "relax_ends", bool, True),
+            on_progress=progress,
+            should_stop=pump,
+        )
+        ts_positions = atoms.get_positions().copy()
+        frames = result.frames(ts_positions)
+        trajectory = _get(params, "trajectory", str, None)
+        if trajectory:
+            from ase.io import write
+
+            images = []
+            for frame in frames:
+                image = atoms.copy()
+                image.set_positions(frame.positions)
+                image.info.update({"energy_ev": frame.energy_ev, "irc_arc": frame.arc})
+                images.append(image)
+            write(trajectory, images)
+        self._publish.append(
+            lambda: _publish_path(structure, [frame.positions for frame in frames], "IRC path")
+        )
+        summary = {
+            "stopped": result.stopped,
+            "frames": len(frames),
+            "ts_frame": len(result.reverse),
+            "ts_energy_ev": result.ts_energy_ev,
+            "energies_ev": [frame.energy_ev for frame in frames],
+            "arc": [frame.arc for frame in frames],
+            "reverse_minimum_ev": result.reverse_minimum_ev,
+            "forward_minimum_ev": result.forward_minimum_ev,
+            "trajectory": trajectory,
+        }
+        if _get(params, "return_positions", bool, False):
+            summary["positions"] = [frame.positions.tolist() for frame in frames]
+        return summary
+
+    def _qst(self, job, atoms, pump, show) -> dict[str, Any]:
+        from ..reaction_path import qst
+        from ..samson_bridge import add_structure_model
+
+        params = job.params
+        structure = self._structure
+        guess = self._endpoints[0] if len(self._endpoints) == 2 else None
+        product = self._endpoints[-1]
+        label = "QST3" if guess is not None else "QST2"
+
+        def progress(step, energies, max_force):
+            job.step = step
+            if step % 5 == 0:
+                job.log.append(
+                    f"band step {step:4d}  Fmax {max_force:.4f}  "
+                    f"max ΔE {max(energies) - energies[0]:+.4f} eV"
+                )
+            pump()
+
+        result = qst(
+            atoms,
+            product,
+            atoms.calc,
+            guess=guess,
+            images=int(_number(params, "images", 7)),
+            fmax=_number(params, "fmax", 0.05),
+            max_steps=int(_number(params, "max_steps", 500)),
+            refine=_get(params, "refine", bool, True),
+            on_progress=progress,
+            should_stop=pump,
+        )
+        self._publish.append(lambda: _publish_path(structure, result.images, f"{label} path"))
+        summary = {
+            "method": label,
+            "stopped": result.stopped,
+            "neb_converged": result.neb_converged,
+            "neb_steps": result.neb_steps,
+            "energies_ev": result.energies_ev,
+            "highest_image": result.highest_image,
+            "barrier_forward_ev": result.barrier_forward_ev,
+            "barrier_reverse_ev": result.barrier_reverse_ev,
+        }
+        if result.ts is not None:
+            summary["ts"] = {
+                "converged": result.ts.converged,
+                "steps": result.ts.steps,
+                "energy_ev": result.ts.evaluation.energy_ev,
+                "max_force_ev_per_angstrom": result.ts.evaluation.max_force_ev_per_angstrom,
+            }
+            if result.ts.converged and _get(params, "check_frequencies", bool, True):
+                ts_atoms = atoms.copy()
+                ts_atoms.calc = atoms.calc
+                ts_atoms.set_positions(result.ts_positions)
+                summary["ts"]["frequencies"] = self._frequencies(job, ts_atoms, pump, show)
+
+            symbols = atoms.get_chemical_symbols()
+
+            def add_ts_model() -> dict[str, Any]:
+                model = add_structure_model(
+                    f"Transition state ({label})", symbols, result.ts_positions
+                )
+                return {"ts_model": getattr(model, "name", f"Transition state ({label})")}
+
+            self._publish.append(add_ts_model)
         return summary
 
     def _frequencies(self, job, atoms, pump, show) -> dict[str, Any]:

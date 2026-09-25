@@ -11,11 +11,13 @@ from .engine import evaluate, relax
 from .md import ENSEMBLES, md_warnings, parse_pairs, run_md
 from .provenance import collect_provenance
 from .samson_bridge import extract_structure, selected_atom_indices, sync_positions
-from .ts import dimer_search
+from .ts import dimer_search, prfo_search
 from .vibrations import _free_indices, harmonic_frequencies
 
 _WINDOW = None
 _TS_DIRECTIONS = ("Softest Hessian mode", "Stretch atom pair", "Random")
+_TS_METHODS = ("P-RFO (Sella)", "Dimer")
+_QST_MODES = ("QST2: reactant → product", "QST3: reactant → guess → product")
 SETTINGS_ENV = "SAMSON_MLIP_SETTINGS"
 # Panel inputs remembered between sessions; attribute names double as settings keys.
 # Structure-specific inputs (atom pairs, trajectory path) and the Python-execution
@@ -39,11 +41,21 @@ _REMEMBERED = (
     "seed",
     "report_interval",
     "max_temperature",
+    "ts_method",
     "ts_direction",
     "ts_displacement",
     "ts_fmax",
     "ts_steps",
     "ts_check",
+    "qst_mode",
+    "qst_images",
+    "qst_fmax",
+    "qst_steps",
+    "qst_refine",
+    "irc_step",
+    "irc_steps",
+    "irc_fmax",
+    "irc_relax_ends",
     "arrow_length",
     "tabs",
 )
@@ -181,6 +193,7 @@ def _make_window():
             self.tabs.addTab(self._relax_tab(), "Relax")
             self.tabs.addTab(self._md_tab(), "MD")
             self.tabs.addTab(self._ts_tab(), "TS search")
+            self.tabs.addTab(self._path_tab(), "Reaction path")
 
             self.stop_button = QtWidgets.QPushButton("Stop")
             self.stop_button.setEnabled(False)
@@ -258,6 +271,8 @@ def _make_window():
                 self.frequency_button,
                 self.md_button,
                 self.ts_button,
+                self.qst_button,
+                self.irc_button,
             ]
             self.backend.currentTextChanged.connect(self._backend_changed)
             self._backend_changed(self.backend.currentText())
@@ -377,6 +392,13 @@ def _make_window():
 
         def _ts_tab(self):
             page = QtWidgets.QWidget()
+            self.ts_method = QtWidgets.QComboBox()
+            self.ts_method.addItems(list(_TS_METHODS))
+            self.ts_method.setToolTip(
+                "P-RFO (Sella): eigenvector following in internal coordinates, like "
+                "Gaussian's Opt=TS; usually fastest and most reliable. Dimer: force-only "
+                "climbing along a chosen initial direction."
+            )
             self.ts_direction = QtWidgets.QComboBox()
             self.ts_direction.addItems(list(_TS_DIRECTIONS))
             self.ts_direction.setToolTip(
@@ -396,8 +418,10 @@ def _make_window():
             self.ts_check = QtWidgets.QCheckBox("Check with frequencies afterwards")
             self.ts_check.setChecked(True)
 
+            self._ts_use_pair = use_pair
             settings = grid(
                 [
+                    [("Method", self.ts_method)],
                     [("Initial direction", self.ts_direction)],
                     [("Atom pair", pair_row)],
                     [
@@ -421,11 +445,75 @@ def _make_window():
             layout.addLayout(settings)
             layout.addWidget(hint)
             layout.addWidget(self.ts_button)
-            self.ts_direction.currentTextChanged.connect(
-                lambda text: self.ts_pair.setEnabled(text == "Stretch atom pair")
-            )
-            self.ts_pair.setEnabled(False)
+            self.ts_method.currentTextChanged.connect(self._ts_options_changed)
+            self.ts_direction.currentTextChanged.connect(self._ts_options_changed)
+            self._ts_options_changed()
             return page
+
+        def _path_tab(self):
+            page = QtWidgets.QWidget()
+            self.qst_mode = QtWidgets.QComboBox()
+            self.qst_mode.addItems(list(_QST_MODES))
+            self.qst_mode.setToolTip(
+                "Select the reactant, (guess,) and product models in Document View, in "
+                "document order. They must hold the same atoms in the same order and "
+                "should be relaxed minima."
+            )
+            self.qst_images = int_spin(1, 50, 7, "Interior images of the elastic band.")
+            self.qst_fmax = spin(4, 0.001, 10.0, 0.05, " eV/Å", "Band force threshold.")
+            self.qst_steps = int_spin(1, 100000, 500)
+            self.qst_refine = QtWidgets.QCheckBox("Refine TS with P-RFO and check frequencies")
+            self.qst_refine.setChecked(True)
+            self.qst_button = QtWidgets.QPushButton("Find path and transition state")
+            self.qst_button.clicked.connect(self._find_path)
+
+            self.irc_step = spin(
+                3, 0.005, 1.0, 0.1, " Å·amu½", "Arc length per step in mass-weighted coordinates."
+            )
+            self.irc_steps = int_spin(1, 10000, 150, "Maximum steps in each direction.")
+            self.irc_fmax = spin(4, 0.0001, 10.0, 0.02, " eV/Å", "Stop a branch below this force.")
+            self.irc_relax_ends = QtWidgets.QCheckBox("Relax end points to minima")
+            self.irc_relax_ends.setChecked(True)
+            self.irc_button = QtWidgets.QPushButton("Run IRC from current structure")
+            self.irc_button.clicked.connect(self._run_irc)
+            self.path_animate = QtWidgets.QPushButton("Animate last path")
+            self.path_animate.setEnabled(False)
+            self.path_animate.clicked.connect(self._toggle_path_animation)
+            self._last_path = None
+            self._last_path_home = 0
+
+            layout = QtWidgets.QVBoxLayout(page)
+            layout.addLayout(
+                grid(
+                    [
+                        [("Path search", self.qst_mode)],
+                        [("Images", self.qst_images), ("Band force", self.qst_fmax)],
+                        [("Maximum steps", self.qst_steps), ("", self.qst_refine)],
+                    ]
+                )
+            )
+            layout.addWidget(self.qst_button)
+            layout.addLayout(
+                grid(
+                    [
+                        [("IRC step", self.irc_step), ("Steps per side", self.irc_steps)],
+                        [("IRC force", self.irc_fmax), ("", self.irc_relax_ends)],
+                    ]
+                )
+            )
+            irc_row = QtWidgets.QHBoxLayout()
+            irc_row.addWidget(self.irc_button, 1)
+            irc_row.addWidget(self.path_animate)
+            layout.addLayout(irc_row)
+            return page
+
+        def _ts_options_changed(self, *_):
+            dimer = self.ts_method.currentText() == "Dimer"
+            self.ts_direction.setEnabled(dimer)
+            self.ts_displacement.setEnabled(dimer)
+            pair = dimer and self.ts_direction.currentText() == "Stretch atom pair"
+            self.ts_pair.setEnabled(pair)
+            self._ts_use_pair.setEnabled(pair)
 
         # --- small helpers ---------------------------------------------------------
 
@@ -571,7 +659,7 @@ def _make_window():
             except Exception as exc:
                 self._show_error(exc)
 
-        def _prepare(self):
+        def _prepare(self, models=None):
             model_files = self._model_files()
             backend = self.backend.currentText().lower()
             device = self.device.currentText()
@@ -587,7 +675,7 @@ def _make_window():
                     self._log(f"Committee of {len(model_files)} models.")
             except OSError as exc:
                 self._log(f"Could not hash the model file for provenance: {exc}")
-            structure = extract_structure()
+            structure = extract_structure(models=models)
             structure.ase_atoms.calc = calculator
             atoms = structure.ase_atoms
             periodic = "".join(axis for axis, flag in zip("xyz", atoms.pbc, strict=True) if flag)
@@ -918,20 +1006,24 @@ def _make_window():
                 structure = self._prepare()
                 atoms = structure.ase_atoms
                 self._warn_float32("transition-state searches")
+                prfo = self.ts_method.currentText() != "Dimer"
                 direction = self.ts_direction.currentText()
                 pair = None
-                if direction == "Stretch atom pair":
+                if not prfo and direction == "Stretch atom pair":
                     parsed = parse_pairs(self.ts_pair.text())
                     if len(parsed) != 1:
                         raise RuntimeError("Enter one atom pair, e.g. 4-7, or use the selection")
                     pair = (parsed[0].i, parsed[0].j)
-                use_hessian = direction == "Softest Hessian mode"
+                use_hessian = not prfo and direction == "Softest Hessian mode"
                 if use_hessian:
                     self._log(
                         f"Computing the Hessian for the initial direction "
                         f"({6 * len(atoms)} force calls)…"
                     )
-                self._log(f"Starting dimer search ({direction.lower()})…")
+                if prfo:
+                    self._log("Starting P-RFO transition-state search (Sella)…")
+                else:
+                    self._log(f"Starting dimer search ({direction.lower()})…")
 
                 def progress(step, energy, max_force, curvature, positions):
                     sync_positions(structure, positions)
@@ -942,18 +1034,24 @@ def _make_window():
 
                 from samson import SAMSON
 
+                common = {
+                    "fmax": self.ts_fmax.value(),
+                    "max_steps": self.ts_steps.value(),
+                    "min_distance": self.min_distance.value() or None,
+                    "on_progress": progress,
+                    "should_stop": self._poll_stop,
+                }
                 with SAMSON.holding("MLIP transition-state search"):
-                    result = dimer_search(
-                        atoms,
-                        fmax=self.ts_fmax.value(),
-                        max_steps=self.ts_steps.value(),
-                        pair=pair,
-                        use_hessian=use_hessian,
-                        displacement=self.ts_displacement.value(),
-                        min_distance=self.min_distance.value() or None,
-                        on_progress=progress,
-                        should_stop=self._poll_stop,
-                    )
+                    if prfo:
+                        result = prfo_search(atoms, **common)
+                    else:
+                        result = dimer_search(
+                            atoms,
+                            pair=pair,
+                            use_hessian=use_hessian,
+                            displacement=self.ts_displacement.value(),
+                            **common,
+                        )
                     sync_positions(structure, atoms.get_positions())
                 if result.stopped:
                     state = "stopped"
@@ -962,7 +1060,8 @@ def _make_window():
                 else:
                     state = "not converged"
                 self._log(
-                    f"Dimer search finished ({state}) after {result.steps} steps; "
+                    f"{'P-RFO' if prfo else 'Dimer'} search finished ({state}) after "
+                    f"{result.steps} steps; "
                     f"E = {result.evaluation.energy_ev:.10f} eV, "
                     f"Fmax = {result.evaluation.max_force_ev_per_angstrom:.6f} eV/Å, "
                     f"curvature {result.curvature:+.4f} eV/Å²"
@@ -976,6 +1075,165 @@ def _make_window():
                         )
 
             self._run_task(task)
+
+        def _find_path(self):
+            def task():
+                from samson import SAMSON
+
+                from .reaction_path import qst
+                from .samson_bridge import add_structure_model, choose_structural_models
+                from .samson_modes import add_frames_path
+
+                qst3 = self.qst_mode.currentIndex() == 1
+                label = "QST3" if qst3 else "QST2"
+                models = choose_structural_models(SAMSON)
+                expected = 3 if qst3 else 2
+                if len(models) != expected:
+                    order = "reactant, guess, product" if qst3 else "reactant and product"
+                    raise RuntimeError(
+                        f"{label} needs {expected} selected structural models ({order}, in "
+                        f"document order); {len(models)} are selected."
+                    )
+                self._warn_float32("path searches")
+                reactant = self._prepare(models=[models[0]])
+                calculator = reactant.ase_atoms.calc
+                others = [extract_structure(models=[model]) for model in models[1:]]
+                guess = others[0].ase_atoms if qst3 else None
+                product = others[-1].ase_atoms
+                refine = ", then P-RFO refinement" if self.qst_refine.isChecked() else ""
+                self._log(
+                    f"{label}: {self.qst_images.value()} images, IDPP interpolation, "
+                    f"climbing-image NEB{refine}"
+                )
+
+                def progress(step, energies, max_force):
+                    if step % 5 == 0:
+                        relative = " ".join(f"{e - energies[0]:+.3f}" for e in energies)
+                        self._log(
+                            f"Band step {step:4d} | Fmax {max_force:.4f} eV/Å | ΔE {relative}"
+                        )
+                    self._poll_stop()
+
+                result = qst(
+                    reactant.ase_atoms,
+                    product,
+                    calculator,
+                    guess=guess,
+                    images=self.qst_images.value(),
+                    fmax=self.qst_fmax.value(),
+                    max_steps=self.qst_steps.value(),
+                    refine=self.qst_refine.isChecked(),
+                    on_progress=progress,
+                    should_stop=self._poll_stop,
+                )
+                self._log(
+                    f"Band {'converged' if result.neb_converged else 'not converged'} after "
+                    f"{result.neb_steps} steps; highest image {result.highest_image}. Barrier "
+                    f"{result.barrier_forward_ev:.4f} eV forward, "
+                    f"{result.barrier_reverse_ev:.4f} eV reverse."
+                )
+                self._last_path = add_frames_path(reactant, result.images, name=f"{label} path")
+                self._last_path_home = 0  # the reactant geometry
+                self._log(
+                    f"Added '{label} path' ({len(result.images)} frames, reactant → product) "
+                    "on the reactant model; scrub it in Document View or press Animate last path."
+                )
+                self.path_animate.setEnabled(True)
+                if result.ts is not None:
+                    state = "converged" if result.ts.converged else "not converged"
+                    self._log(
+                        f"P-RFO refinement {state} after {result.ts.steps} steps; "
+                        f"E = {result.ts.evaluation.energy_ev:.8f} eV"
+                    )
+                    model = add_structure_model(
+                        f"Transition state ({label})",
+                        reactant.ase_atoms.get_chemical_symbols(),
+                        result.ts_positions,
+                    )
+                    self._log(f"Added the transition state as a new model: {model.name}")
+                    if result.ts.converged:
+                        ts_structure = extract_structure(models=[model])
+                        ts_structure.ase_atoms.calc = calculator
+                        frequencies = self._report_frequencies(ts_structure)
+                        if frequencies.n_imaginary != 1:
+                            self._log("Warning: the refined structure is not a first-order saddle.")
+
+            self._run_task(task)
+
+        def _run_irc(self):
+            def task():
+                from .reaction_path import irc
+                from .samson_modes import add_frames_path
+
+                structure = self._prepare()
+                atoms = structure.ase_atoms
+                self._warn_float32("IRC")
+                self._log(
+                    "IRC: frequencies first to find the imaginary mode "
+                    f"({6 * len(atoms)} force calls)…"
+                )
+
+                def progress(direction, step, energy, max_force, positions):
+                    sync_positions(structure, positions)
+                    if step % 10 == 0:
+                        self._log(
+                            f"IRC {direction:7s} step {step:4d} | E {energy:.8f} eV | "
+                            f"Fmax {max_force:.4f} eV/Å"
+                        )
+
+                result = irc(
+                    atoms,
+                    step=self.irc_step.value(),
+                    max_steps=self.irc_steps.value(),
+                    fmax=self.irc_fmax.value(),
+                    relax_ends=self.irc_relax_ends.isChecked(),
+                    on_progress=progress,
+                    should_stop=self._poll_stop,
+                )
+                ts_positions = atoms.get_positions()
+                sync_positions(structure, ts_positions)
+                frames = result.frames(ts_positions)
+                self._last_path = add_frames_path(
+                    structure, [frame.positions for frame in frames], name="IRC path"
+                )
+                self.path_animate.setEnabled(True)
+                peak = len(result.reverse)
+                self._last_path_home = peak  # the transition state
+                state = "stopped" if result.stopped else "finished"
+                self._log(
+                    f"IRC {state}: {len(result.reverse)} reverse + "
+                    f"{len(result.forward)} forward frames. Added 'IRC path' with all "
+                    f"{len(frames)} frames (TS is frame {peak}); scrub it in Document View or "
+                    "press Animate last path."
+                )
+                ends = []
+                for name in ("reverse", "forward"):
+                    branch = getattr(result, name)
+                    minimum = getattr(result, f"{name}_minimum_ev")
+                    text = f"{name} end ΔE {branch[-1].energy_ev - result.ts_energy_ev:+.4f} eV"
+                    if minimum is not None:
+                        text += f" (relaxed minimum {minimum - result.ts_energy_ev:+.4f} eV)"
+                    ends.append(text)
+                self._log("Relative to the TS: " + "; ".join(ends))
+
+            self._run_task(task)
+
+        def _toggle_path_animation(self):
+            try:
+                from .samson_modes import PathPlayer
+
+                if self._player is not None and self._player.playing:
+                    self._stop_mode_animation()
+                    self.path_animate.setText("Animate last path")
+                    return
+                if self._last_path is None:
+                    return
+                if self._player is None:
+                    self._player = PathPlayer()
+                self._player.play(self._last_path, home_step=self._last_path_home)
+                self.path_animate.setText("Stop animation")
+            except Exception as exc:
+                self._show_error(exc)
 
         def _request_stop(self):
             self._stop_requested = True

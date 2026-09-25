@@ -178,7 +178,10 @@ _FORWARDED: dict[str, tuple[str, str, dict[str, Any]]] = {
 
 _JOB_START_SCHEMA = _schema(
     {
-        "kind": {"type": "string", "enum": ["single_point", "relax", "md", "ts", "frequencies"]},
+        "kind": {
+            "type": "string",
+            "enum": ["single_point", "relax", "md", "ts", "frequencies", "irc", "qst"],
+        },
         "options": {
             "type": "object",
             "description": (
@@ -186,8 +189,14 @@ _JOB_START_SCHEMA = _schema(
                 "models ('auto'|'all'). relax: fmax, max_steps, optimizer. md: ensemble, "
                 "temperature_k, timestep_fs, steps, friction_per_fs, tdamp_fs, seed, "
                 "report_interval, fixed_distances ('0-3, 5-9:1.2'), trajectory, "
-                "max_temperature_k. ts: start (hessian|pair|random), pair ('4-7'), fmax, "
-                "max_steps, displacement, check_frequencies."
+                "max_temperature_k. ts: method (prfo|dimer; prfo = Sella P-RFO, like "
+                "Gaussian Opt=TS), fmax, max_steps, check_frequencies; dimer also start "
+                "(hessian|pair|random), pair ('4-7'), displacement. irc (from a TS): step "
+                "(Å·amu½), max_steps per side, fmax, relax_ends, trajectory (file for all "
+                "frames), return_positions; adds an 'IRC path' with every frame. qst "
+                "(QST2/QST3: select reactant, [guess,] product models in document order): "
+                "images, fmax, max_steps, refine, check_frequencies; adds the path and a TS "
+                "model."
             ),
         },
     },
@@ -218,7 +227,8 @@ class McpServer:
             {
                 "name": "samson_start_job",
                 "description": "Start an MLIP job (single point, relax, MD, TS search, "
-                "frequencies) on the open structure. Returns at once; poll samson_job_status.",
+                "frequencies, IRC, QST2/QST3 path search) on the open structure. Returns at "
+                "once; poll samson_job_status.",
                 "inputSchema": _JOB_START_SCHEMA,
             }
         )

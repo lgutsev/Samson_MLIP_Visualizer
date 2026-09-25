@@ -17,7 +17,7 @@ from .engine import evaluate, relax
 from .md import ENSEMBLES, md_warnings, parse_pairs, run_md
 from .provenance import collect_provenance
 from .sanity import check_sane
-from .ts import dimer_search
+from .ts import dimer_search, prfo_search
 from .vibrations import harmonic_frequencies
 
 
@@ -44,7 +44,20 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     mode.add_argument("--md", action="store_true", help="Run molecular dynamics")
     mode.add_argument(
-        "--ts", action="store_true", help="Search for a transition state (dimer method)"
+        "--ts", action="store_true", help="Search for a transition state (P-RFO or dimer)"
+    )
+    mode.add_argument(
+        "--irc",
+        action="store_true",
+        help="Follow the IRC both ways from a transition state (--trajectory saves all frames)",
+    )
+    mode.add_argument(
+        "--qst",
+        type=Path,
+        default=None,
+        metavar="PRODUCT",
+        help="QST2 path search from the structure (reactant) to PRODUCT; with --qst-guess, "
+        "QST3 (--trajectory saves the band)",
     )
     parser.add_argument(
         "--freq",
@@ -104,6 +117,13 @@ def _build_parser() -> argparse.ArgumentParser:
     md.add_argument("--report-interval", type=int, default=10, help="Print every N steps")
     ts = parser.add_argument_group("transition-state search (--ts)")
     ts.add_argument(
+        "--ts-method",
+        choices=["prfo", "dimer"],
+        default=None,
+        help="P-RFO (Sella; default) or the dimer method (default when --ts-start or "
+        "--ts-pair is given)",
+    )
+    ts.add_argument(
         "--ts-start",
         choices=["hessian", "pair", "random"],
         default=None,
@@ -119,6 +139,10 @@ def _build_parser() -> argparse.ArgumentParser:
     ts.add_argument(
         "--ts-displacement", type=float, default=0.05, help="Initial displacement norm (A)"
     )
+    path = parser.add_argument_group("reaction paths (--irc, --qst)")
+    path.add_argument("--irc-step", type=float, default=0.1, help="IRC arc step (A amu^1/2)")
+    path.add_argument("--qst-guess", type=Path, default=None, help="TS guess for QST3")
+    path.add_argument("--images", type=int, default=7, help="Interior images for --qst")
     parser.add_argument(
         "--trajectory",
         type=Path,
@@ -185,6 +209,89 @@ def _run_md(args, atoms) -> None:
         )
 
 
+def _run_irc(args, atoms):
+    from ase.io import write
+
+    from .reaction_path import irc
+
+    print("IRC: frequencies to find the imaginary mode, then both directions")
+    result = irc(
+        atoms,
+        step=args.irc_step,
+        max_steps=args.max_steps,
+        fmax=args.fmax,
+        on_progress=lambda direction, step, energy, fmax, _pos: print(
+            f"{direction:7s} step {step:4d}  E = {energy:.8f} eV  Fmax = {fmax:.6f} eV/A"
+        )
+        if step % 10 == 0
+        else None,
+    )
+    frames = result.frames(atoms.get_positions())
+    print(
+        f"IRC: {len(result.reverse)} reverse + {len(result.forward)} forward frames "
+        f"({len(frames)} with the TS, which is frame {len(result.reverse)})"
+    )
+    for name in ("reverse", "forward"):
+        minimum = getattr(result, f"{name}_minimum_ev")
+        if minimum is not None:
+            print(f"{name} minimum: {minimum - result.ts_energy_ev:+.6f} eV relative to the TS")
+    if args.trajectory is not None:
+        images = []
+        for frame in frames:
+            image = atoms.copy()
+            image.set_positions(frame.positions)
+            image.info.update({"energy_ev": frame.energy_ev, "irc_arc": frame.arc})
+            images.append(image)
+        write(args.trajectory, images)
+        print(f"Wrote all {len(images)} IRC frames to {args.trajectory}")
+    return evaluate(atoms)
+
+
+def _run_qst(args, reactant, calculator):
+    from ase.io import read, write
+
+    from .reaction_path import qst
+
+    product = read(args.qst)
+    guess = read(args.qst_guess) if args.qst_guess is not None else None
+    label = "QST3" if guess is not None else "QST2"
+    print(f"{label}: IDPP interpolation, climbing-image NEB, P-RFO refinement")
+    result = qst(
+        reactant,
+        product,
+        calculator,
+        guess=guess,
+        images=args.images,
+        fmax=max(args.fmax, 0.05),
+        max_steps=args.max_steps,
+        on_progress=lambda step, energies, fmax: print(
+            f"band step {step:4d}  Fmax = {fmax:.4f} eV/A  "
+            f"max dE = {max(energies) - energies[0]:+.4f} eV"
+        )
+        if step % 5 == 0
+        else None,
+    )
+    print(
+        f"Band {'converged' if result.neb_converged else 'not converged'} "
+        f"({result.neb_steps} steps); barrier {result.barrier_forward_ev:.6f} eV forward, "
+        f"{result.barrier_reverse_ev:.6f} eV reverse"
+    )
+    if args.trajectory is not None:
+        images = []
+        for positions, energy in zip(result.images, result.energies_ev, strict=True):
+            image = reactant.copy()
+            image.set_positions(positions)
+            image.info["energy_ev"] = energy
+            images.append(image)
+        write(args.trajectory, images)
+        print(f"Wrote the {len(images)}-image band to {args.trajectory}")
+    if result.ts is not None:
+        reactant.set_positions(result.ts_positions)
+        state = "converged" if result.ts.converged else "not converged"
+        print(f"P-RFO refinement {state} after {result.ts.steps} steps; the TS is the output")
+    return evaluate(reactant)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
@@ -218,6 +325,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if supported is not None:
         print("Model training elements:", ", ".join(supported))
 
+    # Choosing a dimer start implies the dimer method; otherwise P-RFO is the default.
+    ts_method = args.ts_method or ("dimer" if args.ts_start or args.ts_pair else "prfo")
     if args.relax:
         result = relax(
             atoms,
@@ -238,6 +347,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif args.md:
         _run_md(args, atoms)
         evaluation = evaluate(atoms)
+    elif args.ts and ts_method == "prfo":
+        print("P-RFO (Sella) transition-state search")
+        result = prfo_search(
+            atoms,
+            fmax=args.fmax,
+            max_steps=args.max_steps,
+            min_distance=args.min_distance if args.min_distance > 0 else None,
+            trajectory=args.trajectory,
+            on_progress=lambda step, energy, fmax, curvature, _pos: print(
+                f"step {step:4d}  E = {energy:.8f} eV  Fmax = {fmax:.6f} eV/A"
+            ),
+        )
+        state = "converged" if result.converged else "not converged"
+        evaluation = result.evaluation
+        print(f"Finished ({state}) after {result.steps} steps")
+    elif args.irc:
+        evaluation = _run_irc(args, atoms)
+    elif args.qst is not None:
+        evaluation = _run_qst(args, atoms, calculator)
     elif args.ts:
         start = args.ts_start or ("pair" if args.ts_pair else "hessian")
         pair = None

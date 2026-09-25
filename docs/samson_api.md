@@ -98,7 +98,7 @@ order as `structure.get` with `models="all"`. Every edit is one undo step.
 | `history.undo` / `history.redo` | SAMSON's undo and redo |
 | `file.import` / `file.export` | SAMSON's importer / write a structure with ASE |
 | `command.run` | run a SAMSON command by its interface name (false if none matched) |
-| `job.start` | start `single_point`, `relax`, `md`, `ts`, or `frequencies`; returns at once |
+| `job.start` | start `single_point`, `relax`, `md`, `ts` (`method`: `prfo`/`dimer`), `frequencies`, `irc` (adds an IRC path with every frame; `trajectory` writes them too), or `qst` (QST2/QST3 from the selected models; adds the path and a TS model); returns at once |
 | `job.status` / `job.stop` / `job.list` | progress, log and result / stop after the current step / all jobs |
 | `python.exec` | **opt-in only**: run code in SAMSON's Python; returns stdout, stderr and the last expression |
 

@@ -139,7 +139,11 @@ class Root:
         self.model = model
 
     def getChildren(self):
-        return [Group(self.model)]
+        # A model built from scratch has no groups yet, like SAMSON's.
+        return [Group(self.model)] if self.model.atoms else []
+
+    def addChild(self, atom):
+        return Group(self.model).addChild(atom)
 
 
 class FakeSamson:

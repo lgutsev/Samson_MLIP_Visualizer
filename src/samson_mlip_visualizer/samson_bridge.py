@@ -83,6 +83,25 @@ def add_atom(parent: Any, symbol: str, position: Iterable[float]) -> Any:
     return atom
 
 
+def add_structure_model(name: str, symbols: list[str], positions: Iterable) -> Any:
+    """Create a structural model with these atoms (Å) and covalent bonds. One undo step."""
+    import samson
+    from samson import SAMSON
+
+    coordinates = np.asarray(positions, dtype=float)
+    with SAMSON.holding(f"Add {name}"):
+        model = samson.SBStructuralModel()
+        model.name = name
+        model.create()
+        SAMSON.getActiveDocument().addChild(model)
+        root = model.getStructuralRoot()
+        for symbol, position in zip(symbols, coordinates, strict=True):
+            add_atom(root, symbol, position)
+        if hasattr(model, "createCovalentBonds"):
+            model.createCovalentBonds()
+    return model
+
+
 def atom_parent(model: Any) -> Any:
     """Where new atoms of ``model`` go: its first child group, else its root."""
     root = model.getStructuralRoot()

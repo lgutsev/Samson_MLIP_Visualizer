@@ -203,7 +203,7 @@ def test_cli_modes_are_exclusive(tmp_path):
 @pytest.mark.parametrize(
     ("extra", "expected"),
     [
-        ([], {"use_hessian": True, "pair": None}),
+        (["--ts-method", "dimer"], {"use_hessian": True, "pair": None}),
         (["--ts-pair", "0-1"], {"use_hessian": False, "pair": (0, 1)}),
         (["--ts-start", "random"], {"use_hessian": False, "pair": None}),
     ],
