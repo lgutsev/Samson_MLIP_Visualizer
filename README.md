@@ -14,11 +14,16 @@ unrelated to any other product, company, or library that shares the name.
 *Relaxing [`examples/water_box_64.xyz`](examples/water_box_64.xyz) with the
 MACE-MP-0 small foundation model (CUDA, float32) inside SAMSON.*
 
-The first release provides:
+The panel provides:
 
 - single-point energy and force evaluation;
 - position-only relaxation (FIRE / LBFGS / BFGS / PreconLBFGS) with live
   geometry synchronization to SAMSON;
+- molecular dynamics (Langevin, Bussi, Nosé–Hoover chain, NVE) with live
+  updates, trajectory output, and distance-constrained MD that reports the mean
+  constraint force;
+- transition-state search with the dimer method, and finite-difference
+  frequencies to classify minima and saddle points;
 - optional model-committee uncertainty and geometry-sanity guards;
 - periodic cell and per-axis PBC transfer from SAMSON to ASE;
 - `FixAtoms` constraints derived from SAMSON fixed-atom flags;
@@ -78,19 +83,72 @@ Then:
 6. Pick an optimizer, set the force threshold and maximum steps, then choose
    **Relax positions**.
 
-The panel keeps the SAMSON interface responsive between optimization steps. Its
-**Stop** button takes effect after the current energy/force call returns.
+The panel keeps the SAMSON interface responsive between steps. Its **Stop**
+button takes effect after the current energy/force call returns. Every task
+(relaxation, MD, TS search) is one SAMSON undo transaction.
+
+### Molecular dynamics (MD tab)
+
+- **Ensembles.** `Langevin` (default; robust NVT), `Bussi` (stochastic velocity
+  rescaling; NVT with realistic dynamics), `NoseHooverChain` (deterministic NVT),
+  and `NVE` (velocity Verlet; the log reports energy drift in meV/atom/ps).
+- **Timestep.** 0.5 fs whenever hydrogen is present; the panel warns above 1 fs.
+- **Start from a relaxed structure.** An unrelaxed start releases its strain as
+  heat: the 64-water example box heats to ~500 K in 50 fs before the thermostat
+  pulls it back. Initial velocities are drawn at the target temperature and
+  rescaled to hit it exactly.
+- **Update every N steps** controls how often SAMSON and the log refresh, and
+  how often trajectory frames are written (`.extxyz` / `.xyz` / `.traj`).
+- **Max temperature** (0 = off) aborts a run that blows up, the usual symptom
+  of too large a timestep or a model leaving its training data.
+
+**Constrained MD.** *Fixed distances* holds atom pairs at a fixed separation
+with RATTLE. Select two atoms in SAMSON and press **Add selected pair**, or type
+0-based pairs: `0-3, 5-9:1.20` (the `:1.20` first moves the pair to 1.20 Å).
+The log reports the mean model force along each constrained pair (positive
+pushes the atoms apart). Repeating runs over a range of distances and
+integrating −⟨f⟩ over r gives the potential of mean force w(r), i.e.
+dw/dr = −⟨f⟩ (thermodynamic integration). The free energy of the distance
+coordinate itself, A(r) = −kT ln P(r), differs from it by −2kT ln r. The
+reported σ is the spread of the instantaneous force, not the error of the mean:
+consecutive MD steps are correlated, so run long enough for the mean to settle.
+Constraints work with Langevin, Bussi and NVE.
+
+### Transition states and frequencies (TS search tab)
+
+The dimer method climbs from a guess geometry to the nearest first-order saddle
+point using forces only. It needs a starting geometry **near** the transition
+state (it will not find one from a minimum) and an initial direction:
+
+- **Softest Hessian mode** (default): computes a Hessian at the guess
+  (6 force calls per atom) and starts along its softest vibration. Most robust
+  for molecules, whose rotations otherwise attract the dimer.
+- **Stretch atom pair**: a bond that forms or breaks; cheap for large systems.
+  Select the two atoms and press **Use selected pair**.
+- **Random**: a random displacement of the free atoms.
+
+After a converged search the panel computes frequencies and reports whether the
+result has exactly one imaginary mode. The **Frequencies** button on the Relax
+tab does the same for any geometry. Rigid-body translation and rotation are
+projected out when no atom is fixed. Small imaginary modes (< 100 cm⁻¹) usually
+mean a floppy, loosely converged geometry; re-optimize to Fmax ≤ 0.001 eV/Å in
+float64.
+
+Example, ammonia umbrella inversion with MACE-MP-0 small: from a pyramid
+flattened to 0.3 Å, the Hessian-guided dimer converges in ~10 steps to the
+planar transition state with one imaginary mode (−580 cm⁻¹). Its 0.13 eV barrier
+is below experiment (~0.25 eV): a model-accuracy limit, not a search failure.
 
 ### Guards
 
 - **Elements.** The panel reads the element list the model reports (MACE
   `z_table`, DeepMD `type_map`) and refuses structures containing an element the
   model was not trained on. When the list cannot be read it says so and proceeds.
-- **Geometry.** A relaxation aborts if two atoms come closer than *Min. atom
-  distance* — MLIPs have out-of-distribution "holes" where forces go unphysical
-  and an optimizer will collapse atoms into them.
+- **Geometry.** Relaxation, MD, and TS search abort if two atoms come closer
+  than *Min. atom distance* — MLIPs have out-of-distribution "holes" where forces
+  go unphysical and an optimizer will collapse atoms into them.
 - **Uncertainty.** With a committee, the panel logs the per-atom force spread and,
-  if *Max committee force σ* is set, aborts the relaxation when it is exceeded —
+  if *Max committee force σ* is set, aborts relaxation or MD when it is exceeded —
   the standard signal that the model is extrapolating. A committee multiplies
   inference time and memory by the number of models, so on a laptop keep it to
   two or three small checkpoints.
@@ -115,6 +173,10 @@ sanity-check a new model:
 samson-mlip structure.cif model.model --backend mace
 samson-mlip structure.xyz model.pb --backend deepmd --relax --fmax 0.03 -o relaxed.xyz
 samson-mlip slab.xyz m1.model m2.model m3.model --relax --optimizer LBFGS --max-force-std 0.15
+samson-mlip water.xyz model.model --md --temperature 300 --timestep 0.5 --md-steps 2000 --trajectory md.extxyz
+samson-mlip dimer.xyz model.model --md --fix-distance 0-3:2.9 --seed 1
+samson-mlip guess.xyz model.model --ts --fmax 0.005 --freq
+samson-mlip molecule.xyz model.model --relax --fmax 0.001 --freq
 ```
 
 Several MACE files form a committee; `--max-force-std` aborts when the committee
@@ -170,14 +232,19 @@ the project testable in a standard Python environment.
 - One or more complete SAMSON structural models per run, evaluated as one system.
 - Pseudo-atoms in the selected model are rejected, not silently evaluated.
 - Model element coverage is checked when the backend exposes it.
-- Atomic energies and forces; no stress or cell optimization.
-- FIRE / LBFGS / BFGS / PreconLBFGS geometry optimization; no molecular
-  dynamics yet.
+- Atomic energies and forces; no stress, cell optimization, or NPT MD.
+- FIRE / LBFGS / BFGS / PreconLBFGS geometry optimization.
+- NVT / NVE molecular dynamics; fixed-distance constraints (no harmonic
+  restraints / umbrella sampling yet).
+- Dimer transition-state search; no NEB (which needs two endpoint structures).
+- Finite-difference frequencies (6 force calls per free atom): meant for
+  molecules and small clusters.
 - MACE committee uncertainty (multiple checkpoints); DeepMD committee not yet.
-- Close-contact and drift guards abort a runaway relaxation.
+- Close-contact, drift, and temperature guards abort a runaway run.
 - No automatic model download or model-specific preprocessing.
-- Geometry updates from a relaxation are grouped into one SAMSON undo
-  transaction. Saving the source document before long runs is still recommended.
+- Geometry updates from a relaxation, MD run, or TS search are grouped into one
+  SAMSON undo transaction. Saving the source document before long runs is still
+  recommended.
 - Every run logs its provenance (model SHA-256, device, dtype, package
   versions); the CLI also writes it into the output structure's metadata.
 
@@ -193,7 +260,7 @@ the project testable in a standard Python environment.
 
 ## Roadmap
 
-This tool owns the optimization loop and uses SAMSON only as a structure source
+This tool owns the simulation loop and uses SAMSON only as a structure source
 and sink. It does **not** interoperate with SAMSON's own interactive simulation
 (`Edit → Add simulator`, `Edit → Minimize`): that is SAMSON driving its own force
 field frame by frame, and the two loops should not be run on one model at once.
@@ -210,8 +277,11 @@ Planned, roughly in priority order:
   layer. Needs to be developed and tested inside SAMSON.
 - Write results back as SAMSON data: total energy on the model, per-atom force
   vectors for arrow display. Blocked on confirming the property/visual API.
-- Publish the relaxation as a SAMSON path (`node.type path`) so the trajectory
-  can be scrubbed in the animation bar. Blocked on the path-creation API.
+- Publish relaxations and MD runs as a SAMSON path (`node.type path`) so the
+  trajectory can be scrubbed in the animation bar. Blocked on the path-creation
+  API; until then, open the written `.extxyz` trajectory.
+- Harmonic distance restraints (umbrella sampling), NEB between two selected
+  structures, NPT MD, and Sella as an alternative TS optimizer.
 - Embed the run provenance in the SAMSON document itself, not just the log.
 - Cell / stress relaxation, if added, should use ASE's `FrechetCellFilter` (the
   current robust choice for variable-cell relaxation with universal MLIPs).

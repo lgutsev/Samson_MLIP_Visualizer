@@ -1,4 +1,4 @@
-"""Headless entry point: evaluate or relax a structure file without SAMSON.
+"""Headless entry point: evaluate, relax, run MD on, or TS-search a structure file.
 
 This exists so a model can be sanity-checked against a known structure before it
 is trusted inside SAMSON. It uses ASE for I/O and shares the calculator and
@@ -14,8 +14,11 @@ from pathlib import Path
 from .calculators import create_calculator
 from .compat import assert_model_covers_structure
 from .engine import evaluate, relax
+from .md import ENSEMBLES, md_warnings, parse_pairs, run_md
 from .provenance import collect_provenance
 from .sanity import check_sane
+from .ts import dimer_search
+from .vibrations import harmonic_frequencies
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -35,8 +38,18 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backend", choices=["mace", "deepmd"], default="mace")
     parser.add_argument("--device", default="cpu", help="MACE device, e.g. cpu or cuda")
     parser.add_argument("--dtype", default="float64", choices=["float64", "float32"])
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--relax", action="store_true", help="Relax positions instead of a single point"
+    )
+    mode.add_argument("--md", action="store_true", help="Run molecular dynamics")
+    mode.add_argument(
+        "--ts", action="store_true", help="Search for a transition state (dimer method)"
+    )
+    parser.add_argument(
+        "--freq",
+        action="store_true",
+        help="Finish with finite-difference frequencies (6 force calls per free atom)",
     )
     parser.add_argument(
         "--optimizer",
@@ -68,8 +81,42 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Abort if the committee force spread exceeds this (eV/A)",
     )
+    md = parser.add_argument_group("molecular dynamics (--md)")
+    md.add_argument("--ensemble", choices=ENSEMBLES, default="Langevin")
+    md.add_argument("--temperature", type=float, default=300.0, help="Kelvin")
+    md.add_argument("--timestep", type=float, default=0.5, help="fs (0.5 with hydrogen)")
+    md.add_argument("--md-steps", type=int, default=1000)
+    md.add_argument("--friction", type=float, default=0.01, help="Langevin friction (1/fs)")
+    md.add_argument(
+        "--tdamp", type=float, default=100.0, help="Bussi / Nose-Hoover time constant (fs)"
+    )
+    md.add_argument("--seed", type=int, default=None, help="Seed for velocities and noise")
+    md.add_argument(
+        "--fix-distance",
+        action="append",
+        default=[],
+        metavar="I-J[:R]",
+        help="Hold the distance between 0-based atoms I and J (optionally at R A); repeatable",
+    )
+    md.add_argument(
+        "--max-temperature", type=float, default=None, help="Abort above this temperature (K)"
+    )
+    md.add_argument("--report-interval", type=int, default=10, help="Print every N steps")
+    ts = parser.add_argument_group("transition-state search (--ts)")
+    ts.add_argument(
+        "--ts-pair",
+        default=None,
+        metavar="I-J",
+        help="Initial dimer direction: stretch this 0-based atom pair (default: random)",
+    )
+    ts.add_argument(
+        "--ts-displacement", type=float, default=0.05, help="Initial displacement norm (A)"
+    )
     parser.add_argument(
-        "--trajectory", type=Path, default=None, help="ASE trajectory output for --relax"
+        "--trajectory",
+        type=Path,
+        default=None,
+        help="Trajectory output for --relax, --md or --ts (format from the extension)",
     )
     parser.add_argument(
         "-o", "--output", type=Path, default=None, help="Write the final structure here"
@@ -84,6 +131,50 @@ def _print_uncertainty(label: str, evaluation) -> None:
         print(
             f"{label} committee max force std: "
             f"{evaluation.max_force_std_ev_per_angstrom:.6f} eV/A"
+        )
+
+
+def _run_md(args, atoms) -> None:
+    for message in md_warnings(
+        atoms, timestep_fs=args.timestep, ensemble=args.ensemble, dtype=args.dtype
+    ):
+        print("Warning:", message)
+    constraints = [pair for text in args.fix_distance for pair in parse_pairs(text)]
+    thermostat = f" at {args.temperature:g} K" if args.ensemble != "NVE" else ""
+    print(f"{args.ensemble} MD: {args.md_steps} steps x {args.timestep:g} fs{thermostat}")
+    result = run_md(
+        atoms,
+        ensemble=args.ensemble,
+        temperature_k=args.temperature,
+        timestep_fs=args.timestep,
+        steps=args.md_steps,
+        friction_per_fs=args.friction,
+        tdamp_fs=args.tdamp,
+        seed=args.seed,
+        distance_constraints=constraints,
+        report_interval=args.report_interval,
+        min_distance=args.min_distance if args.min_distance > 0 else None,
+        max_force_std=args.max_force_std,
+        max_temperature_k=args.max_temperature,
+        trajectory=args.trajectory,
+        trajectory_interval=args.report_interval,
+        on_progress=lambda frame: print(
+            f"step {frame.step:6d}  t = {frame.time_fs:9.1f} fs  "
+            f"Epot = {frame.potential_ev:.6f}  Etot = {frame.total_ev:.6f} eV  "
+            f"T = {frame.temperature_k:7.1f} K"
+        ),
+    )
+    print(
+        f"Finished after {result.steps} steps ({result.time_fs:g} fs); "
+        f"mean T = {result.mean_temperature_k:.1f} K"
+    )
+    if result.energy_drift_mev_per_atom_ps is not None:
+        print(f"NVE energy drift: {result.energy_drift_mev_per_atom_ps:+.3f} meV/atom/ps")
+    for summary in result.constraint_forces:
+        print(
+            f"Constraint {summary.i}-{summary.j} at {summary.distance:.4f} A: mean force "
+            f"{summary.mean_force_ev_per_angstrom:+.5f} +/- {summary.std_ev_per_angstrom:.5f} "
+            f"eV/A (std, {summary.samples} samples; positive pushes apart)"
         )
 
 
@@ -110,7 +201,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"committee:      {len(args.model)} models")
     print()
 
-    if args.dtype == "float32" and args.relax and args.backend == "mace":
+    if args.dtype == "float32" and (args.relax or args.ts) and args.backend == "mace":
         print("Warning: MACE recommends float64 for geometry optimization; float32 "
               "force noise can stall convergence.\n")
 
@@ -137,12 +228,49 @@ def main(argv: Sequence[str] | None = None) -> int:
         state = "stopped" if result.stopped else "converged" if result.converged else "step limit"
         evaluation = result.evaluation
         print(f"Finished ({state}) after {result.steps} steps")
+    elif args.md:
+        _run_md(args, atoms)
+        evaluation = evaluate(atoms)
+    elif args.ts:
+        pair = None
+        if args.ts_pair:
+            (constraint,) = parse_pairs(args.ts_pair)
+            pair = (constraint.i, constraint.j)
+        result = dimer_search(
+            atoms,
+            fmax=args.fmax,
+            max_steps=args.max_steps,
+            pair=pair,
+            displacement=args.ts_displacement,
+            seed=args.seed,
+            min_distance=args.min_distance if args.min_distance > 0 else None,
+            trajectory=args.trajectory,
+            on_progress=lambda step, energy, fmax, curvature, _pos: print(
+                f"step {step:4d}  E = {energy:.8f} eV  Fmax = {fmax:.6f} eV/A  "
+                f"curvature = {curvature:+.4f} eV/A^2"
+            ),
+        )
+        if result.stopped:
+            state = "stopped"
+        else:
+            state = "converged" if result.converged else "not converged"
+        evaluation = result.evaluation
+        print(f"Finished ({state}) after {result.steps} steps; curvature {result.curvature:+.4f}")
     else:
         evaluation = evaluate(atoms)
 
     print(f"Energy: {evaluation.energy_ev:.10f} eV")
     print(f"Max force: {evaluation.max_force_ev_per_angstrom:.6f} eV/A")
     _print_uncertainty("Final", evaluation)
+
+    if args.freq:
+        frequencies = harmonic_frequencies(atoms)
+        print("Wavenumbers (cm^-1, negative = imaginary):")
+        print("  " + " ".join(f"{value:.1f}" for value in frequencies.wavenumbers_cm))
+        print("Stationary point:", frequencies.classification())
+        hint = frequencies.soft_mode_hint()
+        if hint:
+            print("Note:", hint)
 
     if args.output is not None:
         atoms.info.update(provenance.as_dict())

@@ -117,3 +117,80 @@ def test_cli_passes_optimizer_choice(monkeypatch, tmp_path, capsys):
 
     cli.main([str(structure), str(model), "--relax", "--optimizer", "LBFGS"])
     assert seen["optimizer"] == "LBFGS"
+
+
+def test_cli_md_with_constraint(monkeypatch, tmp_path, capsys):
+    structure = tmp_path / "h2.xyz"
+    model = tmp_path / "model.model"
+    trajectory = tmp_path / "md.extxyz"
+    _write_structure(structure)
+    model.write_bytes(b"x")
+
+    monkeypatch.setattr(cli, "create_calculator", lambda *a, **k: ConstantCalculator())
+
+    exit_code = cli.main(
+        [
+            str(structure),
+            str(model),
+            "--md",
+            "--md-steps",
+            "20",
+            "--seed",
+            "0",
+            "--fix-distance",
+            "0-1:0.8",
+            "--report-interval",
+            "10",
+            "--trajectory",
+            str(trajectory),
+        ]
+    )
+    out = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Langevin MD: 20 steps x 0.5 fs at 300 K" in out
+    assert "Finished after 20 steps (10 fs)" in out
+    assert "Constraint 0-1 at 0.8000 A: mean force +0.00000" in out
+    assert trajectory.is_file()
+
+
+def test_cli_ts_and_frequencies(monkeypatch, tmp_path, capsys):
+    from test_ts import DoubleWell
+
+    structure = tmp_path / "h.xyz"
+    model = tmp_path / "model.model"
+    write(structure, Atoms("H", positions=[[0.4, 0.2, -0.1]]))
+    model.write_bytes(b"x")
+
+    monkeypatch.setattr(cli, "create_calculator", lambda *a, **k: DoubleWell())
+
+    exit_code = cli.main([str(structure), str(model), "--ts", "--fmax", "0.001", "--seed", "0"])
+    out = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Finished (converged)" in out
+    assert "curvature -4.0000" in out
+
+
+def test_cli_relax_then_frequencies(monkeypatch, tmp_path, capsys):
+    from ase.calculators.emt import EMT
+
+    structure = tmp_path / "cu2.xyz"
+    model = tmp_path / "model.model"
+    write(structure, Atoms("Cu2", positions=[[0, 0, 0], [2.3, 0, 0]]))
+    model.write_bytes(b"x")
+
+    monkeypatch.setattr(cli, "create_calculator", lambda *a, **k: EMT())
+
+    exit_code = cli.main(
+        [str(structure), str(model), "--relax", "--optimizer", "BFGS", "--fmax", "1e-4", "--freq"]
+    )
+    out = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Stationary point: minimum (no imaginary modes)" in out
+
+
+def test_cli_modes_are_exclusive(tmp_path):
+    with pytest.raises(SystemExit):
+        cli.main([str(tmp_path / "x.xyz"), str(tmp_path / "m"), "--md", "--relax"])

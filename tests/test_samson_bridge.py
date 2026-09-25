@@ -8,6 +8,7 @@ from samson_mlip_visualizer.samson_bridge import (
     SamsonBridgeError,
     choose_structural_models,
     extract_structure,
+    selected_atom_indices,
     sync_positions,
 )
 
@@ -131,6 +132,14 @@ def test_selected_models_are_combined():
     assert structure.ase_atoms.get_chemical_symbols() == ["O", "H", "O"]
     assert structure.samson_atoms == first.atoms + second.atoms
     assert structure.ase_atoms.cell.lengths().tolist() == pytest.approx([5, 6, 20])
+
+
+def test_reports_selected_atom_indices():
+    atoms = [Atom("O", [0, 0, 0]), Atom("H", [1, 0, 0]), Atom("H", [0, 1, 0])]
+    atoms[0].selectionFlag = True
+    atoms[2].selectionFlag = True
+    structure = extract_structure(FakeSamson([Model(atoms)]))
+    assert selected_atom_indices(structure) == [0, 2]
 
 
 def test_rejects_conflicting_cells():

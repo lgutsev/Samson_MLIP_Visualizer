@@ -173,6 +173,11 @@ def extract_structure(samson: Any | None = None) -> SamsonStructure:
     return SamsonStructure(models=models, samson_atoms=source_atoms, ase_atoms=ase_atoms)
 
 
+def selected_atom_indices(structure: SamsonStructure) -> list[int]:
+    """Indices (into ``structure.ase_atoms``) of atoms selected in SAMSON."""
+    return [index for index, atom in enumerate(structure.samson_atoms) if _is_selected(atom)]
+
+
 def sync_positions(
     structure: SamsonStructure,
     positions: Iterable[Iterable[float]],
