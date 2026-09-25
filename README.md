@@ -9,6 +9,11 @@ optimization layer.
 Every reference to "SAMSON" in this repository means SAMSON Connect. It is
 unrelated to any other product, company, or library that shares the name.
 
+![MLIP panel relaxing a 64-molecule water box in SAMSON with MACE-MP-0 on CUDA](docs/images/water_box_relax.webp)
+
+*Relaxing [`examples/water_box_64.xyz`](examples/water_box_64.xyz) with the
+MACE-MP-0 small foundation model (CUDA, float32) inside SAMSON.*
+
 The first release provides:
 
 - single-point energy and force evaluation;
@@ -62,8 +67,10 @@ show()
 Then:
 
 1. Open or construct a structure in SAMSON.
-2. If the document contains multiple structural models, select exactly one
-   complete model in Document View.
+2. If the document contains multiple structural models, select every model
+   that belongs to the system in Document View (Ctrl/Shift-click). Selected
+   models are evaluated together as one system — e.g. several separate water
+   molecules — and must agree on any unit cell they define.
 3. Mark immobile atoms with SAMSON's fixed-atom flag.
 4. Choose MACE or DeepMD and select the trained model file. Selecting several
    MACE checkpoints builds an uncertainty committee (see below).
@@ -160,7 +167,7 @@ the project testable in a standard Python environment.
 
 ## Current scope
 
-- One complete SAMSON structural model per run.
+- One or more complete SAMSON structural models per run, evaluated as one system.
 - Pseudo-atoms in the selected model are rejected, not silently evaluated.
 - Model element coverage is checked when the backend exposes it.
 - Atomic energies and forces; no stress or cell optimization.

@@ -82,8 +82,8 @@ def create_calculator(
     except ImportError as exc:
         package = "mace-torch" if backend == "mace" else "deepmd-kit"
         raise CalculatorLoadError(
-            f"The {backend.upper()} backend is not installed. Install '{package}' "
-            "in SAMSON's Python package manager."
+            f"The {backend.upper()} backend could not be imported ({exc}). If "
+            f"'{package}' is not installed, install it in SAMSON's Python package manager."
         ) from exc
     except Exception as exc:
         message = f"Could not load {backend.upper()} model '{paths[0]}': {exc}"

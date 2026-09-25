@@ -109,8 +109,9 @@ def _make_window():
             actions.addWidget(self.stop_button)
 
             note = QtWidgets.QLabel(
-                "Operates on one complete structural model. Select it in Document View when "
-                "multiple models exist. SAMSON fixed-atom flags become ASE FixAtoms constraints."
+                "Operates on complete structural models. When the document holds several, "
+                "select every model that belongs to the system in Document View; they are "
+                "evaluated together. SAMSON fixed-atom flags become ASE FixAtoms constraints."
             )
             note.setWordWrap(True)
             self.status = QtWidgets.QPlainTextEdit()

@@ -6,7 +6,7 @@ import pytest
 
 from samson_mlip_visualizer.samson_bridge import (
     SamsonBridgeError,
-    choose_structural_model,
+    choose_structural_models,
     extract_structure,
     sync_positions,
 )
@@ -30,8 +30,11 @@ class Vector:
 
 
 class UnitCell:
+    def __init__(self, a=5):
+        self.a = a
+
     def getVectorA(self):
-        return Vector([5, 0, 0])
+        return Vector([self.a, 0, 0])
 
     def getVectorB(self):
         return Vector([0, 6, 0])
@@ -75,10 +78,11 @@ class Atom:
 
 
 class Model:
-    def __init__(self, atoms, selected=False, pseudo_atoms=()):
+    def __init__(self, atoms, selected=False, pseudo_atoms=(), cell=True):
         self.atoms = atoms
         self.selectionFlag = selected
         self.pseudo_atoms = list(pseudo_atoms)
+        self.cell = UnitCell() if cell is True else cell
 
     def getNodes(self, query):
         if query == "node.type atom":
@@ -88,10 +92,10 @@ class Model:
         raise AssertionError(f"unexpected query: {query!r}")
 
     def hasFiniteUnitCell(self):
-        return True
+        return self.cell is not None
 
     def getUnitCell(self):
-        return UnitCell()
+        return self.cell
 
 
 class FakeSamson:
@@ -107,15 +111,39 @@ class FakeSamson:
         self.events += 1
 
 
-def test_requires_unambiguous_structural_model():
+def test_requires_selection_when_several_models():
     samson = FakeSamson([Model([]), Model([])])
-    with pytest.raises(SamsonBridgeError, match="multiple structures"):
-        choose_structural_model(samson)
+    with pytest.raises(SamsonBridgeError, match="multiple structural models"):
+        choose_structural_models(samson)
 
 
 def test_selected_model_wins():
     selected = Model([], selected=True)
-    assert choose_structural_model(FakeSamson([Model([]), selected])) is selected
+    assert choose_structural_models(FakeSamson([Model([]), selected])) == [selected]
+
+
+def test_selected_models_are_combined():
+    first = Model([Atom("O", [0, 0, 0]), Atom("H", [1, 0, 0])], selected=True)
+    second = Model([Atom("O", [3, 0, 0])], selected=True, cell=None)
+    ignored = Model([Atom("Na", [9, 9, 9])])
+    structure = extract_structure(FakeSamson([first, ignored, second]))
+    assert structure.models == [first, second]
+    assert structure.ase_atoms.get_chemical_symbols() == ["O", "H", "O"]
+    assert structure.samson_atoms == first.atoms + second.atoms
+    assert structure.ase_atoms.cell.lengths().tolist() == pytest.approx([5, 6, 20])
+
+
+def test_rejects_conflicting_cells():
+    first = Model([Atom("O", [0, 0, 0])], selected=True)
+    second = Model([Atom("O", [3, 0, 0])], selected=True, cell=UnitCell(a=7))
+    with pytest.raises(SamsonBridgeError, match="different unit cells"):
+        extract_structure(FakeSamson([first, second]))
+
+
+def test_models_without_cells_are_nonperiodic():
+    models = [Model([Atom("O", [0, 0, 0])], selected=True, cell=None) for _ in range(2)]
+    structure = extract_structure(FakeSamson(models))
+    assert structure.ase_atoms.get_pbc().tolist() == [False, False, False]
 
 
 def test_extracts_cell_pbc_and_fixed_atoms():

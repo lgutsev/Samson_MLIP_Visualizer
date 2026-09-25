@@ -1,4 +1,4 @@
-"""Conversion between one complete SAMSON structural model and ASE."""
+"""Conversion between complete SAMSON structural models and ASE."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ class SamsonBridgeError(RuntimeError):
 
 @dataclass
 class SamsonStructure:
-    model: Any
+    models: list[Any]
     samson_atoms: list[Any]
     ase_atoms: Atoms
 
@@ -89,65 +89,88 @@ def _reject_pseudo_atoms(model: Any) -> None:
         )
 
 
-def choose_structural_model(samson: Any) -> Any:
-    """Choose the selected structural model, or the only model in the document."""
+def choose_structural_models(samson: Any) -> list[Any]:
+    """Choose the selected structural models, or the only model in the document.
+
+    Several selected models are evaluated together as one system (e.g. separate water
+    molecules). Each model is complete, so this never evaluates a partial environment.
+    """
     models = list(samson.getNodes("node.type structuralModel"))
     selected = [model for model in models if _is_selected(model)]
-    if len(selected) == 1:
-        return selected[0]
+    if selected:
+        return selected
     if len(models) == 1:
-        return models[0]
+        return models
     if not models:
         raise SamsonBridgeError("The active SAMSON document contains no structural model")
-    if len(selected) > 1:
-        raise SamsonBridgeError("Select exactly one structural model in SAMSON's Document View")
     raise SamsonBridgeError(
-        "The document contains multiple structures. Select one complete structural model "
-        "in SAMSON's Document View."
+        "The document contains multiple structural models. Select every model that belongs "
+        "to the system (Ctrl/Shift-click in SAMSON's Document View); they are evaluated "
+        "together."
     )
 
 
+def _unit_cell(model: Any) -> tuple[np.ndarray, tuple[bool, bool, bool]] | None:
+    has_cell = getattr(model, "hasFiniteUnitCell", None)
+    if not (has_cell and bool(has_cell() if callable(has_cell) else has_cell)):
+        return None
+    unit_cell = model.getUnitCell()
+    matrix = np.array(
+        [
+            _vector_angstrom(unit_cell.getVectorA()),
+            _vector_angstrom(unit_cell.getVectorB()),
+            _vector_angstrom(unit_cell.getVectorC()),
+        ]
+    )
+    pbc = (
+        bool(unit_cell.isPeriodicX()),
+        bool(unit_cell.isPeriodicY()),
+        bool(unit_cell.isPeriodicZ()),
+    )
+    return matrix, pbc
+
+
+def _shared_unit_cell(models: list[Any]) -> tuple[np.ndarray | None, tuple[bool, bool, bool]]:
+    """Return the one cell the models agree on; models without a cell adopt it."""
+    cells = [cell for cell in (_unit_cell(model) for model in models) if cell is not None]
+    if not cells:
+        return None, (False, False, False)
+    matrix, pbc = cells[0]
+    for other_matrix, other_pbc in cells[1:]:
+        if other_pbc != pbc or not np.allclose(other_matrix, matrix, atol=1e-6):
+            raise SamsonBridgeError(
+                "The selected structural models define different unit cells or periodicity. "
+                "Give them one common cell before evaluating them together."
+            )
+    return matrix, pbc
+
+
 def extract_structure(samson: Any | None = None) -> SamsonStructure:
-    """Copy the chosen full model to ASE, including unit cell and fixed atoms."""
+    """Copy the chosen full model(s) to ASE, including unit cell and fixed atoms."""
     if samson is None:
         from samson import SAMSON as samson
 
     _require_active_document(samson)
-    model = choose_structural_model(samson)
-    _reject_pseudo_atoms(model)
-    source_atoms = list(model.getNodes("node.type atom"))
+    models = choose_structural_models(samson)
+    source_atoms = []
+    for model in models:
+        _reject_pseudo_atoms(model)
+        source_atoms.extend(model.getNodes("node.type atom"))
     if not source_atoms:
-        raise SamsonBridgeError("The selected structural model contains no atoms")
+        raise SamsonBridgeError("The selected structural model(s) contain no atoms")
 
     symbols = [_symbol(atom) for atom in source_atoms]
     positions = np.array([
         [_angstrom(atom.getX()), _angstrom(atom.getY()), _angstrom(atom.getZ())]
         for atom in source_atoms
     ])
-
-    cell_matrix = None
-    pbc = (False, False, False)
-    has_cell = getattr(model, "hasFiniteUnitCell", None)
-    if has_cell and bool(has_cell() if callable(has_cell) else has_cell):
-        unit_cell = model.getUnitCell()
-        cell_matrix = np.array(
-            [
-                _vector_angstrom(unit_cell.getVectorA()),
-                _vector_angstrom(unit_cell.getVectorB()),
-                _vector_angstrom(unit_cell.getVectorC()),
-            ]
-        )
-        pbc = (
-            bool(unit_cell.isPeriodicX()),
-            bool(unit_cell.isPeriodicY()),
-            bool(unit_cell.isPeriodicZ()),
-        )
+    cell_matrix, pbc = _shared_unit_cell(models)
 
     ase_atoms = Atoms(symbols=symbols, positions=positions, cell=cell_matrix, pbc=pbc)
     fixed_indices = [index for index, atom in enumerate(source_atoms) if _is_fixed(atom)]
     if fixed_indices:
         ase_atoms.set_constraint(FixAtoms(indices=fixed_indices))
-    return SamsonStructure(model=model, samson_atoms=source_atoms, ase_atoms=ase_atoms)
+    return SamsonStructure(models=models, samson_atoms=source_atoms, ase_atoms=ase_atoms)
 
 
 def sync_positions(
