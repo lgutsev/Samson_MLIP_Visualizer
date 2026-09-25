@@ -2,7 +2,9 @@
 
 import contextlib
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
+
+from ase.data import chemical_symbols
 
 
 class Quantity:
@@ -51,6 +53,28 @@ class Atom:
         self.position = list(position)
         self.fixedFlag = fixed
         self.selectionFlag = selected
+        self.model = None
+        self.created = False
+
+    @property
+    def isSelected(self):
+        """Selected itself or through its model, like SAMSON's inherited flag."""
+        return self.selectionFlag or bool(self.model and self.model.selectionFlag)
+
+    @property
+    def elementType(self):
+        return self.elementSymbol
+
+    @elementType.setter
+    def elementType(self, value):
+        self.elementSymbol = value
+
+    def create(self):
+        self.created = True
+
+    def erase(self):
+        self.model.atoms.remove(self)
+        self.model = None
 
     def getX(self):
         return Quantity(self.position[0])
@@ -78,6 +102,11 @@ class Model:
         self.pseudo_atoms = list(pseudo_atoms)
         self.cell = UnitCell() if cell is True else cell
         self.name = name
+        for atom in atoms:
+            atom.model = self
+
+    def getStructuralRoot(self):
+        return Root(self)
 
     def getNodes(self, query):
         if query == "node.type atom":
@@ -93,6 +122,26 @@ class Model:
         return self.cell
 
 
+class Group:
+    """A structural group (e.g. a molecule) that new atoms are added to."""
+
+    def __init__(self, model):
+        self.model = model
+
+    def addChild(self, atom):
+        atom.model = self.model
+        self.model.atoms.append(atom)
+        return True
+
+
+class Root:
+    def __init__(self, model):
+        self.model = model
+
+    def getChildren(self):
+        return [Group(self.model)]
+
+
 class FakeSamson:
     """The ``SAMSON`` facade: document queries, events, undo, commands, import."""
 
@@ -102,6 +151,24 @@ class FakeSamson:
         self.holds = []
         self.commands = []
         self.imports = []
+        self.selections = []
+        self.captures = []
+        self.history = []
+
+    def select(self, nsl):
+        self.selections.append(nsl)
+        return nsl != "invalid"
+
+    def captureViewportToFile(self, path, width, height, transparent, path_tracing, progress):
+        self.captures.append((width, height, transparent, path_tracing, progress))
+        with open(path, "wb") as stream:
+            stream.write(b"\x89PNG\r\n\x1a\n")
+
+    def undo(self):
+        self.history.append("undo")
+
+    def redo(self):
+        self.history.append("redo")
 
     def getNodes(self, query):
         assert query == "node.type structuralModel"
@@ -154,5 +221,8 @@ def install_samson_module(monkeypatch, facade=None):
             return Quantity(value)
 
     module.SBQuantity = SBQuantity
+    # Element types are plain symbols here; SBAtom(element, x, y, z) takes Quantities.
+    module.SBElement = SimpleNamespace(**{symbol: symbol for symbol in chemical_symbols[1:]})
+    module.SBAtom = lambda element, x, y, z: Atom(element, [x.value, y.value, z.value])
     monkeypatch.setitem(sys.modules, "samson", module)
     return module

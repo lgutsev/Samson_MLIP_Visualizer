@@ -1,5 +1,5 @@
 4
-Properties=species:S:1:pos:R:3 comment="NH3 umbrella-inversion TS guess: MACE-MP-0 small minimum with N moved to 0.30 A from the H3 plane" pbc="F F F"
+NH3 umbrella-inversion TS guess (N 0.30 A from the H3 plane)
 N       -0.00000000       0.00000024       0.03173053
 H        0.00000000       0.94739762      -0.26826940
 H        0.82047011      -0.47369843      -0.26826950

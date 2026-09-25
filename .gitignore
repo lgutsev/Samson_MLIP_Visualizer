@@ -10,3 +10,6 @@ dist/
 
 # SAMSON API probe report (scripts/probe_samson_api.py)
 samson_api_probe.json
+
+# Machine-specific MCP registration (see docs/samson_api.md)
+.mcp.json

@@ -160,6 +160,72 @@ class SamsonClient:
         """Run Python inside SAMSON (only if the bridge allows it)."""
         return self.call("python.exec", code=code)
 
+    def select(self, nsl: str) -> dict[str, Any]:
+        """Select with a SAMSON NSL expression; returns the new selection."""
+        return self.call("selection.select", nsl=nsl)
+
+    def capture(self, path: str | Path, width: int = 1200, height: int = 800) -> dict[str, Any]:
+        """Save the 3D viewport as an image (format from the extension)."""
+        return self.call(
+            "view.capture", path=str(Path(path).expanduser().resolve()), width=width, height=height
+        )
+
+    def add_atoms(self, atoms: Sequence[tuple[str, Sequence[float]]], model: int | None = None):
+        """Add ``[(symbol, (x, y, z)), ...]`` (Å) as one undo step."""
+        params: dict[str, Any] = {
+            "atoms": [
+                {"symbol": symbol, "position": [float(v) for v in position]}
+                for symbol, position in atoms
+            ]
+        }
+        if model is not None:
+            params["model"] = model
+        return self.call("atoms.add", **params)
+
+    def delete_atoms(self, indices: Sequence[int]) -> dict[str, Any]:
+        return self.call("atoms.delete", atoms=list(indices))
+
+    def set_elements(self, indices: Sequence[int], symbols: str | Sequence[str]):
+        symbols = symbols if isinstance(symbols, str) else list(symbols)
+        return self.call("atoms.set_elements", atoms=list(indices), symbols=symbols)
+
+    def set_fixed(self, indices: Sequence[int], fixed: bool = True) -> dict[str, Any]:
+        return self.call("atoms.set_fixed", atoms=list(indices), fixed=fixed)
+
+    def undo(self) -> dict[str, Any]:
+        return self.call("history.undo")
+
+    def redo(self) -> dict[str, Any]:
+        return self.call("history.redo")
+
+    def start_job(self, kind: str, **options: Any) -> dict[str, Any]:
+        """Start an MLIP job (single_point, relax, md, ts, frequencies); returns at once."""
+        return self.call("job.start", kind=kind, **options)
+
+    def job_status(self, job_id: int, log_lines: int = 20) -> dict[str, Any]:
+        return self.call("job.status", id=job_id, log_lines=log_lines)
+
+    def stop_job(self, job_id: int) -> dict[str, Any]:
+        return self.call("job.stop", id=job_id)
+
+    def list_jobs(self) -> list[dict[str, Any]]:
+        return self.call("job.list")
+
+    def wait_job(
+        self, job_id: int, *, poll: float = 1.0, timeout: float | None = None, log_lines: int = 20
+    ) -> dict[str, Any]:
+        """Poll until the job finishes, stops, or fails; return its final status."""
+        import time
+
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            status = self.job_status(job_id, log_lines=log_lines)
+            if status["state"] not in ("queued", "running"):
+                return status
+            if deadline is not None and time.monotonic() > deadline:
+                return status
+            time.sleep(poll)
+
 
 # --- command line ---------------------------------------------------------------------
 
@@ -197,10 +263,54 @@ def _build_parser() -> argparse.ArgumentParser:
     source = run.add_mutually_exclusive_group(required=True)
     source.add_argument("code", nargs="?")
     source.add_argument("-f", "--file", type=Path)
+    nsl = commands.add_parser("nsl", help="Select with a SAMSON NSL expression")
+    nsl.add_argument("expression")
+    shot = commands.add_parser("capture", help="Save the 3D viewport as an image")
+    shot.add_argument("path", type=Path)
+    shot.add_argument("--width", type=int, default=1200)
+    shot.add_argument("--height", type=int, default=800)
+    job = commands.add_parser("job", help="Start or follow MLIP jobs")
+    job.add_argument("action", choices=["start", "status", "stop", "wait", "list"])
+    job.add_argument("target", nargs="?", help="Job kind for start, job id otherwise")
+    job.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Job option, e.g. --set fmax=0.01 --set optimizer=LBFGS (values parsed as JSON)",
+    )
     call = commands.add_parser("call", help="Call any method with JSON params")
     call.add_argument("method")
     call.add_argument("--params", default="{}", help="JSON object")
     return parser
+
+
+def _parse_options(pairs: Sequence[str]) -> dict[str, Any]:
+    options = {}
+    for pair in pairs:
+        key, separator, value = pair.partition("=")
+        if not separator or not key:
+            raise SystemExit(f"--set expects KEY=VALUE, not {pair!r}")
+        try:
+            options[key] = json.loads(value)
+        except json.JSONDecodeError:
+            options[key] = value  # bare strings such as optimizer=LBFGS
+    return options
+
+
+def _run_job_command(args: argparse.Namespace, client: SamsonClient) -> Any:
+    if args.action == "list":
+        return client.list_jobs()
+    if args.target is None:
+        raise SystemExit(f"job {args.action} needs a {'kind' if args.action == 'start' else 'id'}")
+    if args.action == "start":
+        return client.start_job(args.target, **_parse_options(args.set))
+    job_id = int(args.target)
+    if args.action == "status":
+        return client.job_status(job_id)
+    if args.action == "stop":
+        return client.stop_job(job_id)
+    return client.wait_job(job_id)
 
 
 def _run(args: argparse.Namespace, client: SamsonClient) -> Any:
@@ -236,6 +346,12 @@ def _run(args: argparse.Namespace, client: SamsonClient) -> Any:
     if args.command == "exec":
         code = args.file.read_text(encoding="utf-8") if args.file else args.code
         return client.execute(code)
+    if args.command == "nsl":
+        return client.select(args.expression)
+    if args.command == "capture":
+        return client.capture(args.path, args.width, args.height)
+    if args.command == "job":
+        return _run_job_command(args, client)
     params = json.loads(args.params)
     if not isinstance(params, dict):
         raise SystemExit("--params must be a JSON object")

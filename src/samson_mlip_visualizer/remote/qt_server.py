@@ -103,6 +103,25 @@ class BridgeServer:
         remove_connection_file(self.connection_path, token=self._token)
 
 
+def panel_settings() -> dict[str, Any]:
+    """Model settings from the open MLIP panel, used when a job omits them."""
+    try:
+        from .. import samson_app
+
+        window = samson_app._WINDOW
+        if window is None:
+            return {}
+        files = window._model_files()
+        return {
+            "model": files,
+            "backend": window.backend.currentText().lower(),
+            "device": window.device.currentText(),
+            "dtype": window.dtype.currentText(),
+        }
+    except Exception:  # noqa: BLE001 - no panel, or no model chosen yet
+        return {}
+
+
 def serve(
     port: int = 0,
     *,
@@ -128,8 +147,21 @@ def serve(
         if log is not None:
             log(f"[bridge] {method}")
 
+    def schedule(function: Callable[[], None]) -> None:
+        from PySide6.QtCore import QTimer
+
+        # Run jobs from the event loop, after the reply that started them is sent.
+        QTimer.singleShot(0, function)
+
     token = secrets.token_urlsafe(32)
-    dispatcher = Dispatcher(token, samson=samson, allow_exec=allow_exec, on_request=on_request)
+    dispatcher = Dispatcher(
+        token,
+        samson=samson,
+        allow_exec=allow_exec,
+        on_request=on_request,
+        schedule=schedule,
+        job_defaults=panel_settings,
+    )
     _SERVER = BridgeServer(dispatcher, token, port=port, connection_path=connection_path)
     if log is not None:
         mode = "Python execution ENABLED" if allow_exec else "fixed operations only"

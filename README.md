@@ -170,7 +170,8 @@ Each is one undo step.
 
 *The TS search on [`examples/nh3_ts_guess.xyz`](examples/nh3_ts_guess.xyz)
 converged to planar (D3h) ammonia; the frequency check finds one imaginary
-mode (−579 cm⁻¹), drawn as arrows. MACE-MP-0 small on CUDA.*
+mode (−579 cm⁻¹), drawn as arrows. The same mode can also be animated in the
+viewport (see **Animate** above). MACE-MP-0 small on CUDA.*
 
 ### Guards
 
@@ -227,7 +228,7 @@ drive a running SAMSON through a small bridge. Start it from the panel's
 
 ```python
 from samson_mlip_visualizer.remote import serve
-serve()                  # fixed operations: read/write structures, selection, import/export, commands
+serve()                  # fixed operations (structures, selection, edits, screenshots, MLIP jobs)
 serve(allow_exec=True)   # also run Python sent by a client; only when you need it
 ```
 
@@ -239,13 +240,18 @@ from samson_mlip_visualizer.remote import SamsonClient
 client = SamsonClient.from_connection_file()
 atoms = client.get_structure()          # what the panel would evaluate, as ASE Atoms
 client.set_positions(atoms)             # write back as one undo step
+client.capture("view.png")              # viewport screenshot
+job = client.start_job("relax", fmax=0.01)   # model settings default to the panel's
+print(client.wait_job(job["id"])["result"])
 ```
 
-or `samson-remote summary` / `python -m samson_mlip_visualizer.remote.client
-summary` on the command line. The bridge listens on `127.0.0.1` only, needs a
-fresh random token (kept in a file only you can read) on every request, logs
-each request, and never starts by itself. See
-[`docs/samson_api.md`](docs/samson_api.md) for the methods and security model.
+or `samson-remote summary` / `python -m samson_mlip_visualizer.remote summary`
+on the command line. `samson-mcp` exposes the same operations to coding
+assistants over the Model Context Protocol, including viewport images. The
+bridge listens on `127.0.0.1` only, needs a fresh random token (kept in a file
+only you can read) on every request, logs each request, and never starts by
+itself. See [`docs/samson_api.md`](docs/samson_api.md) for the methods, MCP
+setup, and security model.
 
 ## Surface and passivant models
 
@@ -348,9 +354,8 @@ Planned, roughly in priority order:
   API; until then, open the written `.extxyz` trajectory.
 - Harmonic distance restraints (umbrella sampling), NEB between two selected
   structures, NPT MD, and Sella as an alternative TS optimizer.
-- MLIP jobs through the remote bridge (with progress and stop), and an MCP
-  server so coding assistants can use it with typed tools
-  ([`docs/samson_api.md`](docs/samson_api.md)).
+- Remote bridge: unit-cell editing, change notifications, and a command
+  listing ([`docs/samson_api.md`](docs/samson_api.md)).
   [`scripts/probe_samson_api.py`](scripts/probe_samson_api.py) is a read-only
   survey of SAMSON's Python API for this and the items above; run it in SAMSON's
   code editor.

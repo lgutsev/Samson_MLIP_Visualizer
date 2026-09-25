@@ -26,12 +26,18 @@ from ..samson_bridge import (
     SamsonBridgeError,
     _is_selected,
     _unit_cell,
+    add_atom,
+    atom_parent,
+    choose_structural_models,
+    element_type,
     extract_structure,
+    is_effectively_selected,
     node_name,
     selected_atom_indices,
     set_selection_flag,
     sync_positions,
 )
+from .jobs import JobManager, JobSpecError
 from .protocol import (
     BUSY,
     INTERNAL_ERROR,
@@ -46,11 +52,33 @@ from .protocol import (
     encode,
 )
 
-# Methods that change the document; refused while a panel job is running.
+# Methods that change the document; refused while a panel or bridge job is running.
 MUTATING = frozenset(
-    {"structure.set_positions", "selection.set", "file.import", "command.run", "python.exec"}
+    {
+        "structure.set_positions",
+        "selection.set",
+        "selection.select",
+        "atoms.add",
+        "atoms.delete",
+        "atoms.set_elements",
+        "atoms.set_fixed",
+        "history.undo",
+        "history.redo",
+        "file.import",
+        "command.run",
+        "job.start",
+        "python.exec",
+    }
 )
 _MISSING = object()
+_EFFECTIVE_LIST_LIMIT = 5000
+
+
+def _int(params: dict[str, Any], name: str, default: int, low: int, high: int) -> int:
+    value = _param(params, name, int, default)
+    if isinstance(value, bool) or not low <= value <= high:
+        raise BridgeError(INVALID_PARAMS, f"{name!r} must be an integer in [{low}, {high}]")
+    return value
 
 
 def _param(params: dict[str, Any], name: str, kind: type, default: Any = _MISSING) -> Any:
@@ -89,6 +117,8 @@ class Dispatcher:
         samson: Any = None,
         allow_exec: bool = False,
         on_request: Callable[[str], None] | None = None,
+        schedule: Callable[[Callable[[], None]], None] | None = None,
+        job_defaults: Callable[[], dict[str, Any]] = dict,
     ):
         if not token:
             raise ValueError("A non-empty token is required")
@@ -99,6 +129,12 @@ class Dispatcher:
         self.busy: str | None = None
         self.requests = 0
         self._namespace: dict[str, Any] | None = None
+        self.jobs = JobManager(
+            lambda: self.samson,
+            schedule=schedule,
+            set_busy=lambda reason: setattr(self, "busy", reason),
+            defaults=job_defaults,
+        )
         self._methods: dict[str, tuple[Callable[[dict[str, Any]], Any], str]] = {
             "bridge.ping": (self._ping, "Liveness check and package version."),
             "bridge.info": (self._info, "Versions, options, request count, and methods."),
@@ -129,6 +165,45 @@ class Dispatcher:
                 self._command_run,
                 "Run a SAMSON command by its interface name. params: name.",
             ),
+            "selection.select": (
+                self._selection_select,
+                "Select with a SAMSON NSL expression, e.g. 'node.type atom and atom.symbol O'. "
+                "params: nsl.",
+            ),
+            "view.capture": (
+                self._view_capture,
+                "Save the 3D viewport as an image. params: path, width=1200, height=800, "
+                "transparent=False.",
+            ),
+            "atoms.add": (
+                self._atoms_add,
+                "Add atoms (one undo step). params: atoms=[{symbol, position}], model?.",
+            ),
+            "atoms.delete": (
+                self._atoms_delete,
+                "Delete atoms by index over all models (one undo step). params: atoms.",
+            ),
+            "atoms.set_elements": (
+                self._atoms_set_elements,
+                "Change elements (one undo step). params: atoms, symbols (one or one per atom).",
+            ),
+            "atoms.set_fixed": (
+                self._atoms_set_fixed,
+                "Set or clear the fixed-atom flag (one undo step). params: atoms, fixed=True.",
+            ),
+            "history.undo": (self._history_undo, "Undo the last operation in SAMSON."),
+            "history.redo": (self._history_redo, "Redo the last undone operation in SAMSON."),
+            "job.start": (
+                self._job_start,
+                "Start an MLIP job; returns at once. params: kind (single_point|relax|md|ts|"
+                "frequencies), model?, backend?, device?, dtype?, models?, and kind options.",
+            ),
+            "job.status": (
+                self._job_status,
+                "Progress, log, and result. params: id, log_lines=20.",
+            ),
+            "job.stop": (self._job_stop, "Ask a job to stop after its current step. params: id."),
+            "job.list": (self._job_list, "All jobs of this bridge session."),
         }
         if allow_exec:
             self._methods["python.exec"] = (
@@ -243,6 +318,9 @@ class Dispatcher:
                     "atoms": len(atoms),
                     "selected": _is_selected(model),
                     "selected_atoms": sum(1 for atom in atoms if _is_selected(atom)),
+                    "effectively_selected_atoms": sum(
+                        1 for atom in atoms if is_effectively_selected(atom)
+                    ),
                     "unit_cell": _unit_cell(model) is not None,
                 }
             )
@@ -250,6 +328,11 @@ class Dispatcher:
             "models": entries,
             "atoms": sum(entry["atoms"] for entry in entries),
             "selected_atoms": sum(entry["selected_atoms"] for entry in entries),
+            "effectively_selected_atoms": sum(
+                entry["effectively_selected_atoms"] for entry in entries
+            ),
+            "note": "selected_atoms counts atoms picked individually; "
+            "effectively_selected_atoms also counts atoms inside selected models.",
         }
 
     def _structure_get(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -298,14 +381,155 @@ class Dispatcher:
         return {"atoms": count}
 
     def _selection_get(self, params: dict[str, Any]) -> dict[str, Any]:
-        selected_models, selected_atoms, offset = [], [], 0
+        selected_models, selected_atoms, effective, offset = [], [], [], 0
         for index, model in enumerate(self._models()):
             atoms = list(model.getNodes("node.type atom"))
             if _is_selected(model):
                 selected_models.append(index)
-            selected_atoms.extend(offset + i for i, atom in enumerate(atoms) if _is_selected(atom))
+            for i, atom in enumerate(atoms):
+                if _is_selected(atom):
+                    selected_atoms.append(offset + i)
+                if is_effectively_selected(atom):
+                    effective.append(offset + i)
             offset += len(atoms)
-        return {"models": selected_models, "atoms": selected_atoms, "atom_count": offset}
+        reply = {
+            "models": selected_models,
+            "atoms": selected_atoms,
+            "effective_atom_count": len(effective),
+            "atom_count": offset,
+        }
+        if len(effective) <= _EFFECTIVE_LIST_LIMIT:
+            reply["effective_atoms"] = effective
+        return reply
+
+    def _selection_select(self, params: dict[str, Any]) -> dict[str, Any]:
+        nsl = _param(params, "nsl", str)
+        select = getattr(self.samson, "select", None)
+        if not callable(select):
+            raise BridgeError(UNAVAILABLE, "This SAMSON build exposes no SAMSON.select")
+        valid = bool(select(nsl))
+        if not valid:
+            raise BridgeError(INVALID_PARAMS, f"SAMSON rejected the NSL expression {nsl!r}")
+        return {"nsl": nsl, **self._selection_get({})}
+
+    def _view_capture(self, params: dict[str, Any]) -> dict[str, Any]:
+        path = Path(_param(params, "path", str)).expanduser()
+        width = _int(params, "width", 1200, 16, 8192)
+        height = _int(params, "height", 800, 16, 8192)
+        transparent = _param(params, "transparent", bool, False)
+        capture = getattr(self.samson, "captureViewportToFile", None)
+        if not callable(capture):
+            raise BridgeError(UNAVAILABLE, "This SAMSON build exposes no captureViewportToFile")
+        # No path tracing, no progress bar: a quick, non-interactive capture.
+        capture(str(path), width, height, transparent, False, False)
+        return {"path": str(path), "width": width, "height": height}
+
+    def _all_atoms(self) -> list[Any]:
+        return [atom for model in self._models() for atom in model.getNodes("node.type atom")]
+
+    def _atoms_add(self, params: dict[str, Any]) -> dict[str, Any]:
+        entries = _param(params, "atoms", list)
+        if not entries:
+            raise BridgeError(INVALID_PARAMS, "atoms must list at least one atom")
+        parsed = []
+        for entry in entries:
+            if not isinstance(entry, dict) or not isinstance(entry.get("symbol"), str):
+                raise BridgeError(INVALID_PARAMS, "each atom needs {'symbol': str, 'position'}")
+            try:
+                position = np.asarray(entry.get("position"), dtype=float)
+            except (TypeError, ValueError) as exc:
+                raise BridgeError(INVALID_PARAMS, f"bad position: {exc}") from exc
+            if position.shape != (3,) or not np.isfinite(position).all():
+                raise BridgeError(INVALID_PARAMS, "position must be three finite numbers (Å)")
+            element_type(entry["symbol"])  # validate before changing anything
+            parsed.append((entry["symbol"], position))
+        models = self._models()
+        if "model" in params:
+            model = models[_int(params, "model", 0, 0, max(len(models) - 1, 0))]
+        else:
+            chosen = choose_structural_models(self.samson)
+            if len(chosen) != 1:
+                raise BridgeError(INVALID_PARAMS, "Several models are selected; pass 'model'")
+            model = chosen[0]
+        parent = atom_parent(model)
+        with self._holding(_param(params, "label", str, "Remote: add atoms")):
+            for symbol, position in parsed:
+                add_atom(parent, symbol, position)
+        return {
+            "added": len(parsed),
+            "model": node_name(model),
+            "atom_count": len(self._all_atoms()),
+        }
+
+    def _atoms_delete(self, params: dict[str, Any]) -> dict[str, Any]:
+        atoms = self._all_atoms()
+        indices = _indices(params, "atoms", len(atoms))
+        if not indices:
+            raise BridgeError(INVALID_PARAMS, "atoms must list at least one index")
+        with self._holding(_param(params, "label", str, "Remote: delete atoms")):
+            for index in sorted(set(indices)):
+                atoms[index].erase()
+        return {"deleted": len(set(indices)), "atom_count": len(self._all_atoms())}
+
+    def _atoms_set_elements(self, params: dict[str, Any]) -> dict[str, Any]:
+        atoms = self._all_atoms()
+        indices = _indices(params, "atoms", len(atoms))
+        symbols = params.get("symbols")
+        if isinstance(symbols, str):
+            symbols = [symbols] * len(indices)
+        if not isinstance(symbols, list) or len(symbols) != len(indices):
+            raise BridgeError(INVALID_PARAMS, "symbols must be one symbol or one per atom")
+        types = [element_type(symbol) for symbol in symbols]
+        with self._holding(_param(params, "label", str, "Remote: change elements")):
+            for index, kind in zip(indices, types, strict=True):
+                atoms[index].elementType = kind
+        return {"changed": len(indices)}
+
+    def _atoms_set_fixed(self, params: dict[str, Any]) -> dict[str, Any]:
+        atoms = self._all_atoms()
+        indices = _indices(params, "atoms", len(atoms))
+        fixed = _param(params, "fixed", bool, True)
+        with self._holding(_param(params, "label", str, "Remote: set fixed atoms")):
+            for index in indices:
+                atoms[index].fixedFlag = fixed
+        return {"changed": len(indices), "fixed": fixed}
+
+    def _history(self, name: str) -> dict[str, Any]:
+        action = getattr(self.samson, name, None)
+        if not callable(action):
+            raise BridgeError(UNAVAILABLE, f"This SAMSON build exposes no SAMSON.{name}")
+        action()
+        return {name: True}
+
+    def _history_undo(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self._history("undo")
+
+    def _history_redo(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self._history("redo")
+
+    def _job_start(self, params: dict[str, Any]) -> dict[str, Any]:
+        kind = _param(params, "kind", str)
+        options = {key: value for key, value in params.items() if key != "kind"}
+        try:
+            return self.jobs.start(kind, options).to_dict()
+        except JobSpecError as exc:
+            raise BridgeError(INVALID_PARAMS, str(exc)) from exc
+
+    def _job(self, params: dict[str, Any]):
+        try:
+            return self.jobs.get(_int(params, "id", 0, 1, 1 << 30))
+        except JobSpecError as exc:
+            raise BridgeError(INVALID_PARAMS, str(exc)) from exc
+
+    def _job_status(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self._job(params).to_dict(_int(params, "log_lines", 20, 0, 500))
+
+    def _job_stop(self, params: dict[str, Any]) -> dict[str, Any]:
+        job = self._job(params)
+        return self.jobs.stop(job.id).to_dict()
+
+    def _job_list(self, params: dict[str, Any]) -> list[dict[str, Any]]:
+        return [job.to_dict(log_lines=0) for job in self.jobs.jobs()]
 
     def _selection_set(self, params: dict[str, Any]) -> dict[str, Any]:
         models = self._models()

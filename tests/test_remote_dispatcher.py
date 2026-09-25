@@ -140,11 +140,16 @@ def test_busy_blocks_document_changes_but_not_reads(dispatcher):
 
 
 def test_selection_roundtrip(dispatcher):
-    assert result(dispatcher, "selection.get") == {"models": [0], "atoms": [0], "atom_count": 6}
+    def selection():
+        reply = result(dispatcher, "selection.get")
+        return reply["models"], reply["atoms"], reply["effective_atoms"], reply["atom_count"]
+
+    # Model 0 is selected, so all its atoms are effectively selected; only O0 was picked.
+    assert selection() == ([0], [0], [0, 1, 2], 6)
     assert result(dispatcher, "selection.set", atoms=[4, 5]) == {"models": [], "atoms": [4, 5]}
-    assert result(dispatcher, "selection.get") == {"models": [], "atoms": [4, 5], "atom_count": 6}
+    assert selection() == ([], [4, 5], [4, 5], 6)
     result(dispatcher, "selection.set", models=[1], clear=False)
-    assert result(dispatcher, "selection.get") == {"models": [1], "atoms": [4, 5], "atom_count": 6}
+    assert selection() == ([1], [4, 5], [3, 4, 5], 6)
     assert error(dispatcher, "selection.set", atoms=[6])["code"] == INVALID_PARAMS
     assert error(dispatcher, "selection.set", atoms=[True])["code"] == INVALID_PARAMS
 

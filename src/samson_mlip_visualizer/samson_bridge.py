@@ -54,6 +54,42 @@ def set_selection_flag(node: Any, value: bool) -> None:
         ) from exc
 
 
+def is_effectively_selected(node: Any) -> bool:
+    """Selected itself or through a selected ancestor (SAMSON's ``isSelected``)."""
+    value = getattr(node, "isSelected", None)
+    if value is not None:
+        return bool(value() if callable(value) else value)
+    return _is_selected(node)
+
+
+def element_type(symbol: str) -> Any:
+    """SAMSON's element type for a chemical symbol such as ``"C"``."""
+    from ase.data import chemical_symbols
+    from samson import SBElement
+
+    if symbol not in chemical_symbols[1:]:
+        raise SamsonBridgeError(f"Unknown element symbol {symbol!r}")
+    return getattr(SBElement, symbol)
+
+
+def add_atom(parent: Any, symbol: str, position: Iterable[float]) -> Any:
+    """Create an atom (Å) under ``parent``; call inside ``SAMSON.holding``."""
+    from samson import SBAtom, SBQuantity
+
+    x, y, z = (SBQuantity.angstrom(float(value)) for value in position)
+    atom = SBAtom(element_type(symbol), x, y, z)
+    atom.create()
+    parent.addChild(atom)
+    return atom
+
+
+def atom_parent(model: Any) -> Any:
+    """Where new atoms of ``model`` go: its first child group, else its root."""
+    root = model.getStructuralRoot()
+    children = list(root.getChildren()) if hasattr(root, "getChildren") else []
+    return children[0] if children else root
+
+
 def node_name(node: Any) -> str:
     """A SAMSON node's display name, or an empty string."""
     for name in ("name", "getName"):
