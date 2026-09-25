@@ -56,6 +56,15 @@ _REMEMBERED = (
     "irc_steps",
     "irc_fmax",
     "irc_relax_ends",
+    "ts_exact_hessian",
+    "ts_recompute",
+    "scan_to",
+    "scan_points",
+    "scan_refine",
+    "qm_level",
+    "qm_charge",
+    "qm_multiplicity",
+    "qm_job",
     "arrow_length",
     "tabs",
 )
@@ -194,6 +203,7 @@ def _make_window():
             self.tabs.addTab(self._md_tab(), "MD")
             self.tabs.addTab(self._ts_tab(), "TS search")
             self.tabs.addTab(self._path_tab(), "Reaction path")
+            self.tabs.addTab(self._hard_case_tab(), "Scan / QM export")
 
             self.stop_button = QtWidgets.QPushButton("Stop")
             self.stop_button.setEnabled(False)
@@ -273,6 +283,7 @@ def _make_window():
                 self.ts_button,
                 self.qst_button,
                 self.irc_button,
+                self.scan_button,
             ]
             self.backend.currentTextChanged.connect(self._backend_changed)
             self._backend_changed(self.backend.currentText())
@@ -417,6 +428,14 @@ def _make_window():
             self.ts_steps = int_spin(1, 100000, 500)
             self.ts_check = QtWidgets.QCheckBox("Check with frequencies afterwards")
             self.ts_check.setChecked(True)
+            self.ts_exact_hessian = QtWidgets.QCheckBox("Exact initial Hessian (CalcFC)")
+            self.ts_exact_hessian.setToolTip(
+                "Start P-RFO from a finite-difference Hessian (6 force calls per atom) "
+                "instead of Sella's iterative estimate; helps difficult cases."
+            )
+            self.ts_recompute = int_spin(
+                0, 10000, 0, "Recompute the exact Hessian every N steps (RecalcFC=N); 0 = never."
+            )
 
             self._ts_use_pair = use_pair
             settings = grid(
@@ -429,6 +448,7 @@ def _make_window():
                         ("Force threshold", self.ts_fmax),
                     ],
                     [("Maximum steps", self.ts_steps), ("", self.ts_check)],
+                    [("Recompute Hessian", self.ts_recompute), ("", self.ts_exact_hessian)],
                 ]
             )
 
@@ -507,10 +527,69 @@ def _make_window():
             layout.addLayout(irc_row)
             return page
 
+        def _hard_case_tab(self):
+            page = QtWidgets.QWidget()
+            self.scan_pair = QtWidgets.QLineEdit()
+            self.scan_pair.setPlaceholderText("0-based pair, e.g. 4-7")
+            self.scan_pair.setToolTip(
+                "The bond that forms or breaks; scanned from its current length."
+            )
+            use_pair = QtWidgets.QPushButton("Use selected pair")
+            use_pair.clicked.connect(self._use_selected_scan_pair)
+            pair_row = QtWidgets.QHBoxLayout()
+            pair_row.addWidget(self.scan_pair, 1)
+            pair_row.addWidget(use_pair)
+            self.scan_to = spin(3, 0.3, 20.0, 2.0, " Å", "Final distance of the scan.")
+            self.scan_points = int_spin(3, 200, 11, "Scan points, ends included.")
+            self.scan_refine = QtWidgets.QCheckBox("Refine the highest point with P-RFO")
+            self.scan_refine.setChecked(True)
+            self.scan_button = QtWidgets.QPushButton("Scan bond and find TS")
+            self.scan_button.clicked.connect(self._scan)
+
+            self.qm_job = QtWidgets.QComboBox()
+            self.qm_job.addItems(["Auto (1 model: TS, 2: QST2, 3: QST3)", "ts", "opt", "irc"])
+            self.qm_level = QtWidgets.QLineEdit()
+            self.qm_level.setPlaceholderText("Default: B3LYP/6-31G(d) GD3BJ | B3LYP D3BJ def2-SVP")
+            self.qm_level.setToolTip(
+                "Method and basis written into the input; review before running."
+            )
+            self.qm_charge = int_spin(-20, 20, 0)
+            self.qm_multiplicity = int_spin(1, 20, 1)
+            export = QtWidgets.QPushButton("Export QM input…")
+            export.setToolTip(
+                "Write a Gaussian (.gjf) or ORCA (.inp) input from the selected model(s): "
+                "Opt=TS with CalcFC, QST2/QST3 (ORCA: NEB-TS), IRC, or Opt."
+            )
+            export.clicked.connect(self._export_qm)
+
+            layout = QtWidgets.QVBoxLayout(page)
+            layout.addLayout(
+                grid(
+                    [
+                        [("Bond to scan", pair_row)],
+                        [("Scan to", self.scan_to), ("Points", self.scan_points)],
+                        [("", self.scan_refine)],
+                    ]
+                )
+            )
+            layout.addWidget(self.scan_button)
+            layout.addLayout(
+                grid(
+                    [
+                        [("QM job", self.qm_job), ("Level of theory", self.qm_level)],
+                        [("Charge", self.qm_charge), ("Multiplicity", self.qm_multiplicity)],
+                    ]
+                )
+            )
+            layout.addWidget(export)
+            return page
+
         def _ts_options_changed(self, *_):
             dimer = self.ts_method.currentText() == "Dimer"
             self.ts_direction.setEnabled(dimer)
             self.ts_displacement.setEnabled(dimer)
+            self.ts_exact_hessian.setEnabled(not dimer)
+            self.ts_recompute.setEnabled(not dimer)
             pair = dimer and self.ts_direction.currentText() == "Stretch atom pair"
             self.ts_pair.setEnabled(pair)
             self._ts_use_pair.setEnabled(pair)
@@ -1043,7 +1122,18 @@ def _make_window():
                 }
                 with SAMSON.holding("MLIP transition-state search"):
                     if prfo:
-                        result = prfo_search(atoms, **common)
+                        recompute = self.ts_recompute.value() or None
+                        if recompute or self.ts_exact_hessian.isChecked():
+                            self._log(
+                                f"Exact Hessians: {6 * len(atoms)} force calls each"
+                                + (f", every {recompute} steps" if recompute else ", initial only")
+                            )
+                        result = prfo_search(
+                            atoms,
+                            exact_hessian=self.ts_exact_hessian.isChecked(),
+                            recompute_every=recompute,
+                            **common,
+                        )
                     else:
                         result = dimer_search(
                             atoms,
@@ -1217,6 +1307,119 @@ def _make_window():
                 self._log("Relative to the TS: " + "; ".join(ends))
 
             self._run_task(task)
+
+        def _use_selected_scan_pair(self):
+            try:
+                self.scan_pair.setText(self._selected_pair())
+            except Exception as exc:
+                self._show_error(exc)
+
+        def _scan(self):
+            def task():
+                from .reaction_path import scan_to_ts
+                from .samson_modes import add_frames_path
+
+                parsed = parse_pairs(self.scan_pair.text())
+                if len(parsed) != 1:
+                    raise RuntimeError(
+                        "Enter one atom pair to scan, e.g. 4-7, or use the selection"
+                    )
+                pair = (parsed[0].i, parsed[0].j)
+                structure = self._prepare()
+                atoms = structure.ase_atoms
+                start = atoms.get_distance(*pair, mic=True)
+                self._log(
+                    f"Scanning {pair[0]}-{pair[1]} from {start:.3f} to "
+                    f"{self.scan_to.value():.3f} Å in {self.scan_points.value()} points…"
+                )
+
+                def progress(index, distance, energy, positions):
+                    sync_positions(structure, positions)
+                    self._log(f"Scan point {index:3d} | r {distance:.4f} Å | E {energy:.8f} eV")
+                    self._poll_stop()
+
+                from samson import SAMSON
+
+                with SAMSON.holding("MLIP bond scan"):
+                    result = scan_to_ts(
+                        atoms,
+                        pair,
+                        stop=self.scan_to.value(),
+                        points=self.scan_points.value(),
+                        refine=self.scan_refine.isChecked(),
+                        ts_fmax=self.ts_fmax.value(),
+                        exact_hessian=self.ts_exact_hessian.isChecked(),
+                        on_progress=progress,
+                        should_stop=self._poll_stop,
+                    )
+                    sync_positions(structure, atoms.get_positions())
+                peak = result.distances[result.highest]
+                relative = result.energies_ev[result.highest] - result.energies_ev[0]
+                self._log(
+                    f"Highest scan point: r = {peak:.4f} Å, {relative:+.4f} eV above the start."
+                )
+                if not result.bracketed:
+                    self._log(
+                        "Warning: the maximum is at an end of the scan, so the scan did not "
+                        "bracket the transition state; extend the range."
+                    )
+                name = f"Bond scan {pair[0]}-{pair[1]}"
+                self._last_path = add_frames_path(structure, result.frames, name=name)
+                self._last_path_home = result.highest
+                self.path_animate.setEnabled(True)
+                self._log(f"Added '{name}' ({len(result.frames)} frames).")
+                if result.ts is not None:
+                    state = "converged" if result.ts.converged else "not converged"
+                    self._log(
+                        f"P-RFO from the highest point {state} after {result.ts.steps} steps; "
+                        f"E = {result.ts.evaluation.energy_ev:.8f} eV"
+                    )
+                    if result.ts.converged and self.ts_check.isChecked():
+                        self._report_frequencies(structure)
+
+            self._run_task(task)
+
+        def _export_qm(self):
+            try:
+                from samson import SAMSON
+
+                from .qm_export import write_qm_input
+                from .samson_bridge import choose_structural_models
+
+                models = choose_structural_models(SAMSON)
+                job = self.qm_job.currentText()
+                if job.startswith("Auto"):
+                    jobs = {1: "ts", 2: "qst2", 3: "qst3"}
+                    if len(models) not in jobs:
+                        raise RuntimeError(
+                            "Select 1 (TS), 2 (QST2), or 3 (QST3) structural models."
+                        )
+                    job = jobs[len(models)]
+                    structures = [extract_structure(models=[m]).ase_atoms for m in models]
+                else:
+                    structures = [extract_structure(models=models).ase_atoms]
+                filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+                    self,
+                    f"Export {job.upper()} input",
+                    f"{job}.gjf",
+                    "Gaussian (*.gjf *.com);;ORCA (*.inp)",
+                )
+                if not filename:
+                    return
+                written = write_qm_input(
+                    filename,
+                    structures,
+                    job=job,
+                    level=self.qm_level.text().strip() or None,
+                    charge=self.qm_charge.value(),
+                    multiplicity=self.qm_multiplicity.value(),
+                )
+                self._log(
+                    f"Wrote {job.upper()} input: " + ", ".join(str(path) for path in written)
+                    + ". Check the level of theory, charge, and multiplicity before running."
+                )
+            except Exception as exc:
+                self._show_error(exc)
 
         def _toggle_path_animation(self):
             try:

@@ -83,6 +83,32 @@ everything needed:
 
 ![Imaginary mode of the ammonia TS shown as arrows](images/nh3_ts_mode_arrows.png)
 
+### Hard cases: exact Hessians, bond scans, QM export
+
+A toolkit for cases where a plain TS search is not enough, modeled on the
+Gaussian escalation path:
+
+- **Exact Hessians for P-RFO** (`CalcFC`, `RecalcFC=N`): the finite-difference
+  Hessian from `vibrations.py` is shared with Sella's `hessian_function` /
+  `diag_every_n`. With an MLIP, the most expensive fix in Gaussian takes
+  seconds here.
+- **Scan-to-TS** (`reaction_path.scan_to_ts`): a RATTLE-constrained distance
+  scan, then P-RFO from the highest point, with a warning when the maximum is at
+  an end of the range. On HCN, LBFGS under the constraint overshot and drove H
+  into C (caught by the close-contact guard), so constrained points relax with
+  FIRE by default. A linear start also has to be bent slightly, or the H–N axis
+  passes through C.
+- **QM export** (`qm_export.py`): Gaussian and ORCA inputs for TS, QST2/QST3
+  (ORCA: NEB-TS with side `.xyz` files), IRC, and Opt.
+- **xTB backend: deferred.** `tblite` publishes no Windows wheels on PyPI, so
+  it cannot be pip-installed into SAMSON's Python.
+
+Validation, HCN → HNC with MACE-MP-0 small (CUDA, float64): the scan peaks at
+r(H–N) = 1.43 Å, and exact-Hessian P-RFO converges in 5 steps to a TS with one
+imaginary mode (−989 cm⁻¹), about 20 s end to end. The barrier is 2.63 eV
+against ~2.1 eV from high-level ab initio work, a model limit. This is the case
+for the exported `Opt=(TS,CalcFC)` input.
+
 ## Working notes
 
 - Tests run in CI (Python 3.10/3.12) without SAMSON or Qt; the Qt transport and

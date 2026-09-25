@@ -155,6 +155,22 @@ _FORWARDED: dict[str, tuple[str, str, dict[str, Any]]] = {
         "Run a SAMSON command by its interface name; returns false if none matched.",
         _schema({"name": {"type": "string"}}, ["name"]),
     ),
+    "samson_export_qm": (
+        "qm.export",
+        "Write a Gaussian (.gjf) or ORCA (.inp) input from the selected models for a "
+        "quantum-chemistry follow-up: job 'auto' (1 model: Opt=TS with CalcFC; 2: QST2; "
+        "3: QST3; ORCA uses NEB-TS), or 'ts', 'opt', 'irc'. Review level/charge/spin.",
+        _schema(
+            {
+                "path": {"type": "string"},
+                "job": {"type": "string", "enum": ["auto", "ts", "opt", "irc"]},
+                "level": {"type": "string"},
+                "charge": {"type": "integer"},
+                "multiplicity": {"type": "integer", "minimum": 1},
+            },
+            ["path"],
+        ),
+    ),
     "samson_job_status": (
         "job.status",
         "State, step, recent log lines, and result of an MLIP job.",
@@ -180,7 +196,7 @@ _JOB_START_SCHEMA = _schema(
     {
         "kind": {
             "type": "string",
-            "enum": ["single_point", "relax", "md", "ts", "frequencies", "irc", "qst"],
+            "enum": ["single_point", "relax", "md", "ts", "frequencies", "irc", "qst", "scan"],
         },
         "options": {
             "type": "object",
@@ -190,13 +206,15 @@ _JOB_START_SCHEMA = _schema(
                 "temperature_k, timestep_fs, steps, friction_per_fs, tdamp_fs, seed, "
                 "report_interval, fixed_distances ('0-3, 5-9:1.2'), trajectory, "
                 "max_temperature_k. ts: method (prfo|dimer; prfo = Sella P-RFO, like "
-                "Gaussian Opt=TS), fmax, max_steps, check_frequencies; dimer also start "
+                "Gaussian Opt=TS), fmax, max_steps, check_frequencies, exact_hessian "
+                "(CalcFC), recompute_every (RecalcFC=N); dimer also start "
                 "(hessian|pair|random), pair ('4-7'), displacement. irc (from a TS): step "
                 "(Å·amu½), max_steps per side, fmax, relax_ends, trajectory (file for all "
                 "frames), return_positions; adds an 'IRC path' with every frame. qst "
                 "(QST2/QST3: select reactant, [guess,] product models in document order): "
                 "images, fmax, max_steps, refine, check_frequencies; adds the path and a TS "
-                "model."
+                "model. scan (hard cases: ModRedundant scan then TS): pair ('4-7'), stop (Å), "
+                "start?, points, relax_fmax, refine, exact_hessian, fmax; adds the scan path."
             ),
         },
     },

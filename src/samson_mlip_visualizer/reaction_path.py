@@ -155,6 +155,99 @@ def irc(
 
 
 @dataclass
+class ScanResult:
+    distances: list[float]
+    energies_ev: list[float]
+    frames: list[np.ndarray]
+    highest: int
+    stopped: bool = False
+    bracketed: bool = True
+    ts: TSResult | None = None
+    ts_positions: np.ndarray | None = None
+
+
+def scan_to_ts(
+    atoms: Atoms,
+    pair: tuple[int, int],
+    *,
+    stop: float,
+    start: float | None = None,
+    points: int = 11,
+    relax_fmax: float = 0.05,
+    relax_steps: int = 300,
+    relax_optimizer: str = "FIRE",
+    refine: bool = True,
+    ts_fmax: float = 0.01,
+    exact_hessian: bool = False,
+    on_progress: Callable[[int, float, float, np.ndarray], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> ScanResult:
+    """Scan the distance of ``pair`` and refine the highest point to a TS.
+
+    The counterpart of a Gaussian ``Opt=ModRedundant`` scan followed by
+    ``Opt=TS``: at each of ``points`` distances from ``start`` (default: the
+    current distance) to ``stop`` (Å), the pair is held fixed (RATTLE) while
+    everything else relaxes, continuing from the previous point. The highest
+    point then seeds :func:`prfo_search`. ``on_progress(index, distance, energy,
+    positions)`` reports each relaxed point. The atoms end at the TS (or, without
+    ``refine``, at the highest scan point).
+    """
+    from ase.constraints import FixAtoms, FixBondLengths
+
+    i, j = pair
+    if i == j or not (0 <= i < len(atoms) and 0 <= j < len(atoms)):
+        raise ValueError(f"Invalid atom pair {i}-{j} for {len(atoms)} atoms")
+    if points < 3:
+        raise ValueError("A scan needs at least 3 points")
+    fixed = {
+        int(index)
+        for constraint in atoms.constraints
+        if isinstance(constraint, FixAtoms)
+        for index in constraint.get_indices()
+    }
+    if i in fixed and j in fixed:
+        raise ValueError(f"Atoms {i} and {j} are both fixed; the scan cannot move them")
+    # Move the free atom(s) so a fixed partner stays put.
+    share = 0.0 if i in fixed else 1.0 if j in fixed else 0.5
+    first = atoms.get_distance(i, j, mic=True) if start is None else start
+    original = list(atoms.constraints)
+    distances, energies, frames = [], [], []
+    stopped = False
+    try:
+        for index, distance in enumerate(np.linspace(first, stop, points)):
+            if should_stop and should_stop():
+                stopped = True
+                break
+            atoms.set_constraint(original)
+            atoms.set_distance(i, j, float(distance), fix=share, mic=True)
+            atoms.set_constraint([*original, FixBondLengths([(i, j)])])
+            # FIRE by default: quasi-Newton steps under a fixed-distance constraint can
+            # overshoot into a collapse (seen scanning H across linear HCN).
+            relax(atoms, fmax=relax_fmax, max_steps=relax_steps, optimizer=relax_optimizer)
+            energy = float(atoms.get_potential_energy())
+            distances.append(float(distance))
+            energies.append(energy)
+            frames.append(atoms.get_positions().copy())
+            if on_progress:
+                on_progress(index, float(distance), energy, frames[-1])
+    finally:
+        atoms.set_constraint(original)
+    if not frames:
+        raise ValueError("The scan was stopped before its first point")
+    highest = int(np.argmax(energies))
+    result = ScanResult(distances, energies, frames, highest, stopped)
+    # A maximum at either end means the scan did not bracket the transition state.
+    result.bracketed = 0 < highest < len(energies) - 1
+    atoms.set_positions(frames[highest])
+    if refine and not stopped:
+        result.ts = prfo_search(
+            atoms, fmax=ts_fmax, exact_hessian=exact_hessian, should_stop=should_stop
+        )
+        result.ts_positions = atoms.get_positions().copy()
+    return result
+
+
+@dataclass
 class QSTResult:
     images: list[np.ndarray]
     energies_ev: list[float]

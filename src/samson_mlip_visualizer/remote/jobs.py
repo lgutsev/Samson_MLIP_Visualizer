@@ -28,8 +28,8 @@ from ..samson_bridge import choose_structural_models, extract_structure, sync_po
 from ..ts import dimer_search, prfo_search
 from ..vibrations import harmonic_frequencies
 
-KINDS = ("single_point", "relax", "md", "ts", "frequencies", "irc", "qst")
-_MOVES_ATOMS = ("relax", "md", "ts", "irc")
+KINDS = ("single_point", "relax", "md", "ts", "frequencies", "irc", "qst", "scan")
+_MOVES_ATOMS = ("relax", "md", "ts", "irc", "scan")
 _MISSING = object()
 
 
@@ -355,6 +355,8 @@ class JobManager:
                     atoms,
                     fmax=_number(params, "fmax", 0.01),
                     max_steps=int(_number(params, "max_steps", 500)),
+                    exact_hessian=_get(params, "exact_hessian", bool, False),
+                    recompute_every=_get(params, "recompute_every", int, None),
                     min_distance=_number(params, "min_distance", 0.5) or None,
                     on_progress=self._ts_progress(job, show),
                     should_stop=pump,
@@ -463,6 +465,55 @@ class JobManager:
         }
         if _get(params, "return_positions", bool, False):
             summary["positions"] = [frame.positions.tolist() for frame in frames]
+        return summary
+
+    def _scan(self, job, atoms, pump, show) -> dict[str, Any]:
+        from ..reaction_path import scan_to_ts
+
+        params = job.params
+        parsed = parse_pairs(_get(params, "pair", str))
+        if len(parsed) != 1:
+            raise JobSpecError("scan needs pair='I-J'")
+        structure = self._structure
+
+        def progress(index, distance, energy, positions):
+            job.step = index
+            job.log.append(f"point {index:3d}  r {distance:.4f} Å  E {energy:.8f} eV")
+            show(positions)
+            pump()
+
+        result = scan_to_ts(
+            atoms,
+            (parsed[0].i, parsed[0].j),
+            stop=float(_get(params, "stop", (int, float))),
+            start=_get(params, "start", (int, float), None),
+            points=int(_number(params, "points", 11)),
+            relax_fmax=_number(params, "relax_fmax", 0.05),
+            refine=_get(params, "refine", bool, True),
+            ts_fmax=_number(params, "fmax", 0.01),
+            exact_hessian=_get(params, "exact_hessian", bool, False),
+            on_progress=progress,
+            should_stop=pump,
+        )
+        name = f"Bond scan {parsed[0].i}-{parsed[0].j}"
+        frames = result.frames
+        self._publish.append(lambda: _publish_path(structure, frames, name))
+        summary = {
+            "stopped": result.stopped,
+            "distances": result.distances,
+            "energies_ev": result.energies_ev,
+            "highest": result.highest,
+            "bracketed": result.bracketed,
+        }
+        if result.ts is not None:
+            summary["ts"] = {
+                "converged": result.ts.converged,
+                "steps": result.ts.steps,
+                "energy_ev": result.ts.evaluation.energy_ev,
+                "max_force_ev_per_angstrom": result.ts.evaluation.max_force_ev_per_angstrom,
+            }
+            if result.ts.converged and _get(params, "check_frequencies", bool, True):
+                summary["ts"]["frequencies"] = self._frequencies(job, atoms, pump, show)
         return summary
 
     def _qst(self, job, atoms, pump, show) -> dict[str, Any]:

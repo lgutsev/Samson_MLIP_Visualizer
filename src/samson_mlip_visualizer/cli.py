@@ -59,6 +59,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="QST2 path search from the structure (reactant) to PRODUCT; with --qst-guess, "
         "QST3 (--trajectory saves the band)",
     )
+    mode.add_argument(
+        "--scan",
+        default=None,
+        metavar="I-J:STOP[:POINTS]",
+        help="Scan the I-J distance to STOP (A) relaxing everything else, then refine the "
+        "highest point with P-RFO (--trajectory saves the scan)",
+    )
     parser.add_argument(
         "--freq",
         action="store_true",
@@ -139,6 +146,33 @@ def _build_parser() -> argparse.ArgumentParser:
     ts.add_argument(
         "--ts-displacement", type=float, default=0.05, help="Initial displacement norm (A)"
     )
+    ts.add_argument(
+        "--exact-hessian", action="store_true", help="P-RFO from an exact Hessian (CalcFC)"
+    )
+    ts.add_argument(
+        "--recompute-hessian",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Recompute the exact Hessian every N P-RFO steps (RecalcFC=N)",
+    )
+    qm = parser.add_argument_group("quantum-chemistry export")
+    qm.add_argument(
+        "--export-qm",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Write a Gaussian (.gjf/.com) or ORCA (.inp) input from the final structure",
+    )
+    qm.add_argument(
+        "--qm-job",
+        choices=["ts", "opt", "irc"],
+        default=None,
+        help="Job for --export-qm (default: ts after --ts/--scan/--qst, else opt)",
+    )
+    qm.add_argument("--qm-level", default=None, help="Method and basis for --export-qm")
+    qm.add_argument("--charge", type=int, default=0, help="Charge for --export-qm")
+    qm.add_argument("--multiplicity", type=int, default=1, help="Spin multiplicity")
     path = parser.add_argument_group("reaction paths (--irc, --qst)")
     path.add_argument("--irc-step", type=float, default=0.1, help="IRC arc step (A amu^1/2)")
     path.add_argument("--qst-guess", type=Path, default=None, help="TS guess for QST3")
@@ -244,6 +278,53 @@ def _run_irc(args, atoms):
             images.append(image)
         write(args.trajectory, images)
         print(f"Wrote all {len(images)} IRC frames to {args.trajectory}")
+    return evaluate(atoms)
+
+
+def _run_scan(args, atoms):
+    from ase.io import write
+
+    from .reaction_path import scan_to_ts
+
+    pair_text, _, rest = args.scan.partition(":")
+    stop_text, _, points_text = rest.partition(":")
+    try:
+        (constraint,) = parse_pairs(pair_text)
+        stop = float(stop_text)
+        points = int(points_text) if points_text else 11
+    except ValueError as exc:
+        raise SystemExit(f"--scan expects I-J:STOP[:POINTS], not {args.scan!r}") from exc
+    pair = (constraint.i, constraint.j)
+    start = atoms.get_distance(*pair, mic=True)
+    print(f"Scanning {pair[0]}-{pair[1]} from {start:.3f} to {stop:.3f} A in {points} points")
+    result = scan_to_ts(
+        atoms,
+        pair,
+        stop=stop,
+        points=points,
+        ts_fmax=args.fmax,
+        exact_hessian=args.exact_hessian,
+        on_progress=lambda index, distance, energy, _pos: print(
+            f"point {index:3d}  r = {distance:.4f} A  E = {energy:.8f} eV"
+        ),
+    )
+    peak = result.distances[result.highest]
+    bracket = "bracketed" if result.bracketed else "NOT bracketed: extend the range"
+    print(f"Highest point r = {peak:.4f} A ({bracket})")
+    if args.trajectory is not None:
+        images = []
+        for positions, energy, distance in zip(
+            result.frames, result.energies_ev, result.distances, strict=True
+        ):
+            image = atoms.copy()
+            image.set_positions(positions)
+            image.info.update({"energy_ev": energy, "scan_distance": distance})
+            images.append(image)
+        write(args.trajectory, images)
+        print(f"Wrote the {len(images)}-point scan to {args.trajectory}")
+    if result.ts is not None:
+        state = "converged" if result.ts.converged else "not converged"
+        print(f"P-RFO from the highest point {state} after {result.ts.steps} steps")
     return evaluate(atoms)
 
 
@@ -353,6 +434,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             atoms,
             fmax=args.fmax,
             max_steps=args.max_steps,
+            exact_hessian=args.exact_hessian,
+            recompute_every=args.recompute_hessian,
             min_distance=args.min_distance if args.min_distance > 0 else None,
             trajectory=args.trajectory,
             on_progress=lambda step, energy, fmax, curvature, _pos: print(
@@ -366,6 +449,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         evaluation = _run_irc(args, atoms)
     elif args.qst is not None:
         evaluation = _run_qst(args, atoms, calculator)
+    elif args.scan is not None:
+        evaluation = _run_scan(args, atoms)
     elif args.ts:
         start = args.ts_start or ("pair" if args.ts_pair else "hessian")
         pair = None
@@ -416,6 +501,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         atoms.info.update(provenance.as_dict())
         write(args.output, atoms)
         print(f"Wrote {args.output}")
+    if args.export_qm is not None:
+        from .qm_export import write_qm_input
+
+        searched = args.ts or args.scan is not None or args.qst is not None
+        job = args.qm_job or ("ts" if searched else "opt")
+        written = write_qm_input(
+            args.export_qm,
+            [atoms],
+            job=job,
+            level=args.qm_level,
+            charge=args.charge,
+            multiplicity=args.multiplicity,
+        )
+        print(f"Wrote {job.upper()} input: " + ", ".join(str(path) for path in written))
     return 0
 
 

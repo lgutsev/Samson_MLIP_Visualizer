@@ -178,6 +178,57 @@ below experiment (~0.25 eV): a model-accuracy limit, not a search failure.
 GUESS]` do the same headlessly and write every frame (IRC) or image (band),
 with per-frame energies, to the trajectory file.
 
+### Hard cases: exact Hessians, bond scans, QM export
+
+A case can be hard for two reasons, and they need different fixes.
+
+**The search struggles** (no convergence, or the wrong saddle). Escalate as you
+would in Gaussian:
+
+1. Start from both minima with **QST2/QST3** instead of a single-ended search.
+2. Use **exact Hessians** (TS search tab, P-RFO): *Exact initial Hessian*
+   (`CalcFC`) starts from a finite-difference Hessian, and *Recompute Hessian*
+   every N steps (`RecalcFC=N`) refreshes it. Each costs 6 force calls per atom,
+   which takes seconds with an MLIP.
+3. **Scan first** (Scan / QM export tab): pick the bond that forms or breaks
+   (**Use selected pair**), set the final distance and number of points, and
+   press **Scan bond and find TS**. At each point that distance is held fixed
+   (RATTLE) while the rest relaxes, continuing from the previous point. P-RFO
+   then starts from the highest point. This is Gaussian's `Opt=ModRedundant`
+   scan followed by `Opt=TS`. The scan is added as a path, and the panel warns if
+   the maximum lies at an end of the range, which means the scan did not bracket
+   the TS. Constrained relaxation uses FIRE: LBFGS overshot into a collapse when
+   scanning H across linear HCN.
+4. Relax in float64, use more NEB images, try the dimer method, and always
+   confirm with frequencies and IRC.
+
+**The model is wrong for this chemistry.** No optimizer fixes this. Foundation
+MLIPs are trained mostly on near-equilibrium structures, and transition-state
+regions are thin in that data. Warning signs are a large committee force spread
+at the TS, results that change between models, or barriers far from reference
+values. Use a quantum-chemistry method as the final step, not a replacement:
+**Export QM input…** writes a Gaussian (`.gjf`/`.com`) or ORCA (`.inp`) input
+from the selected model(s), so the DFT run starts close to the answer:
+
+| Job | Gaussian | ORCA |
+|---|---|---|
+| `ts` (1 model) | `Opt=(TS,CalcFC,NoEigenTest) Freq` | `OptTS Freq`, `Calc_Hess true` |
+| `qst2` (2 models) | `Opt=QST2 Freq` | `NEB-TS Freq`, product in a side `.xyz` |
+| `qst3` (3 models) | `Opt=QST3 Freq` | `NEB-TS Freq`, product and TS guess in side `.xyz` files |
+| `irc` | `IRC=(CalcFC,MaxPoints=30)` | `IRC`, `InitHess calc_anfreq` |
+| `opt` | `Opt Freq` | `Opt Freq` |
+
+The default level (B3LYP-D3(BJ) with 6-31G(d) or def2-SVP) is only a starting
+point. The level of theory, charge, and multiplicity are yours to check. Periodic
+structures are refused.
+
+Example, HCN → HNC with MACE-MP-0 small (float64): a 13-point H–N scan from
+2.29 to 1.0 Å peaks at 1.43 Å, and P-RFO from an exact Hessian converges in 5
+steps to a TS with one imaginary mode (−989 cm⁻¹), about 20 s in total. The
+geometry is reasonable (r(C–H) 1.21 Å, r(N–H) 1.35 Å), but the 2.63 eV barrier
+is well above the ~2.1 eV of high-level ab initio work. This is the case where
+the exported `Opt=(TS,CalcFC)` input should give the final answer.
+
 ### Viewing normal modes
 
 After **Frequencies** (or a converged TS search with the frequency check), the
@@ -242,12 +293,18 @@ samson-mlip examples/nh3_ts_guess.xyz model.model --ts --fmax 0.005 --freq
 samson-mlip complex.xyz model.model --ts --ts-pair 4-9 --max-steps 500
 samson-mlip ts.xyz model.model --irc --trajectory irc.extxyz
 samson-mlip reactant.xyz model.model --qst product.xyz --trajectory band.extxyz -o ts.xyz
+samson-mlip hcn_bent.xyz model.model --scan 2-1:1.0:13 --exact-hessian --freq --export-qm hcn_ts.gjf
+samson-mlip guess.xyz model.model --ts --recompute-hessian 5 --export-qm ts.inp --qm-level "r2SCAN-3c"
 samson-mlip molecule.xyz model.model --relax --fmax 0.001 --freq
 ```
 
 Several MACE files form a committee; `--max-force-std` aborts when the committee
 force spread exceeds the threshold. `--ts` uses P-RFO unless `--ts-method
-dimer` (or a dimer option such as `--ts-pair` or `--ts-start`) is given. `--min-distance` / `--max-drift` guard the
+dimer` (or a dimer option such as `--ts-pair` or `--ts-start`) is given.
+`--scan I-J:STOP[:POINTS]` scans a distance and refines its maximum.
+`--export-qm` writes the final structure as a Gaussian or ORCA input (`--qm-job`
+defaults to `ts` after a TS search, scan, or QST, else `opt`; `--qm-level`,
+`--charge`, `--multiplicity`). `--min-distance` / `--max-drift` guard the
 geometry. With `-o`, the run provenance is written into the output file's
 metadata.
 
@@ -339,8 +396,11 @@ it.
 - FIRE / LBFGS / BFGS / PreconLBFGS geometry optimization.
 - NVT / NVE molecular dynamics; fixed-distance constraints (no harmonic
   restraints / umbrella sampling yet).
-- Transition states by P-RFO (Sella) or the dimer method, QST2/QST3-style NEB
-  path searches, and IRC.
+- Transition states by P-RFO (Sella, optionally from exact Hessians) or the
+  dimer method, bond scans refined to a TS, QST2/QST3-style NEB path searches,
+  and IRC.
+- Gaussian / ORCA input export (TS, QST2/QST3, IRC, Opt); no QM backend runs
+  inside the tool.
 - Finite-difference frequencies (6 force calls per free atom): meant for
   molecules and small clusters.
 - MACE committee uncertainty (multiple checkpoints); DeepMD committee not yet.
@@ -397,6 +457,9 @@ Planned, roughly in priority order:
   which matters for physisorbed adsorbates, passivants, and layered materials
   (`mace_mp(dispersion=True)`, or a D3 term added via `SumCalculator`).
 - DeepMD committee support via `deepmd.infer.calc_model_devi`.
+- An xTB (GFN2) backend as a cheap, independent cross-check next to MACE.
+  `tblite` has no Windows wheels on PyPI, so this needs conda or a source
+  build in SAMSON's Python first.
 
 ## License
 

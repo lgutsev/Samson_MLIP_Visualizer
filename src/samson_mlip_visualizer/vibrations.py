@@ -83,6 +83,43 @@ def _rigid_body_basis(atoms: Atoms) -> np.ndarray:
     return u[:, singular > 1e-6 * singular.max()]
 
 
+def _hessian_block(
+    atoms: Atoms,
+    indices: list[int],
+    delta: float,
+    on_progress: Callable[[int, int], None] | None = None,
+) -> np.ndarray:
+    """Symmetrized central-difference Hessian (eV/Å²) over ``indices``; restores positions."""
+    reference = atoms.get_positions().copy()
+    coordinates = [(atom, axis) for atom in indices for axis in range(3)]
+    size = len(coordinates)
+    hessian = np.empty((size, size))
+    try:
+        for column, (atom, axis) in enumerate(coordinates):
+            gradients = []
+            for sign in (1.0, -1.0):
+                displaced = reference.copy()
+                displaced[atom, axis] += sign * delta
+                atoms.set_positions(displaced, apply_constraint=False)
+                forces = atoms.get_forces(apply_constraint=False)
+                gradients.append(-forces[indices].ravel())
+            hessian[:, column] = (gradients[0] - gradients[1]) / (2 * delta)
+            if on_progress:
+                on_progress(column + 1, size)
+    finally:
+        atoms.set_positions(reference, apply_constraint=False)
+    return 0.5 * (hessian + hessian.T)
+
+
+def cartesian_hessian(atoms: Atoms, *, delta: float = 0.01) -> np.ndarray:
+    """Full ``(3N, 3N)`` Cartesian Hessian (eV/Å²) by central differences (6N force calls).
+
+    With an MLIP this takes seconds for a molecule, which makes exact Hessians
+    (Gaussian's ``CalcFC`` / ``RecalcFC``) cheap. Positions are restored.
+    """
+    return _hessian_block(atoms, list(range(len(atoms))), delta)
+
+
 def harmonic_frequencies(
     atoms: Atoms,
     *,
@@ -106,26 +143,8 @@ def harmonic_frequencies(
     if project_rigid_body and len(free) != len(atoms):
         raise ValueError("Rigid-body projection is invalid when some atoms are fixed")
 
-    reference = atoms.get_positions().copy()
-    coordinates = [(atom, axis) for atom in free for axis in range(3)]
-    size = len(coordinates)
-    hessian = np.empty((size, size))
-    try:
-        for column, (atom, axis) in enumerate(coordinates):
-            gradients = []
-            for sign in (1.0, -1.0):
-                displaced = reference.copy()
-                displaced[atom, axis] += sign * delta
-                atoms.set_positions(displaced, apply_constraint=False)
-                forces = atoms.get_forces(apply_constraint=False)
-                gradients.append(-forces[free].ravel())
-            hessian[:, column] = (gradients[0] - gradients[1]) / (2 * delta)
-            if on_progress:
-                on_progress(column + 1, size)
-    finally:
-        atoms.set_positions(reference, apply_constraint=False)
-
-    hessian = 0.5 * (hessian + hessian.T)
+    hessian = _hessian_block(atoms, free, delta, on_progress)
+    size = len(hessian)
     inverse_sqrt_mass = np.repeat(1.0 / np.sqrt(atoms.get_masses()[free]), 3)
     mass_weighted = hessian * np.outer(inverse_sqrt_mass, inverse_sqrt_mass)
 

@@ -62,6 +62,8 @@ def prfo_search(
     fmax: float = 0.01,
     max_steps: int = 300,
     internal: bool | None = None,
+    exact_hessian: bool = False,
+    recompute_every: int | None = None,
     min_distance: float | None = 0.5,
     trajectory: str | Path | None = None,
     on_progress: Callable[[int, float, float, float, np.ndarray], None] | None = None,
@@ -70,7 +72,11 @@ def prfo_search(
     """Search for a first-order saddle point with Sella's P-RFO optimizer.
 
     ``internal`` (default: for non-periodic systems) works in redundant internal
-    coordinates, which suits molecules best. ``on_progress`` has the same
+    coordinates, which suits molecules best. ``exact_hessian`` gives Sella a
+    finite-difference Hessian instead of its iterative lowest-mode estimate
+    (Gaussian's ``CalcFC``); ``recompute_every=N`` recomputes it every N steps
+    (``RecalcFC=N``; implies ``exact_hessian``). Each costs 6 force calls per atom,
+    seconds with an MLIP for a molecule. ``on_progress`` has the same
     signature as for :func:`dimer_search`; ``curvature`` is Sella's current
     estimate of the lowest Hessian eigenvalue (``nan`` when unavailable).
     Convergence is judged on the true forces.
@@ -88,6 +94,14 @@ def prfo_search(
         raise ValueError("max_steps must be at least 1")
     if internal is None:
         internal = not atoms.pbc.any()
+    if recompute_every is not None and recompute_every < 1:
+        raise ValueError("recompute_every must be at least 1")
+    hessian_options = {}
+    if exact_hessian or recompute_every:
+        from .vibrations import cartesian_hessian
+
+        hessian_options["hessian_function"] = lambda current: cartesian_hessian(current)
+        hessian_options["diag_every_n"] = recompute_every
 
     optimizer = Sella(
         atoms,
@@ -95,6 +109,7 @@ def prfo_search(
         internal=internal,
         logfile=None,
         trajectory=str(trajectory) if trajectory else None,
+        **hessian_options,
     )
 
     def curvature() -> float:

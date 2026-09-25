@@ -196,8 +196,14 @@ class Dispatcher:
             "job.start": (
                 self._job_start,
                 "Start an MLIP job; returns at once. params: kind (single_point|relax|md|ts|"
-                "frequencies|irc|qst), model?, backend?, device?, dtype?, models?, and kind "
+                "frequencies|irc|qst|scan), model?, backend?, device?, dtype?, models?, and kind "
                 "options.",
+            ),
+            "qm.export": (
+                self._qm_export,
+                "Write a Gaussian (.gjf/.com) or ORCA (.inp) input from the selected models. "
+                "params: path, job='auto' (1 model: ts, 2: qst2, 3: qst3) | ts | opt | irc, "
+                "level?, charge=0, multiplicity=1.",
             ),
             "job.status": (
                 self._job_status,
@@ -507,6 +513,33 @@ class Dispatcher:
 
     def _history_redo(self, params: dict[str, Any]) -> dict[str, Any]:
         return self._history("redo")
+
+    def _qm_export(self, params: dict[str, Any]) -> dict[str, Any]:
+        from ..qm_export import write_qm_input
+
+        path = Path(_param(params, "path", str)).expanduser()
+        job = _param(params, "job", str, "auto")
+        models = choose_structural_models(self.samson)
+        if job == "auto":
+            jobs = {1: "ts", 2: "qst2", 3: "qst3"}
+            if len(models) not in jobs:
+                raise BridgeError(INVALID_PARAMS, "Select 1, 2, or 3 structural models")
+            job = jobs[len(models)]
+            structures = [extract_structure(self.samson, models=[m]).ase_atoms for m in models]
+        else:
+            structures = [extract_structure(self.samson, models=models).ase_atoms]
+        try:
+            written = write_qm_input(
+                path,
+                structures,
+                job=job,
+                level=_param(params, "level", str, None),
+                charge=_int(params, "charge", 0, -50, 50),
+                multiplicity=_int(params, "multiplicity", 1, 1, 50),
+            )
+        except ValueError as exc:
+            raise BridgeError(INVALID_PARAMS, str(exc)) from exc
+        return {"job": job, "files": [str(file) for file in written]}
 
     def _job_start(self, params: dict[str, Any]) -> dict[str, Any]:
         kind = _param(params, "kind", str)
