@@ -24,6 +24,8 @@ The panel provides:
   constraint force;
 - transition-state search with the dimer method, and finite-difference
   frequencies to classify minima and saddle points;
+- an opt-in local bridge so scripts, notebooks, and coding assistants can read
+  and edit the open SAMSON document;
 - optional model-committee uncertainty and geometry-sanity guards;
 - periodic cell and per-axis PBC transfer from SAMSON to ASE;
 - `FixAtoms` constraints derived from SAMSON fixed-atom flags;
@@ -187,6 +189,34 @@ unless `--ts-pair` or `--ts-start random` is given. `--min-distance` / `--max-dr
 geometry. With `-o`, the run provenance is written into the output file's
 metadata.
 
+## Remote control (local bridge)
+
+Other programs on this computer — notebooks, scripts, coding assistants — can
+drive a running SAMSON through a small bridge. Start it from the panel's
+**Start bridge** button, or in SAMSON's Python console:
+
+```python
+from samson_mlip_visualizer.remote import serve
+serve()                  # fixed operations: read/write structures, selection, import/export, commands
+serve(allow_exec=True)   # also run Python sent by a client; only when you need it
+```
+
+Then, from any Python on the same machine:
+
+```python
+from samson_mlip_visualizer.remote import SamsonClient
+
+client = SamsonClient.from_connection_file()
+atoms = client.get_structure()          # what the panel would evaluate, as ASE Atoms
+client.set_positions(atoms)             # write back as one undo step
+```
+
+or `samson-remote summary` / `python -m samson_mlip_visualizer.remote.client
+summary` on the command line. The bridge listens on `127.0.0.1` only, needs a
+fresh random token (kept in a file only you can read) on every request, logs
+each request, and never starts by itself. See
+[`docs/samson_api.md`](docs/samson_api.md) for the methods and security model.
+
 ## Surface and passivant models
 
 This workflow is compatible with passivated surface models when the potential is
@@ -227,8 +257,11 @@ ruff check .
 ```
 
 The calculator and optimization layers are independent of SAMSON. Only
-`samson_bridge.py` and `samson_app.py` touch its runtime API, which keeps most of
-the project testable in a standard Python environment.
+`samson_bridge.py`, `samson_app.py`, and the bridge server
+(`remote/dispatcher.py`, `remote/qt_server.py`) touch its runtime API, which
+keeps most of the project testable in a standard Python environment. The Qt
+transport test needs PySide6 and is skipped without it; SAMSON's own Python has
+it.
 
 ## Current scope
 
@@ -285,11 +318,12 @@ Planned, roughly in priority order:
   API; until then, open the written `.extxyz` trajectory.
 - Harmonic distance restraints (umbrella sampling), NEB between two selected
   structures, NPT MD, and Sella as an alternative TS optimizer.
-- A local API so notebooks, scripts, and coding assistants can drive a running
-  SAMSON: proposal in [`docs/samson_api.md`](docs/samson_api.md) (not
-  implemented). [`scripts/probe_samson_api.py`](scripts/probe_samson_api.py) is a
-  read-only survey of SAMSON's Python API for this and the items above; run it in
-  SAMSON's code editor.
+- MLIP jobs through the remote bridge (with progress and stop), and an MCP
+  server so coding assistants can use it with typed tools
+  ([`docs/samson_api.md`](docs/samson_api.md)).
+  [`scripts/probe_samson_api.py`](scripts/probe_samson_api.py) is a read-only
+  survey of SAMSON's Python API for this and the items above; run it in SAMSON's
+  code editor.
 - Embed the run provenance in the SAMSON document itself, not just the log.
 - Cell / stress relaxation, if added, should use ASE's `FrechetCellFilter` (the
   current robust choice for variable-cell relaxation with universal MLIPs).

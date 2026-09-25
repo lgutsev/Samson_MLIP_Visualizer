@@ -40,6 +40,29 @@ def _is_selected(node: Any) -> bool:
     return bool(getter()) if getter else False
 
 
+def set_selection_flag(node: Any, value: bool) -> None:
+    """Select or deselect a SAMSON node."""
+    setter = getattr(node, "setSelectionFlag", None)
+    if callable(setter):
+        setter(bool(value))
+        return
+    try:
+        node.selectionFlag = bool(value)
+    except AttributeError as exc:
+        raise SamsonBridgeError(
+            "This SAMSON build does not allow changing the selection from Python"
+        ) from exc
+
+
+def node_name(node: Any) -> str:
+    """A SAMSON node's display name, or an empty string."""
+    for name in ("name", "getName"):
+        value = getattr(node, name, None)
+        if value is not None:
+            return str(value() if callable(value) else value)
+    return ""
+
+
 def _is_fixed(atom: Any) -> bool:
     for name in ("fixedFlag", "isFixed"):
         value = getattr(atom, name, None)
@@ -145,13 +168,19 @@ def _shared_unit_cell(models: list[Any]) -> tuple[np.ndarray | None, tuple[bool,
     return matrix, pbc
 
 
-def extract_structure(samson: Any | None = None) -> SamsonStructure:
-    """Copy the chosen full model(s) to ASE, including unit cell and fixed atoms."""
+def extract_structure(
+    samson: Any | None = None, models: list[Any] | None = None
+) -> SamsonStructure:
+    """Copy the chosen full model(s) to ASE, including unit cell and fixed atoms.
+
+    ``models`` overrides the selection rules of :func:`choose_structural_models`.
+    """
     if samson is None:
         from samson import SAMSON as samson
 
     _require_active_document(samson)
-    models = choose_structural_models(samson)
+    if models is None:
+        models = choose_structural_models(samson)
     source_atoms = []
     for model in models:
         _reject_pseudo_atoms(model)
@@ -182,8 +211,14 @@ def sync_positions(
     structure: SamsonStructure,
     positions: Iterable[Iterable[float]],
     samson: Any | None = None,
+    *,
+    process_events: bool = True,
 ) -> None:
-    """Write ASE Angstrom positions to the matching SAMSON atoms."""
+    """Write ASE Angstrom positions to the matching SAMSON atoms.
+
+    ``process_events`` lets SAMSON repaint immediately; callers already inside
+    an event handler pass ``False`` to avoid re-entering the event loop.
+    """
     if samson is None:
         from samson import SAMSON as samson
         from samson import SBQuantity
@@ -200,4 +235,5 @@ def sync_positions(
         atom.setX(SBQuantity.angstrom(float(x)))
         atom.setY(SBQuantity.angstrom(float(y)))
         atom.setZ(SBQuantity.angstrom(float(z)))
-    samson.processEvents()
+    if process_events:
+        samson.processEvents()

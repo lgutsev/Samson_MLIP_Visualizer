@@ -20,6 +20,7 @@ classifiers = [
 
 [project.scripts]
 samson-mlip = "samson_mlip_visualizer.cli:main"
+samson-remote = "samson_mlip_visualizer.remote.client:main"
 
 [project.optional-dependencies]
 mace = ["mace-torch>=0.3"]

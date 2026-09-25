@@ -1,9 +1,58 @@
-# A local API for SAMSON: proposal
+# A local API for SAMSON
 
-**Status: proposed, not implemented.** The bridge below would give programs on
-this computer a way to control a running SAMSON, and optionally to run Python
-inside it. That is a deliberate new entry point, so it waits for an explicit
-decision to build it. Nothing in the package opens a network port today.
+**Status:** steps 1–2 of the plan are implemented: the read-only probe, and the
+bridge server, client and core operations in
+[`samson_mlip_visualizer/remote/`](../src/samson_mlip_visualizer/remote/). They
+are tested against a SAMSON stand-in and with a real Qt server in SAMSON's
+Python, but not yet inside a running SAMSON. MLIP jobs through the bridge
+(step 3) and the MCP server (step 4) are next.
+
+The bridge gives programs on this computer a way to control a running SAMSON,
+and optionally to run Python inside it. It never starts by itself: you start
+it from the console or the panel.
+
+## Using it
+
+Start it inside SAMSON, from the panel's **Start bridge** button or the Python
+console:
+
+```python
+from samson_mlip_visualizer.remote import serve, stop
+serve()                   # fixed operations only
+serve(allow_exec=True)    # also accept Python code; only when you need it
+stop()
+```
+
+Then, from any Python on the same machine that has this package installed:
+
+```python
+from samson_mlip_visualizer.remote import SamsonClient
+
+client = SamsonClient.from_connection_file()
+print(client.summary())
+atoms = client.get_structure()          # ASE Atoms, FixAtoms included
+atoms.positions[0] += [0, 0, 0.1]
+client.set_positions(atoms)             # one undo step in SAMSON
+```
+
+or the command line (`samson-remote` once the package is pip-installed, or
+`python -m samson_mlip_visualizer.remote.client`):
+
+```bash
+samson-remote summary
+samson-remote get --all -o document.extxyz
+samson-remote set-positions relaxed.xyz
+samson-remote select --atoms 0 3
+samson-remote command "Center"
+samson-remote exec "print(len(SAMSON.getNodes('node.type atom')))"
+```
+
+The connection file is `%LOCALAPPDATA%\samson-mlip-visualizer\bridge.json` on
+Windows (`~/.local/state/samson-mlip-visualizer/bridge.json` elsewhere); set
+`SAMSON_BRIDGE_CONNECTION` to use another path. Atom indices in
+`selection.get/set` count over all structural models in document order, the
+same order as `structure.get` with `models="all"`. While the panel runs a
+job, the bridge still answers reads but refuses changes to the document.
 
 ## Why
 
@@ -40,7 +89,7 @@ viewer for jobs started elsewhere.
    - A fixed list of operations (below). Arbitrary Python execution is a
      separate opt-in, off by default.
 2. **Plain Python client** with no SAMSON dependency: usable from notebooks,
-   scripts, the `samson-mlip` CLI, and tests.
+   scripts, the `samson-remote` CLI, and tests.
 3. **MCP server** wrapping the client, so a coding assistant can drive SAMSON
    with typed tools instead of pasted output.
 
@@ -55,16 +104,24 @@ viewer for jobs started elsewhere.
 | `selection.get` / `selection.set` | read or change the SAMSON selection |
 | `file.import` / `file.export` | load a file into the document / write a structure |
 | `command.run` | run a SAMSON command by its interface name |
-| `mlip.*` | single point, relax, MD, TS search, frequencies as jobs with progress and stop |
-| `python.exec` | **opt-in only**: run code in SAMSON's Python |
+| `python.exec` | **opt-in only**: run code in SAMSON's Python; returns stdout, stderr and the last expression |
+| `mlip.*` | *planned (step 3)*: single point, relax, MD, TS search, frequencies as jobs with progress and stop |
+
+`bridge.info` lists the methods a running bridge offers.
 
 ### Security model
 
-- Loopback only, token-authenticated, per-user connection file.
-- Fixed operations by default; `python.exec` requires starting the server with
-  an explicit flag, because it is equivalent to typing into SAMSON's console.
-- Each request is logged in the panel; stopping the bridge removes the
-  connection file.
+- Bound to `127.0.0.1`; non-loopback peers are dropped.
+- Every request needs the session token (compared in constant time); a new
+  random token is made at each start and lives only in the per-user connection
+  file.
+- Fixed operations by default; `python.exec` exists only when the server is
+  started with `allow_exec=True`, because it is equivalent to typing into
+  SAMSON's console.
+- Each accepted request is logged (panel log, or the console for `serve()`);
+  stopping the bridge removes the connection file.
+- Messages are capped at 64 MB; document changes are refused while a panel job
+  runs.
 - Binding to loopback does not normally trigger a Windows Firewall prompt.
 
 ## Alternatives considered
@@ -78,11 +135,11 @@ viewer for jobs started elsewhere.
 
 ## Plan
 
-1. **Probe** — `scripts/probe_samson_api.py` (available now, read-only)
-   records the exact API names still unverified: screenshot capture, SBPath
-   creation, selection setters, import/export signatures.
-2. **Server, client, core operations** — tested against a SAMSON stand-in, then
-   in SAMSON.
+1. **Probe** (done) — `scripts/probe_samson_api.py`, read-only, records the
+   exact API names still unverified: screenshot capture, SBPath creation,
+   selection setters, import/export signatures.
+2. **Server, client, core operations** (done) — tested against a SAMSON
+   stand-in and with a real Qt server; next, a run inside SAMSON.
 3. **MLIP jobs** through the bridge, with progress and stop.
 4. **MCP server** and its configuration for coding assistants.
 

@@ -123,12 +123,32 @@ def _make_window():
             self.status.setReadOnly(True)
             self.status.setMaximumBlockCount(2000)
 
+            self.bridge_button = QtWidgets.QPushButton("Start bridge")
+            self.bridge_button.setToolTip(
+                "Let programs on this computer (scripts, notebooks, samson-remote) read and "
+                "edit the document. Loopback only; every request needs a private token."
+            )
+            self.bridge_button.clicked.connect(self._toggle_bridge)
+            self.bridge_exec = QtWidgets.QCheckBox("Allow Python execution")
+            self.bridge_exec.setToolTip(
+                "Also let connected programs run arbitrary Python inside SAMSON. "
+                "Leave off unless you need it."
+            )
+            self.bridge_status = QtWidgets.QLabel()
+            bridge_row = QtWidgets.QHBoxLayout()
+            bridge_row.addWidget(QtWidgets.QLabel("Remote bridge"))
+            bridge_row.addWidget(self.bridge_button)
+            bridge_row.addWidget(self.bridge_exec)
+            bridge_row.addWidget(self.bridge_status, 1)
+
             layout = QtWidgets.QVBoxLayout(self)
             layout.addLayout(form)
             layout.addWidget(self.tabs)
             layout.addWidget(note)
+            layout.addLayout(bridge_row)
             layout.addWidget(self.stop_button)
             layout.addWidget(self.status, 1)
+            self._refresh_bridge()
 
             self._run_buttons = [
                 self.evaluate_button,
@@ -427,14 +447,49 @@ def _make_window():
                 )
 
         def _run_task(self, task):
+            from .remote import qt_server
+
             try:
                 self._stop_requested = False
                 self._set_running(True)
+                # Remote reads stay live during a job; remote edits wait until it ends.
+                qt_server.set_busy("an MLIP job is running in the panel")
                 task()
             except Exception as exc:
                 self._show_error(exc)
             finally:
+                qt_server.set_busy(None)
                 self._set_running(False)
+
+        def _toggle_bridge(self):
+            from .remote import qt_server
+
+            try:
+                if qt_server.status() is None:
+                    qt_server.serve(
+                        allow_exec=self.bridge_exec.isChecked(),
+                        log=self.status.appendPlainText,
+                    )
+                else:
+                    qt_server.stop()
+                    self._log("Remote bridge stopped.")
+            except Exception as exc:
+                self._show_error(exc)
+            self._refresh_bridge()
+
+        def _refresh_bridge(self):
+            from .remote import qt_server
+
+            state = qt_server.status()
+            self.bridge_button.setText("Start bridge" if state is None else "Stop bridge")
+            self.bridge_exec.setEnabled(state is None)
+            if state is None:
+                self.bridge_status.setText("stopped")
+            else:
+                self.bridge_status.setText(
+                    f"listening on 127.0.0.1:{state['port']}"
+                    + (" · Python execution ON" if state["allow_exec"] else "")
+                )
 
         def _report_frequencies(self, atoms):
             free = len(_free_indices(atoms))
