@@ -3,7 +3,8 @@
 This is how MACE-MP-0 small was fine-tuned to PBE for the HCN ⇌ HNC
 isomerization, what it cost, and what the tuned model does and does not get
 right. The scripts are in [`examples/fine_tuning_hcn/`](../examples/fine_tuning_hcn/);
-the numbers below come from running them on 2026-09-26.
+the numbers below come from running them on 2026-09-26. For how the general
+workflow works and how to run it, see the [fine-tuning guide](fine_tuning_guide.md).
 
 ## Why
 

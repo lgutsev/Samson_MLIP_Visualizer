@@ -356,6 +356,10 @@ to label for fine-tuning.
 
 ### Fine-tuning for a reaction
 
+[`docs/fine_tuning_guide.md`](docs/fine_tuning_guide.md) explains the
+fine-tuning workflow step by step, with diagrams: selecting frames, labeling
+them on an HPC, plain or multihead training, and where models are stored.
+
 [`docs/fine_tuning.md`](docs/fine_tuning.md) documents fine-tuning MACE-MP-0
 small to PBE for HCN ⇌ HNC, with the scripts in
 [`examples/fine_tuning_hcn/`](examples/fine_tuning_hcn/). The seed data were

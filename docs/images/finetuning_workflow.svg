@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="640" viewBox="0 0 680 640" role="img" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<title>The fine-tuning workflow</title>
+<desc>A vertical flow: explore with MACE, select frames, label them with DFT, fine-tune, evaluate against held-out DFT, and either start a new round or install the model with a model card.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect width="680" height="640" fill="#FCFCFB"/>
+<g font-size="14" text-anchor="middle" dominant-baseline="central">
+<rect x="170" y="30" width="340" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="340" y="48" font-weight="500" fill="#085041">Explore with MACE</text>
+<text x="340" y="68" font-size="12" fill="#0F6E56">TS search, IRC, scans, MD</text>
+<rect x="170" y="126" width="340" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="340" y="144" font-weight="500" fill="#085041">Select frames</text>
+<text x="340" y="164" font-size="12" fill="#0F6E56">Disagreement, diversity, spot checks</text>
+<rect x="170" y="222" width="340" height="56" rx="8" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
+<text x="340" y="240" font-weight="500" fill="#712B13">Label with DFT</text>
+<text x="340" y="260" font-size="12" fill="#993C1D">Energies and forces per frame</text>
+<rect x="170" y="318" width="340" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="340" y="336" font-weight="500" fill="#085041">Fine-tune MACE-MP-0</text>
+<text x="340" y="356" font-size="12" fill="#0F6E56">Plus Materials Project replay</text>
+<rect x="170" y="414" width="340" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="340" y="432" font-weight="500" fill="#085041">Evaluate</text>
+<text x="340" y="452" font-size="12" fill="#0F6E56">Against held-out DFT frames</text>
+<rect x="170" y="510" width="340" height="56" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="340" y="528" font-weight="500" fill="#2C2C2A">Install the model</text>
+<text x="340" y="548" font-size="12" fill="#5F5E5A">With a model card</text>
+</g>
+<g stroke="#5F5E5A" stroke-width="1.5" fill="none">
+<line x1="340" y1="90" x2="340" y2="122" marker-end="url(#arrow)"/>
+<line x1="340" y1="186" x2="340" y2="218" marker-end="url(#arrow)"/>
+<line x1="340" y1="282" x2="340" y2="314" marker-end="url(#arrow)"/>
+<line x1="340" y1="378" x2="340" y2="410" marker-end="url(#arrow)"/>
+<line x1="340" y1="474" x2="340" y2="506" marker-end="url(#arrow)"/>
+</g>
+<g font-size="12" fill="#5F5E5A">
+<text x="522" y="434">↻ next round</text>
+<text x="522" y="452">if not converged</text>
+<text x="352" y="490" dominant-baseline="central">converged</text>
+<rect x="170" y="590" width="14" height="14" rx="3" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="192" y="597" dominant-baseline="central">MLIP work on your desktop: seconds to minutes</text>
+<rect x="170" y="614" width="14" height="14" rx="3" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
+<text x="192" y="621" dominant-baseline="central">Reference DFT: Psi4 here, or Gaussian/ORCA on the HPC</text>
+</g>
+</svg>
