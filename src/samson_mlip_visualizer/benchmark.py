@@ -143,6 +143,67 @@ class PathBenchmark:
         return path
 
 
+class TabulatedBenchmark(PathBenchmark):
+    """A benchmark read back from its CSV (:meth:`PathBenchmark.write_csv`), for
+    re-plotting without recomputing. The per-atom forces are not in the CSV, so
+    the force quantities are the tabulated ones."""
+
+    @classmethod
+    def from_csv(cls, path: str | Path) -> TabulatedBenchmark:
+        with Path(path).open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.reader(handle))
+        header, values = rows[0], np.array(rows[1:], dtype=float)
+        column = {name: values[:, i] for i, name in enumerate(header)}
+        # Column order is fixed: coordinate, frame, dE_<model>_eV, dE_<reference>_eV, ...
+        model, reference = header[2][3:-3], header[3][3:-3]
+        relative = {model: column[header[2]], reference: column[header[3]]}
+        both_zero = (relative[model] == 0) & (relative[reference] == 0)
+        bench = cls(
+            names=(model, reference),
+            coordinate=column[header[0]],
+            coordinate_label=header[0],
+            energies=relative,  # already relative to the reference frame
+            forces={},
+            frame_indices=[int(i) for i in column["frame"]],
+            reference_frame=int(np.flatnonzero(both_zero)[0]) if both_zero.any() else 0,
+            committee_energy_std=column.get("committee_energy_std_eV"),
+            committee_force_std=column.get("committee_force_std_max_eV_per_A"),
+        )
+        known = {
+            header[0], "frame", f"dE_{model}_eV", f"dE_{reference}_eV", "energy_error_eV",
+            f"mean_F_{model}_eV_per_A", f"mean_F_{reference}_eV_per_A",
+            "force_error_mean_eV_per_A", "force_error_max_eV_per_A",
+            "committee_energy_std_eV", "committee_force_std_max_eV_per_A",
+        }
+        extra = [name for name in header if name not in known]
+        if extra:
+            bench.descriptor = (extra[0], column[extra[0]])
+        bench.extra["columns"] = column
+        return bench
+
+    def rename(self, model: str, reference: str) -> None:
+        """New legend names; the tabulated columns stay reachable under them."""
+        columns = self.extra["columns"]
+        for old, new in zip(self.names, (model, reference), strict=True):
+            self.energies[new] = self.energies.pop(old)
+            columns[f"mean_F_{new}_eV_per_A"] = columns[f"mean_F_{old}_eV_per_A"]
+        self.names = (model, reference)
+
+    def _column(self, name: str) -> np.ndarray:
+        return self.extra["columns"][name]
+
+    def mean_force(self, name: str) -> np.ndarray:
+        return self._column(f"mean_F_{name}_eV_per_A")
+
+    @property
+    def force_error_mean(self) -> np.ndarray:
+        return self._column("force_error_mean_eV_per_A")
+
+    @property
+    def force_error_max(self) -> np.ndarray:
+        return self._column("force_error_max_eV_per_A")
+
+
 def select_frames(
     count: int,
     points: int | None,
@@ -287,10 +348,11 @@ def _mark(axes, mark):
     position, label = mark
     for ax in axes:
         ax.axvline(position, color=_MUTED, lw=0.8, ls=(0, (3, 3)), zorder=0)
-    # On the lower panel: the upper one holds the legend and the peak labels.
-    axes[1].annotate(
-        label, (position, 1.0), xycoords=("data", "axes fraction"), xytext=(-4, -4),
-        textcoords="offset points", ha="right", va="top", color=_INK2,
+    # At the foot of the line in the upper panel: the lower panel's error labels
+    # peak near the TS, and the legend sits at the top.
+    axes[0].annotate(
+        label, (position, 0.0), xycoords=("data", "axes fraction"), xytext=(4, 4),
+        textcoords="offset points", ha="left", va="bottom", color=_INK2,
     )
 
 
@@ -319,10 +381,11 @@ def _end_labels(ax, bench: PathBenchmark, end_labels):
     if not end_labels:
         return
     x = bench.coordinate
-    reference = bench.relative(bench.reference)
+    # Below the lower of the two curves, so neither runs through the label.
+    lower = np.minimum(bench.relative(bench.model), bench.relative(bench.reference))
     for position, value, text, align in (
-        (x[0], reference[0], end_labels[0], "left"),
-        (x[-1], reference[-1], end_labels[1], "right"),
+        (x[0], lower[0], end_labels[0], "left"),
+        (x[-1], lower[-1], end_labels[1], "right"),
     ):
         ax.annotate(
             text, (position, value), xytext=(0, -14), textcoords="offset points",
@@ -342,18 +405,12 @@ def plot_energy(
     plt, figure, (top, bottom) = _axes()
     x = bench.coordinate
     model, reference = bench.relative(bench.model), bench.relative(bench.reference)
-    _line(top, x, model, _MODEL, bench.model)
-    _line(top, x, reference, _REFERENCE, bench.reference)
-    # Label each peak value above the higher curve and below the lower one.
-    for values, name in ((model, bench.model), (reference, bench.reference)):
-        k = int(np.argmax(values))
-        higher = values[k] >= max(model.max(), reference.max()) - 1e-12
-        top.annotate(
-            f"{name}  {values[k]:.2f} eV", (x[k], values[k]), xytext=(10, 10 if higher else -16),
-            textcoords="offset points", ha="left", va="center", color=_INK2,
-        )
+    # The peak values go in the legend: labels next to the curves collide with the
+    # legend and the end labels whenever a profile peaks at one end.
+    _line(top, x, model, _MODEL, f"{bench.model}, peak {model.max():.2f} eV")
+    _line(top, x, reference, _REFERENCE, f"{bench.reference}, peak {reference.max():.2f} eV")
     top.set_ylabel(f"Energy relative to frame {bench.frame_indices[bench.reference_frame]} (eV)")
-    top.legend(frameon=False, loc="upper left", labelcolor=_INK2)
+    top.legend(frameon=False, loc="best", labelcolor=_INK2)
     _end_labels(top, bench, end_labels)
     low, high = min(model.min(), reference.min()), max(model.max(), reference.max())
     top.set_ylim(low - 0.15 * (high - low), high + 0.15 * (high - low))
@@ -363,17 +420,25 @@ def plot_energy(
     _line(bottom, x, error, _INK2)
     bottom.fill_between(x, 0, error, color=_INK2, alpha=0.08, lw=0)
     k = int(np.argmax(np.abs(error)))
+    # Errors of a well-trained model round to "−0.00 eV"; label those in meV.
+    small = np.abs(error).max() < 0.05
+
+    def amount(value):
+        return f"{1000 * value:+.1f} meV" if small else f"{value:+.2f} eV"
+
     bottom.annotate(
-        f"{error[k]:+.2f} eV", (x[k], error[k]), xytext=(0, 9 if error[k] >= 0 else -9),
+        amount(error[k]), (x[k], error[k]), xytext=(0, 9 if error[k] >= 0 else -9),
         textcoords="offset points", ha="center", va="bottom" if error[k] >= 0 else "top",
         color=_INK2,
     )
     # The error is zero at the reference frame by construction; label the far end.
     far = len(x) - 1 if bench.reference_frame == 0 else 0
-    bottom.annotate(
-        f"{error[far]:+.2f} eV", (x[far], error[far]), xytext=(0, 9), textcoords="offset points",
-        ha="right" if x[far] >= x[bench.reference_frame] else "left", color=_INK2,
-    )
+    if far != k:  # already labeled when the largest error is at the far end
+        bottom.annotate(
+            amount(error[far]), (x[far], error[far]), xytext=(0, 9),
+            textcoords="offset points",
+            ha="right" if x[far] >= x[bench.reference_frame] else "left", color=_INK2,
+        )
     if bench.committee_energy_std is not None:
         bottom.plot(x, bench.committee_energy_std, color=_MUTED, lw=1.2, ls=(0, (4, 2)),
                     label="committee σ")
@@ -481,13 +546,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         description="Compare a model with a reference method (PBE via Psi4, xTB, another "
         "MLIP) along a path: an IRC, scan, or band written by samson-mlip --trajectory.",
     )
-    parser.add_argument("path", type=Path, help="Multi-frame file readable by ASE (extxyz, traj)")
-    parser.add_argument("--model", nargs="+", required=True, help="Model file(s); several MACE "
+    parser.add_argument("path", type=Path, help="Multi-frame file readable by ASE (extxyz, "
+                        "traj), or with --replot a benchmark CSV")
+    parser.add_argument("--replot", action="store_true", help="Redraw the figures from a "
+                        "benchmark CSV written earlier, without recomputing anything")
+    parser.add_argument("--model", nargs="+", help="Model file(s); several MACE "
                         "files form a committee whose spread is also reported")
-    parser.add_argument("--backend", default="mace", choices=["mace", "deepmd", "xtb", "psi4"])
+    parser.add_argument("--backend", default="mace",
+                        choices=["mace", "deepmd", "xtb", "psi4", "aimnet2"])
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--dtype", default="float64", choices=["float64", "float32"])
-    parser.add_argument("--reference", default="psi4", choices=["psi4", "xtb", "mace", "deepmd"])
+    parser.add_argument("--reference", default="psi4",
+                        choices=["psi4", "xtb", "mace", "deepmd", "aimnet2"])
     parser.add_argument("--reference-model", default="auto",
                         help="Reference model file, xtb executable, or Psi4 python ('auto' finds "
                         "xtb or Psi4)")
@@ -502,11 +572,29 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help="Output prefix (default: <path>_benchmark)")
     parser.add_argument("--xtb-method", default="gfn2", choices=["gfn2", "gfn1", "gfnff"])
     parser.add_argument("--psi4-method", default="pbe")
+    parser.add_argument("--aimnet-model", default="aimnet2")
     parser.add_argument("--basis", default="def2-tzvp")
     parser.add_argument("--charge", type=int, default=0)
     parser.add_argument("--multiplicity", type=int, default=1)
     parser.add_argument("--solvent", default=None)
     args = parser.parse_args(argv)
+    ends = tuple(args.ends.split(",", 1)) if args.ends else None
+    if args.replot:
+        bench = TabulatedBenchmark.from_csv(args.path)
+        if args.labels:
+            bench.rename(*(part.strip() for part in args.labels.split(",", 1)))
+        mark = None
+        if bench.coordinate_label in (_COORDINATES["irc_arc"],):
+            mark = (bench.coordinate[int(np.argmin(np.abs(bench.coordinate)))], "TS")
+        prefix = args.out or args.path.with_suffix("")
+        plot_energy(bench, prefix.with_name(prefix.name + "_energy.png"), title=args.title,
+                    mark=mark, end_labels=ends)
+        plot_forces(bench, prefix.with_name(prefix.name + "_forces.png"), title=args.title,
+                    mark=mark)
+        print(f"redrew {prefix}_energy.png and {prefix}_forces.png")
+        return 0
+    if not args.model:
+        parser.error("--model is required unless --replot is given")
 
     frames = read(args.path, index=":")
     model_files = args.model[0] if len(args.model) == 1 else args.model
@@ -545,7 +633,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         on_progress=lambda done, total: print(f"frame {done}/{total}", flush=True),
     )
     prefix = args.out or args.path.with_name(args.path.stem + "_benchmark")
-    ends = tuple(args.ends.split(",", 1)) if args.ends else None
     written = write_report(bench, prefix, title=args.title, mark=mark, end_labels=ends)
     for name, value in bench.summary().items():
         print(f"{name:40s} {value:.4f}" if isinstance(value, float) else f"{name:40s} {value}")
@@ -565,11 +652,19 @@ def basis_name(basis: str) -> str:
     return basis.upper()
 
 
+def method_name(method: str) -> str:
+    """Conventional spelling of a Psi4 method name: PBE, B3LYP-D3BJ, ωB97X-D, ωB97M-V."""
+    name = method.upper()
+    return "ω" + name[1:] if name.startswith("WB97") else name
+
+
 def _label(backend: str, args) -> str:
     if backend == "psi4":
-        return f"{args.psi4_method.upper()}/{basis_name(args.basis)}"
+        return f"{method_name(args.psi4_method)}/{basis_name(args.basis)}"
     if backend == "xtb":
         return f"{args.xtb_method.upper()}-xTB"
+    if backend == "aimnet2":
+        return "AIMNet2"
     return backend.upper() if backend == "mace" else "DeepMD"
 
 

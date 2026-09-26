@@ -32,6 +32,8 @@ The panel provides:
 - `FixAtoms` constraints derived from SAMSON fixed-atom flags;
 - local MACE and DeepMD model files, with CPU or CUDA selection for MACE;
 - GFN-xTB (through the `xtb` program) as a semi-empirical cross-check backend;
+- AIMNet2, an MLIP that takes the molecular charge, for ions and anionic
+  reactions (in its own environment, like Psi4);
 - no native SAMSON SDK build: the panel is an installable Python package.
 
 > [!IMPORTANT]
@@ -87,6 +89,20 @@ environment's `python` in the usual conda and micromamba environment folders,
 or through the `XTB_EXE` / `PSI4_PYTHON` environment variables. The in-process
 `tblite-python` package was not used: its conda-forge Windows build crashes on
 the first calculation.
+
+**AIMNet2** is an MLIP rather than a reference method, but installs the same
+way, because it needs a newer NumPy than SAMSON's Python allows. Unlike
+MACE-MP-0 it takes the total charge and multiplicity, so it can handle anions
+such as SN2 complexes:
+
+```bash
+micromamba create -n mlip -c conda-forge python=3.12 pip
+micromamba run -n mlip python -m pip install aimnet
+```
+
+Choose that environment's `python` as the model file (found automatically, or
+through `AIMNET_PYTHON`). The network defaults to AIMNet2 ωB97M-D3, downloaded
+on first use; a downloaded `.pt` file works too.
 
 ## Launch
 
@@ -498,6 +514,21 @@ only you can read) on every request, logs each request, and never starts by
 itself. See [`docs/samson_api.md`](docs/samson_api.md) for the methods, MCP
 setup, and security model.
 
+### Worked example: an SN2 reaction through the MCP tools
+
+![F⁻···CH₃Cl, the Walden transition state, and FCH₃···Cl⁻ in SAMSON](examples/sn2_f_ch3cl/images/sn2_irc_snapshots.png)
+
+A coding assistant imported a TS guess for F⁻ + CH₃Cl → CH₃F + Cl⁻ and started
+one `ts` job with the AIMNet2 backend at charge −1 (P-RFO, exact Hessian,
+frequency and IRC checks). In 37 s it had the Walden transition state (one
+imaginary mode, −743 cm⁻¹) and an IRC connecting the two ion–dipole complexes.
+Checked against CCSD(T)/CBS literature values, AIMNet2's TS is right but its
+barrier from the complex is 9.3 kcal/mol instead of 3.4, and PBE has no barrier
+at all. MACE-MP-0 small fine-tuned to ωB97X-D in about 20 minutes on the laptop
+gives 3.3 kcal/mol and the literature geometries within 0.05 Å.
+[`examples/sn2_f_ch3cl/`](examples/sn2_f_ch3cl/) has the full comparison, the
+benchmarks along the path, and the fine-tune.
+
 ## Surface and passivant models
 
 This workflow is compatible with passivated surface models when the potential is
@@ -526,6 +557,7 @@ number that is easy to misinterpret.
 | DeepMD | `deepmd.calculator.DP` | `.pb`, `.pth`, `.json`, depending on backend | controlled by the installed DeepMD runtime |
 | Psi4 | `psi4_backend.Psi4Calculator` (a worker running `psi4.gradient`) | the Psi4 environment's `python`; any method/basis with gradients | CPU threads (half the cores, up to 8) |
 | xTB | `xtb_backend.XTBCalculator` (runs `xtb --grad`) | the `xtb` executable; method GFN2 / GFN1 / GFN-FF | CPU; threads via `OMP_NUM_THREADS` |
+| AIMNet2 | `aimnet2_backend.AIMNet2Calculator` (a worker running aimnet) | the aimnet environment's `python`; network by registry name or `.pt` file; charge and multiplicity | CPU (float32) |
 
 The chemical species and cutoff compatibility are determined by the model, not
 the file extension. Validate a new file against the code and structure used to

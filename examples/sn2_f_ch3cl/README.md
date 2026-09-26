@@ -1,0 +1,206 @@
+# SN2 in SAMSON: F⁻ + CH₃Cl → CH₃F + Cl⁻
+
+A worked example of the SAMSON bridge on an ionic reaction, run end to end by
+an agent through the MCP tools (`samson_import_file`, `samson_start_job`,
+`samson_job_status`, `samson_view`), then checked against DFT and the
+literature. The numbers come from runs on 2026-09-26 on a laptop (Intel
+i9-14900HX, RTX 5070 Laptop GPU).
+
+![F⁻···CH₃Cl, the Walden transition state, and FCH₃···Cl⁻ in SAMSON, from the AIMNet2 IRC](images/sn2_irc_snapshots.png)
+
+*Frames of the AIMNet2 IRC in SAMSON (F orange, Cl green). The CH₃ umbrella
+turns inside out as F⁻ comes in from the back and Cl⁻ leaves: the Walden
+inversion. Energies are relative to the reactant complex.*
+
+## Why this reaction needs a charge-aware model
+
+The system is an anion, [CH₃FCl]⁻. MACE-MP-0 has no charge input, so it
+evaluates the same six atoms as a neutral (radical) system. The **AIMNet2**
+backend (ωB97M-D3 training data, explicit charge and long-range Coulomb) takes
+`charge: -1`. It runs in its own environment in a worker process, like Psi4.
+
+## What was run, through the MCP tools
+
+1. Import a collinear TS guess (C–F 2.00 Å, C–Cl 2.15 Å, planar CH₃).
+2. `samson_start_job` `ts` with `backend: aimnet2`, `charge: -1`,
+   `method: prfo`, `exact_hessian`, `check_frequencies`, `check_irc` (37 s):
+   - P-RFO converged in 3 steps;
+   - one imaginary mode, −743 cm⁻¹;
+   - IRC to two different minima: F⁻···CH₃Cl (0.40 eV below the TS) and
+     FCH₃···Cl⁻ (1.50 eV below).
+3. `samson_start_job` `irc` with `trajectory` for the benchmarks (560 frames;
+   about half are the end relaxations crawling over the flat Cl⁻ departure).
+
+The same run with **GFN2-xTB** (charge −1) is a useful cautionary tale: P-RFO
+converges to a saddle with one imaginary mode (−169 cm⁻¹) that is *not* the
+Walden TS. F⁻ is H-bonded to one hydrogen with C–Cl intact, and only the IRC
+check shows it (one side drops 1.33 eV, the other does not move). A C–F scan
+then finds no barrier at all on the GFN2 surface.
+
+## Are the numbers right?
+
+Stationary points relative to F⁻ + CH₃Cl, kcal/mol, classical (no zero-point
+energy). The calculations are single points at the AIMNet2 geometries
+(`stationary_points.py`, `reference_energies.py`, `compare.py`); the
+literature values are at their own optimized geometries.
+
+| Method | F⁻···CH₃Cl | Walden TS | FCH₃···Cl⁻ | CH₃F + Cl⁻ | Barrier from F⁻···CH₃Cl |
+|---|---|---|---|---|---|
+| **CCSD(T)/CBS focal point** (Szabó & Czakó 2015) | −15.6 | −12.2 | −41.6 | −31.9 | **3.4** |
+| W1′ (Parthiban et al. 2001) | −15.4 | −12.5 | −42.2 | −32.6 | 2.9 |
+| ωB97M-V/def2-TZVPPD | −15.5 | −12.9 | −41.9 | −32.3 | 2.6 |
+| ωB97X-D/def2-TZVPD | −15.0 | −12.0 | −42.1 | −32.9 | 3.0 |
+| CCSD(T)/aug-cc-pVDZ | −16.5 | −15.0 | −42.3 | −32.4 | 1.6 |
+| **AIMNet2** | −21.7 | −12.4 | −46.6 | −38.7 | **9.3** |
+| PBE/def2-TZVPD | −16.4 | −17.0 | −37.2 | −29.2 | −0.6 |
+| GFN2-xTB | −15.9 | −20.0 | −45.0 | −36.6 | −4.1 |
+
+![Stationary-point energies of each method next to the literature](images/sn2_energy_levels.png)
+
+- **AIMNet2 finds the right transition state.** Its TS geometry (C–F 2.00 Å,
+  C–Cl 2.17 Å) matches the CCSD(T) one (2.025 / 2.112 Å), and its TS energy
+  relative to the reactants is within 0.2 kcal/mol. But it binds the
+  ion–dipole complexes 5–6 kcal/mol too strongly and makes the reaction
+  7 kcal/mol too exothermic, so its barrier from the complex is **9.3
+  kcal/mol instead of 3.4** (0.40 vs 0.15 eV).
+- **The hybrid functionals are right.** ωB97M-V and ωB97X-D reproduce the
+  focal-point values within 1 kcal/mol at every point, even at AIMNet2's
+  geometries. That also validates those geometries.
+- **PBE and xTB have no barrier.** PBE puts the Walden TS 0.6 kcal/mol *below*
+  the complex, xTB 4 kcal/mol below. GGA functionals underestimate SN2
+  barriers by about 7 kcal/mol on average (PBE: −6.97 kcal/mol mean signed
+  error over NHTBH38's 16 SN2 barriers). **PBE is the wrong reference for this
+  reaction**, and a model fine-tuned on PBE would learn a barrierless surface.
+- CCSD(T)/aug-cc-pVDZ is only a laptop spot check: the basis is too small for
+  anions (TS 2.8 kcal/mol too low).
+
+## Along the path
+
+`run_benchmarks.ps1` evaluates each method on 30 frames of the AIMNet2 IRC
+(`samson-mlip-benchmark`).
+
+![AIMNet2 vs ωB97X-D along the AIMNet2 IRC](images/aimnet2_vs_wb97xd_energy.png)
+
+*Against ωB97X-D (the validated level), with both profiles measured from the
+reactant complex: AIMNet2 rises 0.28 eV too high by the TS and stays about
+0.1 eV high on the product side. ωB97X-D's own barrier along this path,
+0.147 eV = 3.39 kcal/mol, equals the focal-point value.*
+
+![AIMNet2 vs ωB97X-D forces along the AIMNet2 IRC](images/aimnet2_vs_wb97xd_forces.png)
+
+The PBE comparisons, for the record (same frames, PBE/def2-TZVPD):
+
+| | ![AIMNet2 vs PBE](images/aimnet2_vs_pbe_energy.png) | ![MACE-MP-0 vs PBE](images/mace_vs_pbe_energy.png) | ![GFN2-xTB vs PBE](images/xtb_vs_pbe_energy.png) |
+|---|---|---|---|
+| | AIMNet2 | MACE-MP-0 small | GFN2-xTB |
+
+PBE's profile is flat up to the TS (peak 0.004 eV above the complex).
+MACE-MP-0 has no barrier either, and its energy *rises* as Cl⁻ leaves: without a
+charge input it cannot represent a free chloride anion.
+
+## Fine-tuning
+
+`finetune_sn2.py` fine-tunes **MACE-MP-0 small to ωB97X-D/def2-TZVPD**, the
+level that matches the literature within 1 kcal/mol and has analytic
+gradients. It follows the HCN recipe ([`docs/fine_tuning.md`](../../docs/fine_tuning.md)),
+with two changes:
+
+- **The seed path is AIMNet2's IRC, not the foundation model's.** MACE-MP-0 has
+  no barrier here, so it has no transition state to start from; AIMNet2's
+  geometries match the CCSD(T) ones.
+- **Labels at charge −1.** MACE has no charge input, but every configuration is
+  the same anion, so the charge is implicit in the data. The price: the tuned
+  model is a specialist that **cannot evaluate separated ions** (a bare F⁻ or
+  Cl⁻) or any other charge, and its model card says so.
+
+Data: 30 IRC frames spread by arc length plus two rattled copies of each
+(σ 0.04 Å), 90 configurations. Training: three plain fine-tunes (seeds 1–3,
+120 epochs, all foundation elements kept), in parallel on the laptop GPU.
+Then the committee's own P-RFO (exact Hessian), frequencies, and IRC, and
+ωB97X-D on 15 frames of that IRC that were not trained on.
+
+| | Fine-tuned MACE (3 models) | AIMNet2 | Target: ωB97X-D | CCSD(T) literature |
+|---|---|---|---|---|
+| Barrier from F⁻···CH₃Cl | **3.31 kcal/mol** (0.144 eV) | 9.3 | 3.0–3.4 | 3.39 |
+| FCH₃···Cl⁻ − F⁻···CH₃Cl | −27.1 kcal/mol | −24.9 | −27.1 | −26.0 |
+| TS r(C–F) / r(C–Cl) | **2.043 / 2.119 Å** | 2.00 / 2.17 | — | 2.025 / 2.112 |
+| F⁻···CH₃Cl r(C–F) / r(C–Cl) | **2.516 / 1.851 Å** | 2.45 / 1.88 | — | 2.498 / 1.843 |
+| FCH₃···Cl⁻ r(C–F) / r(C–Cl) | **1.409 / 3.229 Å** | 1.40 / 3.12 | — | 1.413 / 3.180 |
+| TS imaginary mode | −445 cm⁻¹ | −743 cm⁻¹ | −450 cm⁻¹ (at the tuned TS) | not verified |
+| Largest error on its own IRC, 15 frames | 2 meV; forces 0.012 eV/Å mean, 0.053 worst atom | 0.28 eV | — | — |
+
+The ωB97X-D and AIMNet2 complex-to-complex energies are single points at AIMNet2's
+geometries; the ωB97X-D frequencies are at the tuned model's TS, where
+ωB97X-D's largest force is 0.025 eV/Å (`ts_frequency_check.py`).
+
+![Fine-tuned MACE vs ωB97X-D along its own IRC](images/finetuned_vs_wb97xd_energy.png)
+
+*The committee's own IRC, frame 0 at the product complex. The error stays
+within ±2 meV and inside the committee spread (dashed).*
+
+Cost: **about 20 minutes** on the laptop. ωB97X-D labels 465 s (5 s per
+six-atom gradient), training 579 s for the three models in parallel, committee
+TS search and IRC 116 s, validation 42 s.
+
+What this does and does not show:
+
+- The **15 test frames are close to the training data** (median 0.011 Å, at
+  most 0.019 Å aligned RMSD to the nearest training structure): the tuned IRC
+  runs almost on top of AIMNet2's. They show the model reproduces its training
+  region, as for HCN, not that it generalizes off the path.
+- The target is ωB97X-D. Relative to the focal-point benchmark the tuned model
+  inherits ωB97X-D's errors: the barrier is right, the complex-to-complex energy
+  about 1 kcal/mol too exothermic.
+- The models are 32 MB each (all 89 foundation elements kept), with model
+  cards recording the reference level and scope. On the machine they were
+  built on they are only in the mirror folder on the work drive,
+  `D:\MLIP_Work_Folder\cache\mace\finetuned\SN2-F-CH3Cl_wB97XD-def2TZVPD_from-MACE-MP-0-small\`
+  (`install_models` also puts a copy in `~/.cache/mace/finetuned`, removed here
+  to keep large files off the system drive). Select the three `_seed?.model`
+  files in the panel's model field to use them as a committee.
+- A charge-aware alternative would be to fine-tune AIMNet2 itself
+  (`aimnet train --load`), which keeps the charge input and the ion limits; it
+  needs aimnet's HDF5 data format and care with the model's built-in D3 term,
+  and was not tried.
+
+## Reproduce
+
+Environments: SAMSON's Python (the package, mace-torch), an aimnet
+environment (`D:\MLIP_Work_Folder\envs\mlip`: `pip install aimnet`), Psi4 in
+its own environment (`qm`). Outputs go to `D:\MLIP_Work_Folder\sn2_F_CH3Cl`.
+
+1. In SAMSON, with the bridge running: import a TS guess and start the `ts`
+   and `irc` jobs as above (the IRC with
+   `trajectory: <work>\aimnet2_irc.extxyz`).
+2. `run_benchmarks.ps1` (PBE comparisons; `--replot` redraws figures from the
+   CSVs without recomputing).
+3. `python stationary_points.py` (aimnet environment), then
+   `python reference_energies.py` (Psi4 environment), then `python compare.py`
+   and `python energy_levels.py`.
+4. `python finetune_sn2.py` (SAMSON's Python).
+5. `python snapshot_figure.py` for the figure at the top, from SAMSON viewport
+   captures of the three frames (`captureViewportToFile`, 1600×1200; each frame
+   imported as XYZ so SAMSON draws the bonds that exist in it).
+
+### Laptop notes
+
+- **Psi4 has no analytic gradient for ωB97M-V** (its VV10 term): forces take 25
+  SCFs per six-atom frame, about 10 hours for a 30-frame benchmark. Energies
+  are fine. ωB97X-D has analytic gradients (about 4 s per frame here) and is
+  within 1 kcal/mol of the literature, so it is the level for forces and labels.
+- **Keep Psi4's memory below 2 GiB on Windows** (conda-forge Psi4 1.11): with a
+  larger setting the coupled-cluster codes fail with a spurious "not enough
+  memory", even for 100 basis functions.
+- `-D3BJ` functionals need the `s-dftd3` program, which the `qm` environment
+  lacks; `wb97m-v` has its dispersion built in.
+
+## References
+
+- Szabó, Czakó, *Nat. Commun.* **6**, 5972 (2015), DOI 10.1038/ncomms6972; and
+  Szabó, Császár, Czakó, *Chem. Sci.* **4**, 4362 (2013), DOI 10.1039/c3sc52157e:
+  all-electron CCSD(T)/CBS focal-point energies and CCSD(T)/aug-cc-pCVQZ
+  geometries.
+- Parthiban, de Oliveira, Martin, *J. Phys. Chem. A* **105**, 895 (2001),
+  DOI 10.1021/jp0031000: W1′ energies and DFT barriers for this reaction.
+- Zhao, González-García, Truhlar, *J. Phys. Chem. A* **109**, 2012 (2005):
+  NHTBH38 (SN2 barriers) and the mean errors of GGA and hybrid functionals.

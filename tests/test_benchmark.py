@@ -93,10 +93,28 @@ def test_write_report_and_descriptor(tmp_path):
     assert "energy_error_eV" in header and "∠H–H–H" in header
 
 
-def test_basis_names():
+def test_replot_from_csv_matches_the_original(tmp_path, capsys):
+    pytest.importorskip("matplotlib")
+    bench = benchmark_path(path(7), Spring(k=2.0), Spring(), names=("fast", "slow"),
+                           coordinate=np.linspace(-1, 2, 7),
+                           coordinate_label=benchmark._COORDINATES["irc_arc"])
+    csv_path = write_report(bench, tmp_path / "run")["csv"]
+    table = benchmark.TabulatedBenchmark.from_csv(csv_path)
+    assert table.names == ("fast", "slow") and table.reference_frame == 0
+    assert table.energy_error == pytest.approx(bench.energy_error)
+    assert table.force_error_max == pytest.approx(bench.force_error_max)
+    assert table.mean_force("slow") == pytest.approx(bench.mean_force("slow"))
+    code = benchmark.main([str(csv_path), "--replot", "--labels", "Model,ωB97X-D", "--ends", "A,B"])
+    assert code == 0 and "redrew" in capsys.readouterr().out
+    assert (tmp_path / "run_energy.png").stat().st_size > 0
+
+
+def test_basis_and_method_names():
     assert basis_name("def2-tzvp") == "def2-TZVP"
     assert basis_name("cc-pvtz") == "cc-pVTZ"
     assert basis_name("aug-cc-pvdz") == "aug-cc-pVDZ"
+    assert benchmark.method_name("wb97x-d") == "ωB97X-D"
+    assert benchmark.method_name("pbe") == "PBE"
 
 
 def test_cli_benchmark(tmp_path, monkeypatch, capsys):
