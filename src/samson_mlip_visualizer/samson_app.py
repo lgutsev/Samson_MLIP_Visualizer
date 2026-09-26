@@ -27,6 +27,10 @@ _REMEMBERED = (
     "model_path",
     "device",
     "dtype",
+    "xtb_method",
+    "xtb_solvent",
+    "xtb_charge",
+    "xtb_multiplicity",
     "min_distance",
     "max_force_std",
     "optimizer",
@@ -160,7 +164,11 @@ def _make_window():
 
             # --- model settings shared by every task -------------------------------
             self.backend = QtWidgets.QComboBox()
-            self.backend.addItems(["MACE", "DeepMD"])
+            self.backend.addItems(["MACE", "DeepMD", "xTB"])
+            self.backend.setToolTip(
+                "xTB runs the GFN-xTB program (semi-empirical, no training set) as an "
+                "independent cross-check; its 'model file' is the xtb executable."
+            )
             self.model_path = QtWidgets.QLineEdit()
             self.model_path.setPlaceholderText(
                 "One model file, or several MACE files for an uncertainty committee"
@@ -187,11 +195,34 @@ def _make_window():
                 "Abort a committee run when the per-atom force spread exceeds this. 0 disables.",
             )
 
+            self.xtb_method = QtWidgets.QComboBox()
+            self.xtb_method.addItems(["GFN2", "GFN1", "GFN-FF"])
+            self.xtb_solvent = QtWidgets.QLineEdit()
+            self.xtb_solvent.setPlaceholderText("gas phase")
+            self.xtb_solvent.setToolTip("ALPB implicit solvent, e.g. water, methanol, toluene.")
+            self.xtb_charge = int_spin(-20, 20, 0, "Molecular charge (--chrg).")
+            self.xtb_multiplicity = int_spin(
+                1, 20, 1, "Spin multiplicity; xtb gets multiplicity − 1 unpaired electrons."
+            )
+            xtb_row = QtWidgets.QHBoxLayout()
+            xtb_row.addWidget(self.xtb_method)
+            xtb_row.addWidget(self.xtb_solvent, 1)
+            charge_row = QtWidgets.QHBoxLayout()
+            charge_row.addWidget(self.xtb_charge)
+            charge_row.addWidget(self.xtb_multiplicity)
+            self._xtb_widgets = (
+                self.xtb_method,
+                self.xtb_solvent,
+                self.xtb_charge,
+                self.xtb_multiplicity,
+            )
+
             settings = grid(
                 [
                     [("Backend", self.backend)],
                     [("Model file(s)", model_row)],
                     [("MACE device", self.device), ("MACE dtype", self.dtype)],
+                    [("xTB / solvent", xtb_row), ("Charge, mult.", charge_row)],
                     [
                         ("Min. atom distance", self.min_distance),
                         ("Max committee σ", self.max_force_std),
@@ -606,9 +637,31 @@ def _make_window():
         # --- small helpers ---------------------------------------------------------
 
         def _backend_changed(self, text):
+            from .xtb_backend import find_xtb, is_xtb_executable
+
             is_mace = text.lower() == "mace"
+            is_xtb = text.lower() == "xtb"
             self.device.setEnabled(is_mace)
             self.dtype.setEnabled(is_mace)
+            for widget in self._xtb_widgets:
+                widget.setEnabled(is_xtb)
+            # The model field holds the xtb executable for xTB; swap it with the backend.
+            current = self.model_path.text().strip()
+            holds_xtb = bool(current) and is_xtb_executable(current)
+            if is_xtb and not holds_xtb:
+                found = find_xtb()
+                if found is not None:
+                    self.model_path.setText(str(found))
+            elif not is_xtb and holds_xtb:
+                self.model_path.setText(_default_model_path())
+
+        def _xtb_options(self):
+            return {
+                "method": self.xtb_method.currentText(),
+                "charge": self.xtb_charge.value(),
+                "multiplicity": self.xtb_multiplicity.value(),
+                "solvent": self.xtb_solvent.text().strip() or None,
+            }
 
         def _ensemble_changed(self, text):
             self.temperature.setEnabled(text != "NVE")
@@ -752,11 +805,18 @@ def _make_window():
             backend = self.backend.currentText().lower()
             device = self.device.currentText()
             dtype = self.dtype.currentText()
-            calculator = create_calculator(backend, model_files, device=device, dtype=dtype)
+            xtb = self._xtb_options() if backend == "xtb" else None
+            calculator = create_calculator(
+                backend, model_files, device=device, dtype=dtype, xtb=xtb
+            )
             first_model = model_files if isinstance(model_files, str) else model_files[0]
             try:
                 provenance = collect_provenance(
-                    backend=backend, model_path=first_model, device=device, dtype=dtype
+                    backend=backend,
+                    model_path=first_model,
+                    device=device,
+                    dtype=dtype,
+                    settings=xtb,
                 )
                 self._log("Run provenance:\n" + provenance.as_text())
                 if not isinstance(model_files, str):

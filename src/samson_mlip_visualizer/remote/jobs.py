@@ -163,15 +163,23 @@ class JobManager:
         backend = _get(params, "backend", str, "mace").lower()
         device = _get(params, "device", str, "cpu")
         dtype = _get(params, "dtype", str, "float64")
-        key = (backend, tuple(paths), device, dtype)
+        xtb = None
+        if backend == "xtb":
+            xtb = {
+                "method": _get(params, "xtb_method", str, "gfn2"),
+                "charge": _get(params, "charge", int, 0),
+                "multiplicity": _get(params, "multiplicity", int, 1),
+                "solvent": _get(params, "solvent", str, None) or None,
+            }
+        key = (backend, tuple(paths), device, dtype, tuple(sorted((xtb or {}).items())))
         if key not in self._calculators:
             argument = paths[0] if len(paths) == 1 else paths
             # Keep one calculator: a second MACE model would double GPU memory.
             self._calculators = {
-                key: create_calculator(backend, argument, device=device, dtype=dtype)
+                key: create_calculator(backend, argument, device=device, dtype=dtype, xtb=xtb)
             }
         provenance = collect_provenance(
-            backend=backend, model_path=paths[0], device=device, dtype=dtype
+            backend=backend, model_path=paths[0], device=device, dtype=dtype, settings=xtb
         ).as_dict()
         return self._calculators[key], provenance
 

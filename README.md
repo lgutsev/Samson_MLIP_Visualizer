@@ -31,6 +31,7 @@ The panel provides:
 - periodic cell and per-axis PBC transfer from SAMSON to ASE;
 - `FixAtoms` constraints derived from SAMSON fixed-atom flags;
 - local MACE and DeepMD model files, with CPU or CUDA selection for MACE;
+- GFN-xTB (through the `xtb` program) as a semi-empirical cross-check backend;
 - no native SAMSON SDK build: the panel is an installable Python package.
 
 > [!IMPORTANT]
@@ -62,6 +63,21 @@ Do not install both GPU stacks merely because both backends are supported. Start
 with a CPU build, verify a known structure, then follow the backend's current
 CUDA installation guidance if acceleration is needed.
 
+### Optional: xTB as a cross-check
+
+GFN-xTB (semi-empirical tight binding, no training set) is a cheap, independent
+check next to an MLIP. The panel runs the `xtb` program as a subprocess, so it
+goes into an environment of its own, **not** SAMSON's Python:
+
+```bash
+micromamba create -n xtb -c conda-forge xtb
+```
+
+(`conda` works the same way.) The panel finds `xtb.exe` in the usual conda and
+micromamba environment folders, on `PATH`, or through the `XTB_EXE` environment
+variable. The in-process `tblite-python` package was not used: its conda-forge
+Windows build crashes on the first calculation.
+
 ## Launch
 
 Open `scripts/launch_in_samson.py` in SAMSON's Python code editor and run it, or
@@ -81,7 +97,10 @@ Then:
    molecules — and must agree on any unit cell they define.
 3. Mark immobile atoms with SAMSON's fixed-atom flag.
 4. Choose MACE or DeepMD and select the trained model file. Selecting several
-   MACE checkpoints builds an uncertainty committee (see below).
+   MACE checkpoints builds an uncertainty committee (see below). For **xTB**,
+   the model field holds the `xtb` executable (filled in automatically when
+   found). Set the method (GFN2, GFN1, GFN-FF), an optional ALPB solvent, and
+   the charge and multiplicity on the row below.
 5. Run **Single point** first. Check that the energy and forces are plausible.
 6. Pick an optimizer, set the force threshold and maximum steps, then choose
    **Relax positions**.
@@ -258,6 +277,15 @@ barrier is well above the ~2.1 eV of high-level ab initio work. The TS is right
 for this model, but the model is wrong for this chemistry, so the exported
 `Opt=(TS,CalcFC)` input should give the final answer.
 
+**Cross-check with xTB.** Before paying for DFT, repeat the search with the
+**xTB** backend (see [install](#optional-xtb-as-a-cross-check)). It is
+independent of any MLIP training set. When the two agree, both are more
+believable; when they disagree, the reaction needs QM. On the same HCN scan,
+GFN2-xTB finds its TS at r(C–H) 1.16 Å, r(N–H) 1.32 Å (−1426 cm⁻¹) with a
+3.18 eV barrier. MACE and xTB disagree by 0.55 eV, and both miss the reference
+value. xTB is a subprocess, ~0.1 s per call for small molecules, so exact
+Hessians and scans take tens of seconds rather than seconds.
+
 ### Viewing normal modes
 
 After **Frequencies** (or a converged TS search with the frequency check), the
@@ -324,6 +352,8 @@ samson-mlip ts.xyz model.model --irc --trajectory irc.extxyz
 samson-mlip reactant.xyz model.model --qst product.xyz --trajectory band.extxyz -o ts.xyz
 samson-mlip hcn_bent.xyz model.model --scan 2-1:1.0:13 --exact-hessian --freq --export-qm hcn_ts.gjf
 samson-mlip guess.xyz model.model --ts --recompute-hessian 5 --export-qm ts.inp --qm-level "r2SCAN-3c"
+samson-mlip hcn_bent.xyz auto --backend xtb --scan 2-1:1.0:13 --exact-hessian --freq
+samson-mlip anion.xyz auto --backend xtb --xtb-method gfn2 --charge -1 --solvent water --relax
 samson-mlip molecule.xyz model.model --relax --fmax 0.001 --freq
 ```
 
@@ -333,7 +363,9 @@ dimer` (or a dimer option such as `--ts-pair` or `--ts-start`) is given.
 `--scan I-J:STOP[:POINTS]` scans a distance and refines its maximum.
 `--export-qm` writes the final structure as a Gaussian or ORCA input (`--qm-job`
 defaults to `ts` after a TS search, scan, or QST, else `opt`; `--qm-level`,
-`--charge`, `--multiplicity`). `--min-distance` / `--max-drift` guard the
+`--charge`, `--multiplicity`). `--backend xtb` takes the xtb executable, or
+`auto` to find it, in place of a model file, plus `--xtb-method`, `--solvent`,
+and the same `--charge` / `--multiplicity`. `--min-distance` / `--max-drift` guard the
 geometry. With `-o`, the run provenance is written into the output file's
 metadata.
 
@@ -396,6 +428,7 @@ number that is easy to misinterpret.
 |---|---|---|---|
 | MACE | `mace.calculators.MACECalculator` | trained MACE checkpoint/model | `cpu` or `cuda` in the panel |
 | DeepMD | `deepmd.calculator.DP` | `.pb`, `.pth`, `.json`, depending on backend | controlled by the installed DeepMD runtime |
+| xTB | `xtb_backend.XTBCalculator` (runs `xtb --grad`) | the `xtb` executable; method GFN2 / GFN1 / GFN-FF | CPU; threads via `OMP_NUM_THREADS` |
 
 The chemical species and cutoff compatibility are determined by the model, not
 the file extension. Validate a new file against the code and structure used to
@@ -428,8 +461,8 @@ it.
 - Transition states by P-RFO (Sella, optionally from exact Hessians) or the
   dimer method, bond scans refined to a TS, QST2/QST3-style NEB path searches,
   and IRC.
-- Gaussian / ORCA input export (TS, QST2/QST3, IRC, Opt); no QM backend runs
-  inside the tool.
+- Gaussian / ORCA input export (TS, QST2/QST3, IRC, Opt); no DFT runs inside
+  the tool. GFN-xTB (molecules only) is available as a semi-empirical backend.
 - Finite-difference frequencies (6 force calls per free atom): meant for
   molecules and small clusters.
 - MACE committee uncertainty (multiple checkpoints); DeepMD committee not yet.
@@ -486,9 +519,8 @@ Planned, roughly in priority order:
   which matters for physisorbed adsorbates, passivants, and layered materials
   (`mace_mp(dispersion=True)`, or a D3 term added via `SumCalculator`).
 - DeepMD committee support via `deepmd.infer.calc_model_devi`.
-- An xTB (GFN2) backend as a cheap, independent cross-check next to MACE.
-  `tblite` has no Windows wheels on PyPI, so this needs conda or a source
-  build in SAMSON's Python first.
+- xTB: periodic systems (GFN-FF or tblite) and using xtb's own
+  semi-numerical Hessian (`--hess`) instead of 6N subprocess calls.
 
 ## License
 

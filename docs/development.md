@@ -100,8 +100,7 @@ Gaussian escalation path:
   passes through C.
 - **QM export** (`qm_export.py`): Gaussian and ORCA inputs for TS, QST2/QST3
   (ORCA: NEB-TS with side `.xyz` files), IRC, and Opt.
-- **xTB backend: deferred.** `tblite` publishes no Windows wheels on PyPI, so
-  it cannot be pip-installed into SAMSON's Python.
+- **xTB backend** (`xtb_backend.py`), added separately below.
 
 HCN → HNC with MACE-MP-0 small (CUDA, float64). The TS (r(C–H) 1.21 Å,
 r(N–H) 1.35 Å, H–C–N 68°, one imaginary mode at −988 cm⁻¹, 2.63 eV above HCN)
@@ -128,6 +127,37 @@ So scans now report `jumps` (an atom moved more than three steps and 0.3 Å
 after superposition), and the panel and the bridge can confirm any TS with an
 IRC (`check_irc`) that reports where both relaxed ends land. QST ends are
 matched to the reactant and product by aligned RMSD.
+
+### xTB backend
+
+The goal was a cross-check that doesn't depend on any MLIP training set.
+
+- `tblite` has no Windows wheels on PyPI. The conda-forge `tblite-python`
+  0.6.0 build installs, but crashes with an access violation on its first
+  single point, inside its own error handler. It would also have brought numpy
+  2 into SAMSON's numpy-1.24 Python.
+- The conda-forge `xtb` 6.7.1 executable works. `XTBCalculator` writes an xyz
+  file, runs `xtb --grad` in a private temp directory, and reads the `.engrad`
+  file. It keeps `xtbrestart` for SCF warm starts and drops it when the atoms
+  change. On Windows it passes `CREATE_NO_WINDOW` and decodes the output as
+  UTF-8. Each call takes ~0.1 s for small molecules, also from inside SAMSON.
+  In the model field, the executable stands in for the model file, so
+  provenance hashes it and adds `xtb --version` and the method, charge,
+  multiplicity, and solvent.
+- **xtb gradient bug.** A finite-difference check on bent HCN built by ASE
+  (in the yz plane, C–N along z) found GFN1/GFN2 forces ~1 eV/Å off, with a
+  net torque. Rotating the same molecule, or using GFN-FF (no orbitals), gives
+  correct forces, so it appears to be an axis-aligned special case in xtb's
+  analytic gradient. Builder structures are often axis-aligned, so the
+  calculator always sends xtb the structure in a fixed generic orientation and
+  rotates the forces back. A test against the real xtb checks this and fails
+  without the rotation.
+- HCN → HNC with GFN2, run live in SAMSON through the bridge: the scan jumps
+  just as with MACE (a 1.7 eV drop after the peak). The TS is at
+  r(C–H) 1.16 Å, r(N–H) 1.32 Å (−1426 cm⁻¹), and an IRC confirms it: the
+  relaxed ends are HCN and HNC (+0.87 eV). The barrier is 3.18 eV, and MACE
+  gives 2.63 eV. The two disagree by 0.55 eV, the warning sign the cross-check
+  exists to catch.
 
 ## Working notes
 

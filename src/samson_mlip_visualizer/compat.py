@@ -34,6 +34,11 @@ def supported_species(calculator: Any) -> set[str] | None:
     ``None`` means "could not determine" and must not be treated as "supports
     nothing".
     """
+    # Calculators that state it directly (the xTB backend).
+    stated = getattr(calculator, "supported_elements", None)
+    if stated:
+        return set(stated)
+
     # MACE: AtomicNumberTable on the calculator, or an atomic_numbers buffer on
     # the wrapped model(s).
     z_table = getattr(calculator, "z_table", None)

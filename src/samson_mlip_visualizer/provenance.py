@@ -51,6 +51,7 @@ class Provenance:
     dtype: str
     created_utc: str
     versions: dict[str, str] = field(default_factory=dict)
+    settings: dict[str, str] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, str]:
         flat = {
@@ -64,6 +65,8 @@ class Provenance:
         }
         for name, value in self.versions.items():
             flat[f"mlip_version_{name}"] = value
+        for name, value in self.settings.items():
+            flat[f"mlip_setting_{name}"] = value
         return flat
 
     def as_text(self) -> str:
@@ -78,6 +81,8 @@ class Provenance:
         ]
         for name, value in self.versions.items():
             lines.append(f"{name:<15} {value}")
+        for name, value in self.settings.items():
+            lines.append(f"{name:<15} {value}")
         return "\n".join(lines)
 
 
@@ -87,7 +92,11 @@ def collect_provenance(
     model_path: str | Path,
     device: str,
     dtype: str,
+    settings: dict[str, object] | None = None,
 ) -> Provenance:
+    """``settings`` records backend options that change the numbers (xTB method, charge, ...)."""
+    if backend == "xtb":
+        device, dtype = "cpu", "float64"  # the MACE device/dtype settings do not apply
     sha256, size = model_digest(model_path)
     versions: dict[str, str] = {}
     for dist in ("samson-mlip-visualizer", "ase", "numpy"):
@@ -99,6 +108,12 @@ def collect_provenance(
         found = _distribution_version(backend_dist)
         if found:
             versions[backend_dist] = found
+    if backend == "xtb":
+        from .xtb_backend import xtb_version
+
+        found = xtb_version(model_path)
+        if found:
+            versions["xtb"] = found
     return Provenance(
         backend=backend,
         model_path=str(Path(model_path).expanduser()),
@@ -108,4 +123,7 @@ def collect_provenance(
         dtype=dtype,
         created_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         versions=versions,
+        settings={
+            name: str(value) for name, value in (settings or {}).items() if value is not None
+        },
     )

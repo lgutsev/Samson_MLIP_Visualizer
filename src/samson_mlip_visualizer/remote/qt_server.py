@@ -112,12 +112,21 @@ def panel_settings() -> dict[str, Any]:
         if window is None:
             return {}
         files = window._model_files()
-        return {
+        settings = {
             "model": files,
             "backend": window.backend.currentText().lower(),
             "device": window.device.currentText(),
             "dtype": window.dtype.currentText(),
         }
+        if settings["backend"] == "xtb":
+            xtb = window._xtb_options()
+            settings.update(
+                xtb_method=xtb["method"],
+                charge=xtb["charge"],
+                multiplicity=xtb["multiplicity"],
+                solvent=xtb["solvent"],
+            )
+        return settings
     except Exception:  # noqa: BLE001 - no panel, or no model chosen yet
         return {}
 

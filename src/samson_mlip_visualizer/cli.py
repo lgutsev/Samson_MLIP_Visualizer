@@ -24,7 +24,8 @@ from .vibrations import harmonic_frequencies
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="samson-mlip",
-        description="Run a MACE or DeepMD model on a structure file (no SAMSON required).",
+        description="Run a MACE or DeepMD model, or GFN-xTB, on a structure file (no SAMSON "
+        "required).",
     )
     parser.add_argument(
         "structure", type=Path, help="Structure file readable by ASE (xyz, cif, ...)"
@@ -33,9 +34,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "model",
         type=Path,
         nargs="+",
-        help="Trained model file(s). Several MACE files form an uncertainty committee.",
+        help="Trained model file(s). Several MACE files form an uncertainty committee. "
+        "With --backend xtb: the xtb executable, or 'auto' to find it.",
     )
-    parser.add_argument("--backend", choices=["mace", "deepmd"], default="mace")
+    parser.add_argument("--backend", choices=["mace", "deepmd", "xtb"], default="mace")
+    parser.add_argument(
+        "--xtb-method", choices=["gfn2", "gfn1", "gfnff"], default="gfn2", help="xTB method"
+    )
+    parser.add_argument(
+        "--solvent", default=None, help="xTB implicit solvent (ALPB), e.g. water or toluene"
+    )
     parser.add_argument("--device", default="cpu", help="MACE device, e.g. cpu or cuda")
     parser.add_argument("--dtype", default="float64", choices=["float64", "float32"])
     mode = parser.add_mutually_exclusive_group()
@@ -171,8 +179,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Job for --export-qm (default: ts after --ts/--scan/--qst, else opt)",
     )
     qm.add_argument("--qm-level", default=None, help="Method and basis for --export-qm")
-    qm.add_argument("--charge", type=int, default=0, help="Charge for --export-qm")
-    qm.add_argument("--multiplicity", type=int, default=1, help="Spin multiplicity")
+    qm.add_argument(
+        "--charge", type=int, default=0, help="Molecular charge (xTB backend and --export-qm)"
+    )
+    qm.add_argument(
+        "--multiplicity",
+        type=int,
+        default=1,
+        help="Spin multiplicity (xTB backend and --export-qm)",
+    )
     path = parser.add_argument_group("reaction paths (--irc, --qst)")
     path.add_argument("--irc-step", type=float, default=0.1, help="IRC arc step (A amu^1/2)")
     path.add_argument("--qst-guess", type=Path, default=None, help="TS guess for QST3")
@@ -379,17 +394,40 @@ def main(argv: Sequence[str] | None = None) -> int:
     from ase.io import read, write
 
     atoms = read(args.structure)
+    xtb = settings = None
+    if args.backend == "xtb":
+        if [str(path) for path in args.model] == ["auto"]:
+            from .xtb_backend import find_xtb
+
+            found = find_xtb()
+            if found is None:
+                raise SystemExit(
+                    "No xtb executable found; install it with `micromamba create -n xtb "
+                    "-c conda-forge xtb`, or pass its path or set XTB_EXE."
+                )
+            args.model = [found]
+        xtb = settings = {
+            "method": args.xtb_method,
+            "charge": args.charge,
+            "multiplicity": args.multiplicity,
+            "solvent": args.solvent,
+        }
     model_arg = args.model[0] if len(args.model) == 1 else args.model
     calculator = create_calculator(
         args.backend,
         model_arg,
         device=args.device,
         dtype=args.dtype,
+        xtb=xtb,
     )
     atoms.calc = calculator
 
     provenance = collect_provenance(
-        backend=args.backend, model_path=args.model[0], device=args.device, dtype=args.dtype
+        backend=args.backend,
+        model_path=args.model[0],
+        device=args.device,
+        dtype=args.dtype,
+        settings=settings,
     )
     print(provenance.as_text())
     if len(args.model) > 1:

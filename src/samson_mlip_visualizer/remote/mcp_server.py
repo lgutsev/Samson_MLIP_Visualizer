@@ -210,7 +210,9 @@ _JOB_START_SCHEMA = _schema(
             "type": "object",
             "description": (
                 "Optional. model/backend/device/dtype default to the MLIP panel's settings; "
-                "models ('auto'|'all'). relax: fmax, max_steps, optimizer. md: ensemble, "
+                "backend 'xtb' (model = the xtb executable) takes xtb_method (gfn2|gfn1|gfnff), "
+                "charge, multiplicity, solvent (ALPB). models ('auto'|'all'). relax: fmax, "
+                "max_steps, optimizer. md: ensemble, "
                 "temperature_k, timestep_fs, steps, friction_per_fs, tdamp_fs, seed, "
                 "report_interval, fixed_distances ('0-3, 5-9:1.2'), trajectory, "
                 "max_temperature_k. ts: method (prfo|dimer; prfo = Sella P-RFO, like "

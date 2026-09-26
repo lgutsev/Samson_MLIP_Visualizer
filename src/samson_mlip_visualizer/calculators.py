@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-Backend = Literal["mace", "deepmd"]
+Backend = Literal["mace", "deepmd", "xtb"]
 
 ModelPaths = str | Path | Sequence[str | Path]
 
@@ -48,14 +48,31 @@ def create_calculator(
     *,
     device: str = "cpu",
     dtype: str = "float64",
+    xtb: Mapping[str, Any] | None = None,
 ):
     """Create an ASE calculator without importing unused ML frameworks.
 
     ``model_path`` may be a single file or several. Passing several MACE
     checkpoints builds a committee: ``atoms.calc.results`` then carries
     ``energy_comm`` / ``forces_comm``, whose spread is an extrapolation signal.
+    For ``backend="xtb"`` the "model" is the xtb executable, and ``xtb`` holds
+    the :class:`~.xtb_backend.XTBCalculator` options (method, charge,
+    multiplicity, solvent); device and dtype do not apply.
     """
     paths = _resolve_model_paths(model_path)
+
+    if backend == "xtb":
+        from .xtb_backend import XTBCalculator, is_xtb_executable
+
+        if len(paths) > 1 or not is_xtb_executable(paths[0]):
+            raise CalculatorLoadError(
+                "For the xTB backend, choose the xtb executable (xtb.exe) as the model "
+                "file, e.g. from `micromamba create -n xtb -c conda-forge xtb`."
+            )
+        try:
+            return XTBCalculator(paths[0], **dict(xtb or {}))
+        except (TypeError, ValueError) as exc:
+            raise CalculatorLoadError(f"Invalid xTB settings: {exc}") from exc
 
     try:
         if backend == "mace":
