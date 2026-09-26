@@ -90,8 +90,10 @@ def settings_path() -> Path:
 
 
 def _default_model_path() -> str:
-    """MACE-MP-0 small, if MACE has already downloaded it to its usual cache."""
-    candidate = Path.home() / ".cache" / "mace" / "20231210mace128L0_energy_epoch249model"
+    """MACE-MP-0 small, if it is in the MACE model folder (:mod:`.paths`)."""
+    from .paths import foundation_model
+
+    candidate = foundation_model()
     return str(candidate) if candidate.is_file() else ""
 
 

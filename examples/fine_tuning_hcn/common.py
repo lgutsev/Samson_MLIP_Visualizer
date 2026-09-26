@@ -3,7 +3,8 @@
 Paths come from environment variables, with the defaults used for the run
 documented in ``docs/fine_tuning.md``:
 
-- ``MACE_FOUNDATION``: the foundation model (default: MACE-MP-0 small in ~/.cache/mace);
+- ``MACE_FOUNDATION``: the foundation model (default: MACE-MP-0 small in the MACE
+  folder of ``samson_mlip_visualizer.paths``);
 - ``MACE_RUN_TRAIN``: mace-torch's training script (default: next to this Python);
 - ``FINETUNE_DIR``: where data, models, and reports go (default: this folder).
 """
@@ -20,12 +21,11 @@ from pathlib import Path
 import numpy as np
 from ase import Atoms
 
+from samson_mlip_visualizer.paths import foundation_model
+
 warnings.filterwarnings("ignore")
 HERE = Path(os.environ.get("FINETUNE_DIR", Path(__file__).parent))
-FOUNDATION = os.environ.get(
-    "MACE_FOUNDATION",
-    str(Path.home() / ".cache" / "mace" / "20231210mace128L0_energy_epoch249model"),
-)
+FOUNDATION = os.environ.get("MACE_FOUNDATION", str(foundation_model()))
 _SCRIPTS = Path(sys.executable).parent / ("Scripts" if os.name == "nt" else "")
 TRAIN = (
     os.environ.get("MACE_RUN_TRAIN")

@@ -273,7 +273,7 @@ cd examples/fine_tuning_hcn
 python seed_data.py            # MACE-MP-0 IRC, PBE labels -> train_r0.extxyz
 python active_learning.py      # committee, TS, IRC, held-out PBE check, more rounds if needed
 python tests.py "fine-tuned MACE" round1/hcn_r1_s1.model round1/hcn_r1_s2.model round1/hcn_r1_s3.model
-python tests.py "MACE-MP-0 small" ~/.cache/mace/20231210mace128L0_energy_epoch249model
+python tests.py "MACE-MP-0 small" <MACE folder>/20231210mace128L0_energy_epoch249model
 python tests.py PBE pbe
 ```
 
@@ -281,8 +281,10 @@ python tests.py PBE pbe
 the trainer, and the output folder. The models from this run are not in the
 repository (5 MB each, and they are specialists); rerunning the three
 steps rebuilds them in about ten minutes. On the machine they were built on,
-they are next to the foundation model, in
-`~/.cache/mace/finetuned/HCN-HNC_PBE-def2TZVP_from-MACE-MP-0-small_2026-09-26/`.
+they are next to the foundation model in the MACE folder, `~/.cache/mace`
+(`samson_mlip_visualizer.paths.mace_dir()`), with a copy in the mirror folder
+on the work drive (`D:\MLIP_Work_Folder\cache\mace`):
+`finetuned/HCN-HNC_PBE-def2TZVP_from-MACE-MP-0-small_2026-09-26/`.
 That folder holds the three committee models
 (`mace-mp-0-small_finetuned_HCN-HNC_PBE_seed{1,2,3}.model`), their model
 cards, the training set, the energy shift, the test results, and a README.

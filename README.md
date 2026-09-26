@@ -126,7 +126,14 @@ The panel remembers its settings between sessions in
 `%LOCALAPPDATA%\samson-mlip-visualizer\panel.ini` (model, device, dtype, and
 every task parameter), except atom pairs, the trajectory path, and the remote
 bridge's Python-execution opt-in. With no saved model, it picks up MACE-MP-0
-small if MACE has already downloaded it to `~/.cache/mace`.
+small if it is in the MACE model folder, `~/.cache/mace` (another folder can
+be set with `samson_mlip_visualizer.paths.set_mace_dir(...)` or the
+`SAMSON_MLIP_MACE_DIR` environment variable). Fine-tuned models are installed
+into its `finetuned/` subfolder. An optional mirror folder, typically on a
+second drive (`paths.set_mirror_dir(...)`), gets a copy of every installed
+model and takes the large downloads, such as the ~595 MB Materials Project
+replay set. It is used only while it is reachable, so the default model keeps
+working with that drive unplugged.
 
 ### Molecular dynamics (MD tab)
 
