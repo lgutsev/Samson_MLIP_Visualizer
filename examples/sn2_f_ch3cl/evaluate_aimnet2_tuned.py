@@ -1,8 +1,10 @@
 """Evaluate the fine-tuned AIMNet2 like the fine-tuned MACE, plus what only it can do.
 
-    python evaluate_aimnet2_tuned.py
+    python evaluate_aimnet2_tuned.py [--fragments]
 
-Run with SAMSON's Python after ``finetune_aimnet2.py``. The tuned model runs
+Run with SAMSON's Python after ``finetune_aimnet2.py``; ``--fragments``
+evaluates the model trained with the separated-fragment data instead (outputs
+get a ``_fragments`` suffix). The tuned model runs
 through the AIMNet2 backend (``aimnet_model`` = the tuned ``.pt``). Sections,
 each saved to ``finetune_aimnet2/evaluation.json`` and skipped when done:
 
@@ -16,6 +18,7 @@ each saved to ``finetune_aimnet2/evaluation.json`` and skipped when done:
 """
 
 import json
+import sys
 
 import numpy as np
 from ase import Atoms
@@ -42,10 +45,12 @@ from samson_mlip_visualizer.reaction_path import irc
 from samson_mlip_visualizer.ts import prfo_search
 from samson_mlip_visualizer.vibrations import harmonic_frequencies
 
+FRAGMENTS = "--fragments" in sys.argv
+SUFFIX = "_fragments" if FRAGMENTS else ""
 TUNED_MODEL = (r"D:\MLIP_Work_Folder\cache\aimnet\finetuned"
-               r"\aimnet2_wb97m_d3_0_SN2-F-CH3Cl_wB97XD-def2TZVPD.pt")
+               rf"\aimnet2_wb97m_d3_0_SN2-F-CH3Cl_wB97XD-def2TZVPD{SUFFIX}.pt")
 OUT = WORK / "finetune_aimnet2"
-NAME = "fine-tuned AIMNet2"
+NAME = "fine-tuned AIMNet2" + (" + fragments" if FRAGMENTS else "")
 
 
 def tuned(charge=-1):
@@ -68,8 +73,8 @@ def section_ts(calc):
     frequencies = harmonic_frequencies(ts)
     result = irc(ts, step=0.05, max_steps=400, fmax=0.01, relax_ends=True)
     frames = result.frames(ts.get_positions())
-    write(OUT / "tuned_irc.extxyz", [Atoms(ts.numbers, f.positions, info={"irc_arc": f.arc})
-                                     for f in frames])
+    write(OUT / f"tuned_irc{SUFFIX}.extxyz",
+          [Atoms(ts.numbers, f.positions, info={"irc_arc": f.arc}) for f in frames])
     ends = {}
     for side in ("reverse", "forward"):
         end = Atoms(ts.numbers, getattr(result, f"{side}_minimum_positions"))
@@ -92,7 +97,7 @@ def section_same_frame(calc, reference):
     train = training_set()
     paths = {
         "mace_tuned_irc": (read(WORK / "finetune" / "finetuned_irc.extxyz", ":"), "irc_arc", 30),
-        "own_irc": (read(OUT / "tuned_irc.extxyz", ":"), "irc_arc", 30),
+        "own_irc": (read(OUT / f"tuned_irc{SUFFIX}.extxyz", ":"), "irc_arc", 30),
         "scan": (read(WORK / "scan" / "scan_frames.extxyz", ":"), "scan_distance", None),
     }
     out = {}
@@ -105,7 +110,7 @@ def section_same_frame(calc, reference):
         bench = benchmark_path(frames, calc, reference, names=(NAME, REFERENCE), coordinate=x,
                                coordinate_label=_COORDINATES[coordinate_key], points=points,
                                keep=keep)
-        write_report(bench, OUT / f"{key}_vs_wb97xd",
+        write_report(bench, OUT / f"{key}{SUFFIX}_vs_wb97xd",
                      mark=(0.0, "TS") if coordinate_key == "irc_arc" else None,
                      end_labels=ends if coordinate_key == "irc_arc" else ("2.8 Å", "1.4 Å"),
                      title=f"{NAME} vs {REFERENCE}: {key.replace('_', ' ')}")
@@ -169,7 +174,7 @@ def section_forgetting():
 
 
 def main():
-    results_file = OUT / "evaluation.json"
+    results_file = OUT / f"evaluation{SUFFIX}.json"
     results = json.loads(results_file.read_text()) if results_file.exists() else {}
 
     def save():
