@@ -333,6 +333,16 @@ minute). The error is zero at HCN and −0.03 eV at HNC, but +0.5 to +0.65 eV
 across the whole bent region (H–C–N from about 120° to 50°): the part of
 configuration space the foundation model's crystal training data never covered.*
 
+![MACE-MP-0 vs PBE forces along the HCN → HNC IRC](docs/images/hcn_irc_benchmark_forces.png)
+
+*The same frames, forces. Top: mean per-atom force magnitude. MACE's is zero
+at its own stationary points (HCN, the TS, HNC), and PBE's is not, because the
+geometries are MACE's. Bottom: the force error, averaged over atoms and for the
+worst atom. It peaks at about 2 eV/Å (mean) and 2.6 eV/Å (worst atom) while
+the hydrogen leaves the linear geometry, and falls to about 0.5 eV/Å near the
+minima. That residue is the small offset between MACE and PBE bond lengths
+there, which costs little energy.*
+
 The error profile says where training data belongs: along the whole bent
 region, not only at the TS. Frames where the reference disagrees are the ones
 to label for fine-tuning.

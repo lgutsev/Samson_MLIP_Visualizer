@@ -234,4 +234,10 @@ python tests.py PBE pbe
 `MACE_FOUNDATION`, `MACE_RUN_TRAIN`, and `FINETUNE_DIR` override the model,
 the trainer, and the output folder. The models from this run are not in the
 repository (5 MB each, and they are specialists); rerunning the three
-steps rebuilds them in about ten minutes.
+steps rebuilds them in about ten minutes. On the machine they were built on,
+they are next to the foundation model, in
+`~/.cache/mace/finetuned_HCN-HNC_PBE-def2TZVP_from-MACE-MP-0-small_2026-09-26/`.
+That folder holds the three committee models
+(`mace-mp-0-small_finetuned_HCN-HNC_PBE_seed{1,2,3}.model`), their model
+cards, the training set, the energy shift, the test results, and a README.
+Select all three in the panel's model field to use them as a committee.
