@@ -4,8 +4,9 @@ Run with SAMSON's Python (mace-torch, CUDA torch), Psi4 in its own environment:
 
     python finetune_sn2.py [work folder]
 
-1. Seed data: 30 frames of the AIMNet2 IRC (``aimnet2_irc.extxyz``) spread by
-   arc length, plus two rattled copies of each (σ 0.04 Å), labeled with
+1. Seed data: 31 frames of the AIMNet2 IRC (``aimnet2_irc.extxyz``) spread by
+   arc length (30 requested, plus the TS), and two rattled copies of each
+   (σ 0.04 Å), 93 configurations, labeled with
    ωB97X-D/def2-TZVPD at charge -1. MACE-MP-0 itself has no barrier here, so
    its own path cannot seed the data; AIMNet2's geometries match the literature.
 2. A committee of three plain fine-tunes (seeds 1-3, in parallel on the GPU).
@@ -104,8 +105,8 @@ def committee(train_file, times):
         name=NAME, foundation=str(foundation_model()), train_file=str(train_file),
         card={
             "reference": f"{REFERENCE} (Psi4), charge -1; energies shifted to the foundation scale",
-            "trained_on": "90 configurations of [CH3FCl]- along the AIMNet2 IRC of "
-            "F- + CH3Cl -> CH3F + Cl- (30 frames + 2 rattled copies each)",
+            "trained_on": "93 configurations of [CH3FCl]- along the AIMNet2 IRC of "
+            "F- + CH3Cl -> CH3F + Cl- (31 frames + 2 rattled copies each)",
             "scope": "F- + CH3Cl SN2 (Walden) specialist at charge -1; cannot evaluate "
             "separated ions or other charges: MACE has no charge input",
         },

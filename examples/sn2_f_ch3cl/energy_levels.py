@@ -59,20 +59,34 @@ def draw_levels(ax, series, points, width, slot):
         ax.spines[spine].set_color(MUTED)
 
 
+TUNED_AIMNET2 = ("fine-tuned AIMNet2", "#4a3aa7")  # categorical slot 7
+
+
+def tuned_aimnet2():
+    """The fine-tuned AIMNet2's evaluation (``evaluate_aimnet2_tuned.py``), if run."""
+    path = WORK / "finetune_aimnet2" / "evaluation.json"
+    return json.loads(path.read_text()) if path.exists() else None
+
+
 def main():
     data = json.loads((WORK / "comparison.json").read_text())
     figure, ax = plt.subplots(figsize=(9.5, 5.2), facecolor=SURFACE)
     ax.set_facecolor(SURFACE)
-    width, slot = 0.13, 0.165
-    draw_levels(ax, [(label, color, {"reactants": 0.0, **data[key]})
-                     for key, label, color in SERIES], POINTS, width, slot)
+    series = [(label, color, {"reactants": 0.0, **data[key]}) for key, label, color in SERIES]
+    evaluation = tuned_aimnet2()
+    if evaluation and "asymptotes" in evaluation:
+        # The only fine-tuned model with a charge input, so the only one that has
+        # energies relative to the separated fragments.
+        series.append((*TUNED_AIMNET2, {"reactants": 0.0, **evaluation["asymptotes"]}))
+    width, slot = (0.13, 0.165) if len(series) <= 5 else (0.11, 0.14)
+    draw_levels(ax, series, POINTS, width, slot)
     # The quantity that matters most: the barrier from the ion–dipole complex.
     # Neighbouring levels crowd the TS: the literature label goes above its
     # level, AIMNet2's below its own.
     for n, (key, _, _) in enumerate(SERIES):
         below = {"Czakó FPA": False, "AIMNet2": True}.get(key)
         if below is not None:
-            offset = (n - (len(SERIES) - 1) / 2) * slot
+            offset = (n - (len(series) - 1) / 2) * slot
             ax.annotate(f"{data[key]['barrier']:+.1f}", (2 + offset, data[key]["ts"]),
                         xytext=(0, -6 if below else 6), textcoords="offset points",
                         ha="center", va="top" if below else "bottom", color=INK2, fontsize=8.5)
@@ -114,6 +128,10 @@ def from_complex(data):
     if stock.get("walden_ts_found"):
         series.append(("MACE-MP-0 small", "#008300",
                        levels(stock["barrier_kcal"], stock["complex_to_complex_kcal"])))
+    evaluation = tuned_aimnet2()
+    if evaluation and "ts" in evaluation:
+        series.append((*TUNED_AIMNET2, levels(evaluation["ts"]["barrier_kcal"],
+                                              evaluation["ts"]["complex_to_complex_kcal"])))
     series = [(f"{label}: barrier {values['ts']:.1f}", color, values)
               for label, color, values in series]
     points = [("reactant_complex", "F⁻···CH₃Cl"), ("ts", "Walden TS"),

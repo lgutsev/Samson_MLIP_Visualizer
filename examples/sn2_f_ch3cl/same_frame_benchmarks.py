@@ -2,8 +2,8 @@
 
     python same_frame_benchmarks.py
 
-Two paths, 30 frames each (spread by arc length, TS kept): the AIMNet2 IRC
-(``aimnet2_irc.extxyz``; these 30 frames are the fine-tune's training frames)
+Two paths, 31 frames each (30 spread by arc length, plus the TS): the AIMNet2
+IRC (``aimnet2_irc.extxyz``; these 31 frames are the fine-tune's training frames)
 and the committee's own IRC (``finetune/finetuned_irc.extxyz``; not trained on).
 ωB97X-D comes from the shared cache (``sn2_common.reference_cache``), so each
 frame is computed once for all three models. Writes a report per run to
