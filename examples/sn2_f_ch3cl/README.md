@@ -18,42 +18,53 @@ For gas-phase F⁻ + CH₃Cl, the best available reference (Czakó's CCSD(T)
 basis-set-limit focal-point study) puts the Walden barrier only 3.4 kcal/mol
 above the ion–dipole complex. The methods split sharply on this. The two
 range-separated hybrids, ωB97M-V and ωB97X-D, reproduce every stationary point
-to within about 1 kcal/mol. PBE and GFN2-xTB have no barrier at all, so neither
-is a usable reference or fine-tuning target here, unlike for HCN. Among the
-MLIPs, the stock foundation model MACE-MP-0 fails qualitatively. It has no
-charge input, no reactant complex, and energy errors of up to 1 eV along the
-path. AIMNet2 is the only off-the-shelf model that gets the chemistry right: it
-finds the correct transition state, with geometry and energy relative to the
-reactants close to CCSD(T), and an IRC that connects the right complexes. But
-it binds the complexes 5–6 kcal/mol too strongly, so its barrier from the
-complex is 9.3 kcal/mol, nearly three times too high, and its TS mode is too
-stiff (−743 cm⁻¹ against about −450).
+to within about 1 kcal/mol, so ωB97X-D (which also has cheap analytic forces)
+became the reference and the fine-tuning target. PBE and GFN2-xTB have no
+barrier at all, so neither is usable here, unlike for HCN. Among the MLIPs, the
+stock foundation model MACE-MP-0 fails qualitatively: it has no charge input,
+no reactant complex, and energy errors of up to 1 eV along the path. AIMNet2 is
+the only off-the-shelf model that gets the chemistry right. It finds the
+correct transition state, with geometry and energy relative to the reactants
+close to CCSD(T), and an IRC that connects the right complexes. But it binds
+the complexes 5–6 kcal/mol too strongly, so its barrier from the complex is
+9.3 kcal/mol, nearly three times too high, and its TS mode is too stiff
+(−743 cm⁻¹ against about −450).
 
-Fine-tuning MACE-MP-0 on 93 ωB97X-D calculations along AIMNet2's path fixed
-this for about 20 minutes on a laptop. On frames it was not trained on, the
-model reproduces ωB97X-D within a few meV (barrier 3.31 against
-3.28 kcal/mol), its geometries match CCSD(T) within 0.05 Å, and its TS
-frequency agrees with ωB97X-D's. The limits are just as clear. Those test
-frames lie within about 0.02 Å of the training data. A step off the path (the
-C–F scan) the error grows to about 1 kcal/mol, and the committee spread
-underestimates it by about 2.5×. The model is also a specialist: it cannot
-describe separated ions, and it made C–Cl in neutral CH₃Cl three times worse
-than the foundation model, because it learned that bond as the complex
-stretches it. In short, AIMNet2 is the tool for exploring an ionic reaction
-like this out of the box, and cheap targeted fine-tuning turns a foundation
-model into an accurate model *of this reaction path*, not a better general
-model. It works only because the reference level was checked against the
-literature first; fine-tuning to PBE would have produced a confident model of a
-reaction with no barrier.
+Both models were then fine-tuned on the same 93 ωB97X-D calculations along
+AIMNet2's path, and on the reaction path the two results are equivalent:
+barriers of 3.24 (AIMNet2) and 3.31 kcal/mol (MACE) against 3.39, TS and
+reactant-complex geometries within about 0.02 Å of CCSD(T), the right TS mode,
+and errors of 1–2 meV on IRC frames neither was trained on. A step off the path
+(a C–F scan) both reach about 1 kcal/mol, and those IRC test frames lie within
+about 0.02 Å of the training data, so this is accuracy *on this path*, not
+general accuracy. The fine-tuned AIMNet2 is the better model: it trained in
+5 minutes on the laptop CPU (MACE: 10 minutes on the GPU for a three-model
+committee), and it forgets far less. Its neutral CH₃F, CH₃Cl and CH₂F₂ keep
+their ωB97X-D bond lengths within 0.01 Å, where the tuned MACE stretched C–Cl
+in CH₃Cl to the length it saw in the complex and cannot evaluate a free ion at
+all. Keeping the charge input also exposes what neither fine-tune fixed: the
+training data are all complexes, so relative to the separated F⁻ + CH₃Cl the
+complexes are still 3.5–4.6 kcal/mol too deep and the reaction 6 kcal/mol too
+exothermic, and the TS is now 3.6 kcal/mol too low. A model for the whole
+reaction needs the free fragments in its data too. And none of it works
+without checking the reference level against the literature first:
+fine-tuning to PBE would have produced a confident model of a reaction with no
+barrier.
 
-Fine-tuning AIMNet2 itself on the same 93 labels (5 minutes on the laptop CPU)
-gives the same accuracy on the path (barrier 3.24 kcal/mol, TS and reactant
-complex within 0.02 Å of CCSD(T), about 1 meV on its own IRC) with far less forgetting: its
-neutral CH₃F, CH₃Cl and CH₂F₂ bonds stay within 0.01 Å of ωB97X-D. Keeping the
-charge input also exposes what training on the complexes alone cannot fix:
-relative to the separated F⁻ + CH₃Cl, the complexes are still 3–5 kcal/mol too
-deep and the reaction 6 kcal/mol too exothermic, so a model meant for the whole
-reaction needs the free fragments in its data too.
+| | AIMNet2 | Fine-tuned AIMNet2 | Fine-tuned MACE | Reference |
+|---|---|---|---|---|
+| Barrier from F⁻···CH₃Cl (kcal/mol) | 9.3 | **3.24** | **3.31** | 3.39 (CCSD(T)) |
+| Walden TS relative to F⁻ + CH₃Cl (kcal/mol) | −12.4 | −15.8 | cannot (no charge input) | −12.2 (CCSD(T)) |
+| Reaction energy, CH₃F + Cl⁻ (kcal/mol) | −38.7 | −38.0 | cannot | −31.9 (CCSD(T)) |
+| F⁻···CH₃Cl r(C–F) / r(C–Cl) (Å) | 2.454 / 1.878 | **2.497 / 1.852** | 2.516 / 1.851 | 2.498 / 1.843 (CCSD(T)) |
+| TS imaginary mode (cm⁻¹) | −743 | −446 | −445 | −450 (ωB97X-D) |
+| Max energy error on its own IRC | 0.28 eV | **0.9 meV** | 2 meV | vs ωB97X-D |
+| Max energy error on the C–F scan frames (off the path) | — | 47 meV | 44 meV | vs ωB97X-D |
+| CH₃Cl r(C–Cl), neutral, never trained on (Å) | 1.793 | **1.779** | 1.840 | 1.781 (ωB97X-D) |
+| Training cost | — | 5 min CPU, one model | 10 min GPU, three models | — |
+
+*AIMNet2 and the fine-tunes at their own stationary points. The IRC errors are
+on each model's own path (for AIMNet2, its original IRC).*
 
 ## Why this reaction needs a charge-aware model
 
