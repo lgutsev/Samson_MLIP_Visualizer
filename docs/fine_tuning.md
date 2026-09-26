@@ -233,5 +233,5 @@ python tests.py PBE pbe
 
 `MACE_FOUNDATION`, `MACE_RUN_TRAIN`, and `FINETUNE_DIR` override the model,
 the trainer, and the output folder. The models from this run are not in the
-repository (each is 32 MB, and they are specialists); rerunning the three
+repository (5 MB each, and they are specialists); rerunning the three
 steps rebuilds them in about ten minutes.
