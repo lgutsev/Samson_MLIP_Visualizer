@@ -163,6 +163,112 @@ What this does and does not show:
   needs aimnet's HDF5 data format and care with the model's built-in D3 term,
   and was not tried.
 
+### Held-out and off-path tests
+
+As for HCN, "held out" is measured: each test frame's aligned RMSD to the
+nearest of the 90 training structures (`finetune.distances_to`). Energies are
+relative to each set's first frame; ωB97X-D/def2-TZVPD is the reference, each
+frame computed once (`sn2_common.CachedReference`).
+
+| Test set | Frames | RMSD to nearest training structure | Max \|ΔE\| | Energy RMSE | Force RMSE | Worst-atom force error |
+|---|---|---|---|---|---|---|
+| The AIMNet2 IRC: the training frames themselves, for scale | 30 | 0 | 3 meV | 2 meV | 0.007 eV/Å | 0.041 eV/Å |
+| The committee's own IRC | 30 | median 0.012 Å, max 0.019 Å | 2 meV | 1 meV | 0.009 eV/Å | 0.063 eV/Å |
+| r(C–F) scan off the IRC, 2.8 → 1.4 Å | 15 | median 0.041 Å, max 0.122 Å | **44 meV** | 19 meV | 0.034 eV/Å | **0.24 eV/Å** |
+
+The IRC frames are new structures but lie on top of the training path, so they
+show that the model reproduces its training region. The **scan**
+(`offpath_scan.py`: 15 constrained relaxations with the committee, from its
+reactant complex) is the real test away from the path, and the error grows
+with the distance from the data, as it did for HCN (0.012 eV on the IRC,
+0.079 eV on the scan there):
+
+![Fine-tuned MACE vs ωB97X-D along an r(C–F) scan](images/scan_tuned_vs_wb97xd_energy.png)
+
+- No geometry jumps: r(C–F) describes this reaction, unlike r(N–H) for HCN.
+- The error is −10 to −14 meV relative to the first point for most of the scan,
+  and −44 meV (1.0 kcal/mol) at r(C–F) = 1.9 Å. That is where Cl⁻ leaves fastest
+  (C–Cl 2.32 → 2.67 Å between 2.0 and 1.9 Å) and the frame farthest from the
+  training data (0.122 Å). The first point (2.8 Å) is itself 0.12 Å from the
+  data, so part of the −13 meV plateau is probably its own error.
+- The committee spread rises there too (5 → 18 meV). Unlike HCN's committee, it
+  moves with the error, but it still underestimates it by a factor of about
+  2.5, and the correlation between |error| and RMSD is only 0.38.
+
+So: about 0.002 eV on the path, up to about 0.04 eV (1 kcal/mol) a tenth of
+an ångström off it.
+
+### Foundation vs fine-tuned vs AIMNet2 on the same frames
+
+`same_frame_benchmarks.py`: all three models on the same 30 frames of each IRC
+against ωB97X-D. Barriers are from the reactant complex along the frames,
+kcal/mol (ωB97X-D's own value in brackets); energy errors in eV, force errors
+in eV/Å.
+
+| Path | Model | Barrier (ωB97X-D) | Max \|ΔE\| | Energy RMSE | Force MAE / RMSE | Worst atom |
+|---|---|---|---|---|---|---|
+| AIMNet2 IRC (training frames) | MACE-MP-0 small | 0.00 (3.39) | 0.665 | 0.370 | 0.350 / 0.568 | 2.07 |
+| | fine-tuned MACE | 3.45 (3.39) | 0.003 | 0.002 | 0.004 / 0.007 | 0.041 |
+| | AIMNet2 | 9.30 (3.39) | 0.281 | 0.127 | 0.070 / 0.164 | 1.16 |
+| Committee's IRC (not trained on) | MACE-MP-0 small | 0.05 (3.28) | 1.010 | 0.586 | 0.343 / 0.564 | 2.04 |
+| | fine-tuned MACE | 3.31 (3.28) | 0.002 | 0.001 | 0.005 / 0.009 | 0.063 |
+| | AIMNet2 | 9.05 (3.28) | 0.187 | 0.070 | 0.073 / 0.165 | 1.09 |
+
+On the committee's IRC, fine-tuning brought the force RMSE down by a factor of
+about 65 and the energy RMSE by about 480. On the AIMNet2 path those numbers are in-sample;
+the committee's IRC is the fair row.
+
+![MACE-MP-0 small vs ωB97X-D along the committee's IRC](images/stock_vs_wb97xd_on_tuned_irc_energy.png)
+
+*The foundation model on the committee's IRC: no barrier, and 1 eV off on the
+product side.*
+
+**Stock MACE-MP-0 small has no SN2 profile of its own** (`stock_mace_stationary.py`):
+
+- Relaxing AIMNet2's F⁻···CH₃Cl complex with it runs all the way to the
+  product: **it has no F⁻···CH₃Cl minimum.** Its product complex is also off
+  (C–F 1.50 Å, C–Cl 2.58 Å; CCSD(T): 1.41, 3.18 Å).
+- P-RFO from the AIMNet2 TS does converge to a first-order saddle (C–F 1.97 Å,
+  C–Cl 1.97 Å, −254 cm⁻¹). But its IRC's reverse end is a shoulder only
+  0.02 kcal/mol below it (C–F 2.02 Å, C–Cl 1.92 Å), not a complex. The forward
+  end is its product complex, 10.1 kcal/mol lower (literature: 26 kcal/mol
+  below the reactant complex).
+
+![From the reactant complex: complex, TS, complex](images/sn2_energy_levels_from_complex.png)
+
+*Each model at its own stationary points, from the reactant complex. ωB97X-D
+at AIMNet2's geometries. Stock MACE-MP-0 is left out: it has no Walden TS
+between two complexes.*
+
+### Forgetting
+
+Neutral molecules the tuned model never saw, relaxed with each model
+(`forgetting.py`; bond lengths in Å, geometries only: the model saw only the
+anion, and MACE has no charge input):
+
+| Molecule | Bond | MACE-MP-0 small | Fine-tuned MACE | ωB97X-D/def2-TZVPD |
+|---|---|---|---|---|
+| CH₃F | C–F | 1.434 (+0.054) | **1.407** (+0.027) | 1.380 |
+| CH₃F | C–H | 1.098 | **1.089** | 1.091 |
+| CH₃Cl | C–Cl | **1.795** (+0.014) | 1.840 (+0.059) | 1.781 |
+| CH₃Cl | C–H | 1.096 | **1.084** | 1.086 |
+| CH₂F₂ | C–F | **1.382** (+0.030) | 1.393 (+0.041) | 1.352 |
+| CH₂F₂ | C–H | 1.101 | **1.089** | 1.077 |
+
+- **C–Cl got worse: three times the foundation model's error.** The tuned model
+  gives isolated CH₃Cl a C–Cl bond of 1.84 Å, the length it saw in F⁻···CH₃Cl
+  (1.85 Å), where the approaching F⁻ stretches it. It learned the bond in its
+  environment, not the bond.
+- C–F in CH₃F moved halfway toward ωB97X-D (the product complex has 1.41 Å);
+  C–F in CH₂F₂, a molecule with two fluorines it never saw, got slightly worse.
+- C–H bonds improved throughout, except CH₂F₂.
+- As for HCN, the tuned model is a specialist for this path. Multihead
+  fine-tuning with foundation replay is the standard remedy and was not tried.
+
+(The ωB97X-D CH₃Cl relaxation ended at 300 BFGS steps without reaching
+0.005 eV/Å, with its bonds unchanged to 0.001 Å; DFT forces are too noisy for
+that threshold, so the others used 0.01 eV/Å.)
+
 ## Reproduce
 
 Environments: SAMSON's Python (the package, mace-torch), an aimnet
@@ -177,7 +283,14 @@ its own environment (`qm`). Outputs go to `D:\MLIP_Work_Folder\sn2_F_CH3Cl`.
 3. `python stationary_points.py` (aimnet environment), then
    `python reference_energies.py` (Psi4 environment), then `python compare.py`
    and `python energy_levels.py`.
-4. `python finetune_sn2.py` (SAMSON's Python).
+4. `python finetune_sn2.py` (SAMSON's Python), then, also with SAMSON's Python:
+   `ts_frequency_check.py`, `same_frame_benchmarks.py` (foundation, tuned and
+   AIMNet2 on the same frames), `offpath_scan.py` (the r(C–F) scan),
+   `stock_mace_stationary.py`, and `forgetting.py`. They share
+   `sn2_common.py` and one ωB97X-D cache (`<work>\wb97xd_cache.json`, seeded
+   from the training labels), so each structure is computed once; every script
+   skips what is already done. The ωB97X-D work for all of them is about 10
+   minutes on the laptop (5 s per six-atom gradient).
 5. `python snapshot_figure.py` for the figure at the top, from SAMSON viewport
    captures of the three frames (`captureViewportToFile`, 1600×1200; each frame
    imported as XYZ so SAMSON draws the bonds that exist in it).

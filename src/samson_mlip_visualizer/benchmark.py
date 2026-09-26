@@ -88,6 +88,17 @@ class PathBenchmark:
     def force_error_max(self) -> np.ndarray:
         return self.force_errors().max(axis=1)
 
+    @property
+    def force_component_mae(self) -> np.ndarray:
+        """Per frame: mean |ΔF| over all Cartesian force components (eV/Å)."""
+        return np.abs(self.forces[self.model] - self.forces[self.reference]).mean(axis=(1, 2))
+
+    @property
+    def force_component_rms(self) -> np.ndarray:
+        """Per frame: root-mean-square ΔF over all Cartesian force components (eV/Å)."""
+        difference = self.forces[self.model] - self.forces[self.reference]
+        return np.sqrt((difference**2).mean(axis=(1, 2)))
+
     def mean_force(self, name: str) -> np.ndarray:
         """Mean per-atom force magnitude of ``name`` along the path."""
         return np.linalg.norm(self.forces[name], axis=2).mean(axis=1)
@@ -102,9 +113,13 @@ class PathBenchmark:
             "energy_error_max_ev": float(error[worst]),
             "energy_error_max_at": float(self.coordinate[worst]),
             "energy_error_mae_ev": float(np.abs(error).mean()),
+            "energy_error_rmse_ev": float(np.sqrt((error**2).mean())),
             "energy_error_last_ev": float(error[-1]),
             "force_error_mean_ev_per_angstrom": float(self.force_error_mean.mean()),
             "force_error_max_ev_per_angstrom": float(self.force_error_max.max()),
+            # Over all Cartesian components of all frames (every frame has the same atoms).
+            "force_mae_ev_per_angstrom": float(self.force_component_mae.mean()),
+            "force_rmse_ev_per_angstrom": float(np.sqrt((self.force_component_rms**2).mean())),
             **(
                 {}
                 if self.committee_force_std is None
@@ -129,6 +144,8 @@ class PathBenchmark:
             f"mean_F_{self.reference}_eV_per_A": self.mean_force(self.reference),
             "force_error_mean_eV_per_A": self.force_error_mean,
             "force_error_max_eV_per_A": self.force_error_max,
+            "force_component_mae_eV_per_A": self.force_component_mae,
+            "force_component_rms_eV_per_A": self.force_component_rms,
         }
         if self.committee_force_std is not None:
             columns["committee_energy_std_eV"] = self.committee_energy_std
@@ -173,6 +190,7 @@ class TabulatedBenchmark(PathBenchmark):
             header[0], "frame", f"dE_{model}_eV", f"dE_{reference}_eV", "energy_error_eV",
             f"mean_F_{model}_eV_per_A", f"mean_F_{reference}_eV_per_A",
             "force_error_mean_eV_per_A", "force_error_max_eV_per_A",
+            "force_component_mae_eV_per_A", "force_component_rms_eV_per_A",
             "committee_energy_std_eV", "committee_force_std_max_eV_per_A",
         }
         extra = [name for name in header if name not in known]
@@ -202,6 +220,17 @@ class TabulatedBenchmark(PathBenchmark):
     @property
     def force_error_max(self) -> np.ndarray:
         return self._column("force_error_max_eV_per_A")
+
+    # CSVs written before these columns existed give NaN, not an error.
+    @property
+    def force_component_mae(self) -> np.ndarray:
+        return self.extra["columns"].get("force_component_mae_eV_per_A",
+                                         np.full(len(self.coordinate), np.nan))
+
+    @property
+    def force_component_rms(self) -> np.ndarray:
+        return self.extra["columns"].get("force_component_rms_eV_per_A",
+                                         np.full(len(self.coordinate), np.nan))
 
 
 def select_frames(
@@ -383,10 +412,13 @@ def _end_labels(ax, bench: PathBenchmark, end_labels):
     x = bench.coordinate
     # Below the lower of the two curves, so neither runs through the label.
     lower = np.minimum(bench.relative(bench.model), bench.relative(bench.reference))
-    for position, value, text, align in (
-        (x[0], lower[0], end_labels[0], "left"),
-        (x[-1], lower[-1], end_labels[1], "right"),
+    # Align by where each end sits on the axis: a decreasing coordinate (a scan
+    # from long to short distance) puts frame 0 on the right.
+    for position, value, text in (
+        (x[0], lower[0], end_labels[0]),
+        (x[-1], lower[-1], end_labels[1]),
     ):
+        align = "left" if position == x.min() else "right"
         ax.annotate(
             text, (position, value), xytext=(0, -14), textcoords="offset points",
             ha=align, va="top", color=_INK2,

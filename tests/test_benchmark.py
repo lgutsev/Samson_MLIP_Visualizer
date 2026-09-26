@@ -57,9 +57,17 @@ def test_benchmark_path_errors_are_relative_to_the_first_frame():
     # Each atom's force differs by k·Δr: mean and max over the two atoms agree.
     assert bench.force_error_mean == pytest.approx(r - 1.0)
     assert bench.force_error_max == pytest.approx(r - 1.0)
+    # One nonzero component of size Δr per atom, out of six components per frame.
+    assert bench.force_component_mae == pytest.approx((r - 1.0) / 3)
+    assert bench.force_component_rms == pytest.approx((r - 1.0) / np.sqrt(3))
     summary = bench.summary()
     assert summary["energy_error_max_ev"] == pytest.approx(0.5)
     assert summary["energy_error_max_at"] == 10
+    assert summary["energy_error_rmse_ev"] == pytest.approx(
+        np.sqrt(np.mean((0.5 * (r - 1.0) ** 2) ** 2)))
+    assert summary["force_mae_ev_per_angstrom"] == pytest.approx(np.mean(r - 1.0) / 3)
+    assert summary["force_rmse_ev_per_angstrom"] == pytest.approx(
+        np.sqrt(np.mean((r - 1.0) ** 2) / 3))
     assert bench.committee_force_std is None and "committee_energy_std_max_ev" not in summary
 
 
@@ -104,6 +112,10 @@ def test_replot_from_csv_matches_the_original(tmp_path, capsys):
     assert table.energy_error == pytest.approx(bench.energy_error)
     assert table.force_error_max == pytest.approx(bench.force_error_max)
     assert table.mean_force("slow") == pytest.approx(bench.mean_force("slow"))
+    assert table.summary()["force_rmse_ev_per_angstrom"] == pytest.approx(
+        bench.summary()["force_rmse_ev_per_angstrom"], rel=1e-6)
+    assert table.summary()["energy_error_rmse_ev"] == pytest.approx(
+        bench.summary()["energy_error_rmse_ev"], rel=1e-6)
     code = benchmark.main([str(csv_path), "--replot", "--labels", "Model,ωB97X-D", "--ends", "A,B"])
     assert code == 0 and "redrew" in capsys.readouterr().out
     assert (tmp_path / "run_energy.png").stat().st_size > 0
