@@ -217,6 +217,32 @@ numbers above use the fixed code. It never affected transition states, which
 are not linear here, but it gave wrong mode counts and zero-point energies for
 linear minima.
 
+## Toward a general workflow
+
+HCN is the worked example. The reusable pieces are moving into
+`samson_mlip_visualizer.finetune`, designed around what went wrong here:
+
+- `structure_distance`: RMSD between frames of one system with rigid motion
+  removed (rotation too for molecules; minimum image for periodic cells).
+  Every held-out error should be reported next to it.
+- `select_for_labeling`: committee disagreement, farthest-point diversity, and
+  random spot checks, each frame at least `min_distance` from the others and
+  from what is already labeled. Disagreement never selects alone, because a
+  committee of seeds from one foundation model is overconfident.
+- `fit_element_offsets`: per-element energy offsets between a reference code
+  and the foundation model, by least squares. This replaces the single constant
+  shift used here, which aligns one composition only. The fit warns when the
+  compositions cannot pin the offsets down, as with HCN alone.
+- `Manifest` / `write_selection`: `frames.extxyz` plus `manifest.json`, which
+  records each frame's source, reason, score, distance to the labeled set, and
+  a checksum, so returned labels can be matched to the right structure.
+- `labeled_structure`: `REF_energy` (on the foundation scale), `REF_forces`,
+  `REF_stress`, plus the code's raw energy.
+
+mace-torch 0.3.16 can keep all foundation elements during fine-tuning
+(`--foundation_model_elements=True`), which avoids the element loss above; the
+HCN run did not use it.
+
 ## Reproduce
 
 In SAMSON's Python (with mace-torch, and Psi4 in its own environment; see the
