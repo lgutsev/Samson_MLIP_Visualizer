@@ -213,7 +213,10 @@ _JOB_START_SCHEMA = _schema(
                 "backend 'xtb' (model = the xtb executable) takes xtb_method (gfn2|gfn1|gfnff), "
                 "charge, multiplicity, solvent (ALPB); backend 'psi4' (model = the Psi4 "
                 "environment's python) takes psi4_method (default pbe), basis (default "
-                "def2-tzvp), charge, multiplicity. models ('auto'|'all'). relax: fmax, "
+                "def2-tzvp), charge, multiplicity; backend 'aimnet2' (charge-aware MLIP for "
+                "ions; model = the aimnet environment's python) takes aimnet_model (registry "
+                "name, default aimnet2 = wB97M-D3, or a .pt path), charge, multiplicity; it "
+                "runs in float32, so use fmax >= 0.01. models ('auto'|'all'). relax: fmax, "
                 "max_steps, optimizer. md: ensemble, "
                 "temperature_k, timestep_fs, steps, friction_per_fs, tdamp_fs, seed, "
                 "report_interval, fixed_distances ('0-3, 5-9:1.2'), trajectory, "
@@ -296,6 +299,9 @@ class McpServer:
             detail = exc.message
             if isinstance(exc.data, dict) and exc.data.get("traceback"):
                 detail += "\n" + exc.data["traceback"]
+            return {"content": [{"type": "text", "text": detail}], "isError": True}
+        except Exception as exc:  # an escaped exception would end the stdio loop
+            detail = f"{type(exc).__name__}: {exc}"
             return {"content": [{"type": "text", "text": detail}], "isError": True}
         return {"content": [{"type": "text", "text": json.dumps(result, indent=1)}]}
 

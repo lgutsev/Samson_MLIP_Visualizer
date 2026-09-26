@@ -1,8 +1,9 @@
 """Lazy ASE calculator construction for the supported backends.
 
 MLIPs (MACE, DeepMD) load a model file. The quantum-chemistry programs (xTB,
-Psi4) run in environments of their own; for them the "model" is the program's
-executable (xtb) or Python (Psi4), found automatically by :func:`find_program`.
+Psi4) and AIMNet2 run in environments of their own; for them the "model" is the
+program's executable (xtb) or Python (Psi4, AIMNet2), found automatically by
+:func:`find_program`.
 """
 
 from __future__ import annotations
@@ -11,8 +12,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
-Backend = Literal["mace", "deepmd", "xtb", "psi4"]
-PROGRAMS = ("xtb", "psi4")  # backends that run an external program, not a model file
+Backend = Literal["mace", "deepmd", "xtb", "psi4", "aimnet2"]
+# backends that run an external program, not a model file
+PROGRAMS = ("xtb", "psi4", "aimnet2")
 
 ModelPaths = str | Path | Sequence[str | Path]
 
@@ -49,7 +51,7 @@ def _resolve_model_paths(model_path: ModelPaths) -> list[Path]:
 
 
 def find_program(backend: str) -> Path | None:
-    """The xtb executable or the Psi4 Python, if installed where it is looked for."""
+    """The xtb executable or the Psi4 / aimnet Python, if installed where it is looked for."""
     if backend == "xtb":
         from .xtb_backend import find_xtb
 
@@ -58,7 +60,28 @@ def find_program(backend: str) -> Path | None:
         from .psi4_backend import find_psi4
 
         return find_psi4()
+    if backend == "aimnet2":
+        from .aimnet2_backend import find_aimnet
+
+        return find_aimnet()
     return None
+
+
+def is_program(backend: str, path: str | Path) -> bool:
+    """Whether ``path`` is the program the backend runs (xtb, or a Psi4 / aimnet Python)."""
+    if backend == "xtb":
+        from .xtb_backend import is_xtb_executable
+
+        return is_xtb_executable(path)
+    if backend == "psi4":
+        from .psi4_backend import has_psi4
+
+        return has_psi4(path)
+    if backend == "aimnet2":
+        from .aimnet2_backend import has_aimnet
+
+        return has_aimnet(path)
+    return False
 
 
 def program_options(
@@ -70,8 +93,10 @@ def program_options(
     multiplicity: int = 1,
     solvent: str | None = None,
 ) -> dict[str, Any] | None:
-    """Options for an xTB or Psi4 calculator (``None`` for MLIPs), with defaults
-    GFN2-xTB and PBE/def2-TZVP. Also what provenance records as settings."""
+    """Options for an xTB, Psi4, or AIMNet2 calculator (``None`` for other MLIPs),
+    with defaults GFN2-xTB, PBE/def2-TZVP, and AIMNet2 ωB97M-D3 (for AIMNet2,
+    ``method`` is the model: a registry name or a .pt path). Also what
+    provenance records as settings."""
     if backend == "xtb":
         return {
             "method": method or "gfn2",
@@ -86,6 +111,8 @@ def program_options(
             "charge": charge,
             "multiplicity": multiplicity,
         }
+    if backend == "aimnet2":
+        return {"model": method or "aimnet2", "charge": charge, "multiplicity": multiplicity}
     return None
 
 
@@ -106,7 +133,10 @@ def create_calculator(
     :class:`~.xtb_backend.XTBCalculator` options (method, charge, multiplicity,
     solvent); for ``backend="psi4"`` it is the Python of an environment with
     Psi4 and ``options`` are :class:`~.psi4_backend.Psi4Calculator` options
-    (method, basis, charge, multiplicity). Device and dtype apply to MACE only.
+    (method, basis, charge, multiplicity); for ``backend="aimnet2"`` it is the
+    Python of an environment with aimnet and ``options`` are
+    :class:`~.aimnet2_backend.AIMNet2Calculator` options (model, charge,
+    multiplicity). Device and dtype apply to MACE only.
     """
     paths = _resolve_model_paths(model_path)
 
@@ -135,6 +165,19 @@ def create_calculator(
             return Psi4Calculator(paths[0], **dict(options or {}))
         except (TypeError, ValueError) as exc:
             raise CalculatorLoadError(f"Invalid Psi4 settings: {exc}") from exc
+
+    if backend == "aimnet2":
+        from .aimnet2_backend import AIMNet2Calculator, has_aimnet
+
+        if len(paths) > 1 or not has_aimnet(paths[0]):
+            raise CalculatorLoadError(
+                "For the AIMNet2 backend, choose the python executable of an environment "
+                "with aimnet (`pip install aimnet` in an env of its own)."
+            )
+        try:  # the MACE device setting does not apply: its torch is not the worker's
+            return AIMNet2Calculator(paths[0], **dict(options or {}))
+        except (TypeError, ValueError) as exc:
+            raise CalculatorLoadError(f"Invalid AIMNet2 settings: {exc}") from exc
 
     try:
         if backend == "mace":

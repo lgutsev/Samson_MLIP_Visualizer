@@ -16,24 +16,17 @@ small clusters.
 
 from __future__ import annotations
 
-import json
 import os
-import queue
-import subprocess
 import sys
-import threading
-import weakref
 from pathlib import Path
 
 import numpy as np
-from ase.calculators.calculator import CalculationFailed, Calculator, all_changes
 from ase.data import chemical_symbols
 from ase.units import Bohr, Hartree
 
-from .psi4_worker import PREFIX
+from .worker_process import WorkerCalculator
 
 WORKER = Path(__file__).with_name("psi4_worker.py")
-_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # The def2 basis sets cover H through Rn; for other basis sets the element list
 # is not known here, and the element guard says so instead of guessing.
 _DEF2_ELEMENTS = frozenset(chemical_symbols[1:87])
@@ -75,7 +68,7 @@ def find_psi4() -> Path | None:
     return None
 
 
-class Psi4Calculator(Calculator):
+class Psi4Calculator(WorkerCalculator):
     """Energies and forces from Psi4 (``psi4.gradient``) in a worker process.
 
     ``method`` and ``basis`` are Psi4 names (default PBE/def2-TZVP);
@@ -83,7 +76,7 @@ class Psi4Calculator(Calculator):
     extra Psi4 options. Molecules only: periodic structures are refused.
     """
 
-    implemented_properties = ["energy", "free_energy", "forces"]
+    label_name = "Psi4"
 
     def __init__(
         self,
@@ -99,12 +92,11 @@ class Psi4Calculator(Calculator):
         timeout: float = 3600.0,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(python, timeout=timeout, **kwargs)
         if multiplicity < 1:
             raise ValueError("The multiplicity must be at least 1")
         if not method.strip() or not basis.strip():
             raise ValueError("Psi4 needs a method and a basis set")
-        self.python = Path(python)
         self.method = method.strip().lower()
         self.basis = basis.strip().lower()
         self.charge = int(charge)
@@ -112,69 +104,13 @@ class Psi4Calculator(Calculator):
         self.threads = threads or max(1, min(8, (os.cpu_count() or 2) // 2))
         self.memory_mb = int(memory_mb)
         self.options = dict(options or {})
-        self.timeout = timeout
         self.supported_elements = _DEF2_ELEMENTS if self.basis.startswith("def2") else None
-        self.version: str | None = None
-        self._process: subprocess.Popen | None = None
-        self._replies: queue.Queue = queue.Queue()
-        self._cleanup = None
 
-    # --- worker process -----------------------------------------------------------
+    def worker_script(self) -> Path:
+        return WORKER
 
-    def _start(self) -> None:
-        try:
-            process = subprocess.Popen(
-                [str(self.python), "-u", str(WORKER)],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=_NO_WINDOW,
-            )
-        except OSError as exc:
-            raise CalculationFailed(f"Could not start Psi4 with {self.python}: {exc}") from exc
-        self._process = process
-        self._replies = queue.Queue()
-        threading.Thread(target=self._read, args=(process, self._replies), daemon=True).start()
-        self._cleanup = weakref.finalize(self, _stop, process)
-        ready = self._reply(timeout=300)
-        if not ready.get("ready"):
-            self.close()
-            raise CalculationFailed(ready.get("error", "The Psi4 worker did not start"))
-        self.version = ready.get("version")
-
-    @staticmethod
-    def _read(process, replies) -> None:
-        for line in process.stdout:
-            if line.startswith(PREFIX):
-                replies.put(json.loads(line[len(PREFIX) :]))
-        replies.put({"error": f"The Psi4 worker exited (code {process.wait()})"})
-
-    def _reply(self, timeout: float) -> dict:
-        try:
-            return self._replies.get(timeout=timeout)
-        except queue.Empty:
-            self.close()
-            raise CalculationFailed(f"Psi4 did not answer within {timeout:g} s") from None
-
-    def close(self) -> None:
-        """Stop the worker process (a later calculation starts a new one)."""
-        if self._cleanup is not None:
-            self._cleanup()
-        self._process = None
-
-    # --- ASE ----------------------------------------------------------------------
-
-    def calculate(self, atoms=None, properties=("energy",), system_changes=all_changes):
-        super().calculate(atoms, properties, system_changes)
-        atoms = self.atoms
-        if atoms.pbc.any():
-            raise CalculationFailed("The Psi4 backend handles molecules only, not periodic cells")
-        if self._process is None or self._process.poll() is not None:
-            self._start()
-        request = {
+    def request(self, atoms) -> dict:
+        return {
             "symbols": atoms.get_chemical_symbols(),
             "positions": atoms.positions.tolist(),
             "method": self.method,
@@ -185,28 +121,11 @@ class Psi4Calculator(Calculator):
             "memory_mb": self.memory_mb,
             "options": self.options,
         }
-        try:
-            self._process.stdin.write(json.dumps(request) + "\n")
-            self._process.stdin.flush()
-        except OSError as exc:
-            self.close()
-            raise CalculationFailed(f"The Psi4 worker is gone: {exc}") from exc
-        answer = self._reply(self.timeout)
-        if "error" in answer:
-            raise CalculationFailed(f"Psi4 {self.method}/{self.basis}: {answer['error']}")
+
+    def results_from(self, answer: dict, atoms) -> dict:
         gradient = np.asarray(answer["gradient"], float).reshape(len(atoms), 3)
         energy = float(answer["energy"]) * Hartree
-        self.results = {
-            "energy": energy,
-            "free_energy": energy,
-            "forces": -gradient * Hartree / Bohr,
-        }
+        return {"energy": energy, "free_energy": energy, "forces": -gradient * Hartree / Bohr}
 
-
-def _stop(process: subprocess.Popen) -> None:
-    if process.poll() is None:
-        try:
-            process.stdin.close()
-            process.wait(timeout=10)
-        except (OSError, subprocess.TimeoutExpired):
-            process.kill()
+    def describe_error(self, error: str) -> str:
+        return f"Psi4 {self.method}/{self.basis}: {error}"

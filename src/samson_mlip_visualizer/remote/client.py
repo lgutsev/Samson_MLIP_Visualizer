@@ -48,7 +48,7 @@ class SamsonClient:
         info = read_connection_file(Path(path) if path else None)
         return cls(info.host, info.port, info.token, timeout=timeout)
 
-    def call(self, method: str, **params: Any) -> Any:
+    def call(self, method: str, /, **params: Any) -> Any:
         """Call ``method`` and return its result; raise :class:`BridgeError` on failure."""
         request = {
             "jsonrpc": "2.0",

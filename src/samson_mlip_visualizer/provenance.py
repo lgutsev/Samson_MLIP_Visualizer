@@ -116,6 +116,8 @@ def collect_provenance(
     a model card (:func:`model_card`) is added to them."""
     if backend in ("xtb", "psi4"):
         device, dtype = "cpu", "float64"  # the MACE device/dtype settings do not apply
+    if backend == "aimnet2":
+        device, dtype = "cpu", "float32"  # AIMNet2 networks run in float32
     sha256, size = model_digest(model_path)
     versions: dict[str, str] = {}
     for dist in ("samson-mlip-visualizer", "ase", "numpy"):
@@ -139,6 +141,12 @@ def collect_provenance(
         found = psi4_version(model_path)
         if found:
             versions["psi4"] = found
+    if backend == "aimnet2":
+        from .aimnet2_backend import aimnet_version
+
+        found = aimnet_version(model_path)
+        if found:
+            versions["aimnet"] = found
     return Provenance(
         backend=backend,
         model_path=str(Path(model_path).expanduser()),

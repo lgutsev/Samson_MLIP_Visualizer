@@ -170,12 +170,14 @@ def _make_window():
 
             # --- model settings shared by every task -------------------------------
             self.backend = QtWidgets.QComboBox()
-            self.backend.addItems(["MACE", "DeepMD", "xTB", "Psi4"])
+            self.backend.addItems(["MACE", "DeepMD", "xTB", "Psi4", "AIMNet2"])
             self.backend.setToolTip(
                 "xTB runs the GFN-xTB program (semi-empirical, no training set) as an "
                 "independent cross-check; its 'model file' is the xtb executable. Psi4 runs "
                 "DFT (default PBE, the level MACE-MP-0 was trained on) or other quantum "
-                "chemistry; its 'model file' is the python of the environment with Psi4."
+                "chemistry; its 'model file' is the python of the environment with Psi4. "
+                "AIMNet2 is an MLIP that takes the molecular charge (ions, SN2 anions); its "
+                "'model file' is the python of the environment with aimnet."
             )
             self.model_path = QtWidgets.QLineEdit()
             self.model_path.setPlaceholderText(
@@ -672,9 +674,7 @@ def _make_window():
         # --- small helpers ---------------------------------------------------------
 
         def _backend_changed(self, text):
-            from .calculators import PROGRAMS, find_program
-            from .psi4_backend import has_psi4
-            from .xtb_backend import is_xtb_executable
+            from .calculators import PROGRAMS, find_program, is_program
 
             backend = text.lower()
             self.device.setEnabled(backend == "mace")
@@ -685,11 +685,11 @@ def _make_window():
                 widget.setEnabled(backend == "psi4")
             for widget in self._charge_widgets:
                 widget.setEnabled(backend in PROGRAMS)
-            # For xTB and Psi4 the model field holds the program; swap it with the backend.
+            # For xTB, Psi4, and AIMNet2 the model field holds the program; swap it with
+            # the backend.
             current = self.model_path.text().strip()
-            fits = {"xtb": is_xtb_executable, "psi4": has_psi4}
-            holds_program = bool(current) and any(check(current) for check in fits.values())
-            if backend in PROGRAMS and not (current and fits[backend](current)):
+            holds_program = bool(current) and any(is_program(p, current) for p in PROGRAMS)
+            if backend in PROGRAMS and not (current and is_program(backend, current)):
                 found = find_program(backend)
                 if found is not None:
                     self.model_path.setText(str(found))
@@ -697,16 +697,17 @@ def _make_window():
                 self.model_path.setText(_default_model_path())
 
         def _program_options(self, backend):
-            """xTB / Psi4 options from the panel (``None`` for MLIPs)."""
+            """xTB / Psi4 / AIMNet2 options from the panel (``None`` for other MLIPs)."""
             from .calculators import program_options
 
+            methods = {
+                "xtb": self.xtb_method.currentText(),
+                "psi4": self.psi4_method.currentText().strip(),
+                "aimnet2": None,  # the default network, ωB97M-D3
+            }
             return program_options(
                 backend,
-                method=(
-                    self.xtb_method.currentText()
-                    if backend == "xtb"
-                    else self.psi4_method.currentText().strip()
-                ),
+                method=methods.get(backend),
                 basis=self.psi4_basis.text().strip(),
                 charge=self.xtb_charge.value(),
                 multiplicity=self.xtb_multiplicity.value(),

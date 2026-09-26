@@ -45,6 +45,11 @@ def test_tools_drive_the_bridge(bridge):  # noqa: F811
     failure = tool("samson_delete_atoms", atoms=[99])
     assert failure["isError"] is True and "indices" in failure["content"][0]["text"]
 
+    # A ts option named "method" must not collide with SamsonClient.call's own argument.
+    # The stand-in has no model file, so the bridge itself rejects the spec.
+    started = tool("samson_start_job", kind="ts", options={"method": "prfo"})
+    assert started["content"][0]["text"] == "Missing job parameter 'model'"
+
 
 def test_stdio_loop_writes_only_json():
     server = McpServer(client_factory=lambda: None)

@@ -30,6 +30,8 @@ from ..vibrations import harmonic_frequencies
 
 KINDS = ("single_point", "relax", "md", "ts", "frequencies", "irc", "qst", "scan")
 _MOVES_ATOMS = ("relax", "md", "ts", "irc", "scan")
+# job parameter naming each program backend's method (AIMNet2: which network)
+_METHOD_KEYS = {"xtb": "xtb_method", "psi4": "psi4_method", "aimnet2": "aimnet_model"}
 _MISSING = object()
 
 
@@ -165,7 +167,7 @@ class JobManager:
         dtype = _get(params, "dtype", str, "float64")
         options = program_options(
             backend,
-            method=_get(params, "xtb_method" if backend == "xtb" else "psi4_method", str, None),
+            method=_get(params, _METHOD_KEYS.get(backend, "psi4_method"), str, None),
             basis=_get(params, "basis", str, None),
             charge=_get(params, "charge", int, 0),
             multiplicity=_get(params, "multiplicity", int, 1),
