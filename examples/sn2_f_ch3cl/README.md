@@ -12,6 +12,40 @@ i9-14900HX, RTX 5070 Laptop GPU).
 turns inside out as F⁻ comes in from the back and Cl⁻ leaves: the Walden
 inversion. Energies are relative to the reactant complex.*
 
+## Conclusions
+
+For gas-phase F⁻ + CH₃Cl, the best available reference (Czakó's CCSD(T)
+basis-set-limit focal-point study) puts the Walden barrier only 3.4 kcal/mol
+above the ion–dipole complex. The methods split sharply on this. The two
+range-separated hybrids, ωB97M-V and ωB97X-D, reproduce every stationary point
+to within about 1 kcal/mol. PBE and GFN2-xTB have no barrier at all, so neither
+is a usable reference or fine-tuning target here, unlike for HCN. Among the
+MLIPs, the stock foundation model MACE-MP-0 fails qualitatively. It has no
+charge input, no reactant complex, and energy errors of up to 1 eV along the
+path. AIMNet2 is the only off-the-shelf model that gets the chemistry right: it
+finds the correct transition state, with geometry and energy relative to the
+reactants close to CCSD(T), and an IRC that connects the right complexes. But
+it binds the complexes 5–6 kcal/mol too strongly, so its barrier from the
+complex is 9.3 kcal/mol, nearly three times too high, and its TS mode is too
+stiff (−743 cm⁻¹ against about −450).
+
+Fine-tuning MACE-MP-0 on 90 ωB97X-D calculations along AIMNet2's path fixed
+this for about 20 minutes on a laptop. On frames it was not trained on, the
+model reproduces ωB97X-D within a few meV (barrier 3.31 against
+3.28 kcal/mol), its geometries match CCSD(T) within 0.05 Å, and its TS
+frequency agrees with ωB97X-D's. The limits are just as clear. Those test
+frames lie within about 0.02 Å of the training data. A step off the path (the
+C–F scan) the error grows to about 1 kcal/mol, and the committee spread
+underestimates it by about 2.5×. The model is also a specialist: it cannot
+describe separated ions, and it made C–Cl in neutral CH₃Cl three times worse
+than the foundation model, because it learned that bond as the complex
+stretches it. In short, AIMNet2 is the tool for exploring an ionic reaction
+like this out of the box, and cheap targeted fine-tuning turns a foundation
+model into an accurate model *of this reaction path*, not a better general
+model. It works only because the reference level was checked against the
+literature first; fine-tuning to PBE would have produced a confident model of a
+reaction with no barrier.
+
 ## Why this reaction needs a charge-aware model
 
 The system is an anion, [CH₃FCl]⁻. MACE-MP-0 has no charge input, so it
@@ -138,6 +172,11 @@ geometries; the ωB97X-D frequencies are at the tuned model's TS, where
 *The committee's own IRC, frame 0 at the product complex. The error stays
 within ±2 meV and inside the committee spread (dashed).*
 
+![Fine-tuned MACE vs ωB97X-D forces along its own IRC](images/finetuned_vs_wb97xd_forces.png)
+
+*The same frames, forces: 0.012 eV/Å mean error, 0.053 eV/Å for the worst
+atom.*
+
 Cost: **about 20 minutes** on the laptop. ωB97X-D labels 465 s (5 s per
 six-atom gradient), training 579 s for the three models in parallel, committee
 TS search and IRC 116 s, validation 42 s.
@@ -222,6 +261,11 @@ the committee's IRC is the fair row.
 
 *The foundation model on the committee's IRC: no barrier, and 1 eV off on the
 product side.*
+
+![AIMNet2 vs ωB97X-D along the committee's IRC](images/aimnet2_vs_wb97xd_on_tuned_irc_energy.png)
+
+*AIMNet2 on the same frames: the right shape, but it rises about 0.19 eV too
+high by the TS (barrier 9.05 against 3.28 kcal/mol).*
 
 **Stock MACE-MP-0 small has no SN2 profile of its own** (`stock_mace_stationary.py`):
 
