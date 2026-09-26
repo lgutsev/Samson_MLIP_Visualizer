@@ -95,7 +95,7 @@ def collect_provenance(
     settings: dict[str, object] | None = None,
 ) -> Provenance:
     """``settings`` records backend options that change the numbers (xTB method, charge, ...)."""
-    if backend == "xtb":
+    if backend in ("xtb", "psi4"):
         device, dtype = "cpu", "float64"  # the MACE device/dtype settings do not apply
     sha256, size = model_digest(model_path)
     versions: dict[str, str] = {}
@@ -114,6 +114,12 @@ def collect_provenance(
         found = xtb_version(model_path)
         if found:
             versions["xtb"] = found
+    if backend == "psi4":
+        from .psi4_backend import psi4_version
+
+        found = psi4_version(model_path)
+        if found:
+            versions["psi4"] = found
     return Provenance(
         backend=backend,
         model_path=str(Path(model_path).expanduser()),

@@ -211,7 +211,9 @@ _JOB_START_SCHEMA = _schema(
             "description": (
                 "Optional. model/backend/device/dtype default to the MLIP panel's settings; "
                 "backend 'xtb' (model = the xtb executable) takes xtb_method (gfn2|gfn1|gfnff), "
-                "charge, multiplicity, solvent (ALPB). models ('auto'|'all'). relax: fmax, "
+                "charge, multiplicity, solvent (ALPB); backend 'psi4' (model = the Psi4 "
+                "environment's python) takes psi4_method (default pbe), basis (default "
+                "def2-tzvp), charge, multiplicity. models ('auto'|'all'). relax: fmax, "
                 "max_steps, optimizer. md: ensemble, "
                 "temperature_k, timestep_fs, steps, friction_per_fs, tdamp_fs, seed, "
                 "report_interval, fixed_distances ('0-3, 5-9:1.2'), trajectory, "

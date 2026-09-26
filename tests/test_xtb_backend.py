@@ -139,7 +139,7 @@ def test_method_names():
 
 def test_create_calculator_and_element_check(fake_xtb, tmp_path):
     executable, _ = fake_xtb
-    calc = create_calculator("xtb", executable, xtb={"method": "gfn1", "charge": 1})
+    calc = create_calculator("xtb", executable, options={"method": "gfn1", "charge": 1})
     assert calc.method == "gfn1" and calc.charge == 1
     assert {"H", "C", "Rn"} <= supported_species(calc)
     assert "Fr" not in supported_species(calc)
@@ -148,7 +148,7 @@ def test_create_calculator_and_element_check(fake_xtb, tmp_path):
     with pytest.raises(CalculatorLoadError, match="xtb executable"):
         create_calculator("xtb", model)
     with pytest.raises(CalculatorLoadError, match="Invalid xTB settings"):
-        create_calculator("xtb", executable, xtb={"method": "pm7"})
+        create_calculator("xtb", executable, options={"method": "pm7"})
 
 
 def test_provenance_records_the_settings(fake_xtb, monkeypatch):

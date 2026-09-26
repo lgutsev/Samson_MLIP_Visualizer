@@ -1,4 +1,9 @@
-"""Lazy ASE calculator construction for supported MLIP backends."""
+"""Lazy ASE calculator construction for the supported backends.
+
+MLIPs (MACE, DeepMD) load a model file. The quantum-chemistry programs (xTB,
+Psi4) run in environments of their own; for them the "model" is the program's
+executable (xtb) or Python (Psi4), found automatically by :func:`find_program`.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +11,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
-Backend = Literal["mace", "deepmd", "xtb"]
+Backend = Literal["mace", "deepmd", "xtb", "psi4"]
+PROGRAMS = ("xtb", "psi4")  # backends that run an external program, not a model file
 
 ModelPaths = str | Path | Sequence[str | Path]
 
@@ -42,22 +48,65 @@ def _resolve_model_paths(model_path: ModelPaths) -> list[Path]:
     return resolved
 
 
+def find_program(backend: str) -> Path | None:
+    """The xtb executable or the Psi4 Python, if installed where it is looked for."""
+    if backend == "xtb":
+        from .xtb_backend import find_xtb
+
+        return find_xtb()
+    if backend == "psi4":
+        from .psi4_backend import find_psi4
+
+        return find_psi4()
+    return None
+
+
+def program_options(
+    backend: str,
+    *,
+    method: str | None = None,
+    basis: str | None = None,
+    charge: int = 0,
+    multiplicity: int = 1,
+    solvent: str | None = None,
+) -> dict[str, Any] | None:
+    """Options for an xTB or Psi4 calculator (``None`` for MLIPs), with defaults
+    GFN2-xTB and PBE/def2-TZVP. Also what provenance records as settings."""
+    if backend == "xtb":
+        return {
+            "method": method or "gfn2",
+            "charge": charge,
+            "multiplicity": multiplicity,
+            "solvent": solvent or None,
+        }
+    if backend == "psi4":
+        return {
+            "method": method or "pbe",
+            "basis": basis or "def2-tzvp",
+            "charge": charge,
+            "multiplicity": multiplicity,
+        }
+    return None
+
+
 def create_calculator(
     backend: Backend,
     model_path: ModelPaths,
     *,
     device: str = "cpu",
     dtype: str = "float64",
-    xtb: Mapping[str, Any] | None = None,
+    options: Mapping[str, Any] | None = None,
 ):
     """Create an ASE calculator without importing unused ML frameworks.
 
     ``model_path`` may be a single file or several. Passing several MACE
     checkpoints builds a committee: ``atoms.calc.results`` then carries
     ``energy_comm`` / ``forces_comm``, whose spread is an extrapolation signal.
-    For ``backend="xtb"`` the "model" is the xtb executable, and ``xtb`` holds
-    the :class:`~.xtb_backend.XTBCalculator` options (method, charge,
-    multiplicity, solvent); device and dtype do not apply.
+    For ``backend="xtb"`` the "model" is the xtb executable and ``options`` are
+    :class:`~.xtb_backend.XTBCalculator` options (method, charge, multiplicity,
+    solvent); for ``backend="psi4"`` it is the Python of an environment with
+    Psi4 and ``options`` are :class:`~.psi4_backend.Psi4Calculator` options
+    (method, basis, charge, multiplicity). Device and dtype apply to MACE only.
     """
     paths = _resolve_model_paths(model_path)
 
@@ -70,9 +119,22 @@ def create_calculator(
                 "file, e.g. from `micromamba create -n xtb -c conda-forge xtb`."
             )
         try:
-            return XTBCalculator(paths[0], **dict(xtb or {}))
+            return XTBCalculator(paths[0], **dict(options or {}))
         except (TypeError, ValueError) as exc:
             raise CalculatorLoadError(f"Invalid xTB settings: {exc}") from exc
+
+    if backend == "psi4":
+        from .psi4_backend import Psi4Calculator, has_psi4
+
+        if len(paths) > 1 or not has_psi4(paths[0]):
+            raise CalculatorLoadError(
+                "For the Psi4 backend, choose the python executable of an environment with "
+                "Psi4, e.g. from `micromamba create -n qm -c conda-forge python=3.11 psi4`."
+            )
+        try:
+            return Psi4Calculator(paths[0], **dict(options or {}))
+        except (TypeError, ValueError) as exc:
+            raise CalculatorLoadError(f"Invalid Psi4 settings: {exc}") from exc
 
     try:
         if backend == "mace":

@@ -63,20 +63,30 @@ Do not install both GPU stacks merely because both backends are supported. Start
 with a CPU build, verify a known structure, then follow the backend's current
 CUDA installation guidance if acceleration is needed.
 
-### Optional: xTB as a cross-check
+### Optional: xTB and Psi4 (reference methods)
 
-GFN-xTB (semi-empirical tight binding, no training set) is a cheap, independent
-check next to an MLIP. The panel runs the `xtb` program as a subprocess, so it
-goes into an environment of its own, **not** SAMSON's Python:
+Two quantum-chemistry backends serve as checks on an MLIP. Each goes into an
+environment of its own, **not** SAMSON's Python, and the panel runs it as a
+subprocess:
+
+- **GFN-xTB** (semi-empirical tight binding, no training set): a cheap,
+  independent cross-check, ~0.1 s per call for small molecules.
+- **Psi4** (DFT and wavefunction methods): the reference itself. Its default,
+  PBE/def2-TZVP, is the functional MACE-MP-0 was trained on, so comparing the
+  two isolates the model's error from the functional's. One worker process
+  keeps Psi4 loaded; a PBE/def2-TZVP gradient for a three-atom molecule takes
+  about 1 s.
 
 ```bash
 micromamba create -n xtb -c conda-forge xtb
+micromamba create -n qm -c conda-forge python=3.11 psi4
 ```
 
-(`conda` works the same way.) The panel finds `xtb.exe` in the usual conda and
-micromamba environment folders, on `PATH`, or through the `XTB_EXE` environment
-variable. The in-process `tblite-python` package was not used: its conda-forge
-Windows build crashes on the first calculation.
+(`conda` works the same way.) The panel finds `xtb.exe` and the Psi4
+environment's `python` in the usual conda and micromamba environment folders,
+or through the `XTB_EXE` / `PSI4_PYTHON` environment variables. The in-process
+`tblite-python` package was not used: its conda-forge Windows build crashes on
+the first calculation.
 
 ## Launch
 
@@ -100,7 +110,10 @@ Then:
    MACE checkpoints builds an uncertainty committee (see below). For **xTB**,
    the model field holds the `xtb` executable (filled in automatically when
    found). Set the method (GFN2, GFN1, GFN-FF), an optional ALPB solvent, and
-   the charge and multiplicity on the row below.
+   the charge and multiplicity on the row below. For **Psi4**, the model field
+   holds the Psi4 environment's `python`; set the method (any Psi4 method with
+   gradients, default PBE) and basis set (default def2-TZVP) on the Psi4 row.
+   The charge and multiplicity boxes apply to both programs.
 5. Run **Single point** first. Check that the energy and forces are plausible.
 6. Pick an optimizer, set the force threshold and maximum steps, then choose
    **Relax positions**.
@@ -273,18 +286,57 @@ the H–C–N angle changes steadily but r(N–H) does not, so the distance is a
 scan coordinate for this reaction. P-RFO from an exact Hessian still reaches
 the TS: r(C–H) 1.21 Å, r(N–H) 1.35 Å, one imaginary mode (−988 cm⁻¹). The IRC
 confirms it: one end relaxes to HCN and the other to HNC (+0.63 eV). The 2.63 eV
-barrier is well above the ~2.1 eV of high-level ab initio work. The TS is right
-for this model, but the model is wrong for this chemistry, so the exported
-`Opt=(TS,CalcFC)` input should give the final answer.
+barrier is well above the reference: PBE/def2-TZVP (Psi4) gives 2.00 eV, and
+CCSD(T)/cc-pVTZ at the PBE geometries 2.07 eV. The TS is right for this model,
+but the model is wrong for this chemistry; [the benchmark below](#benchmarking-a-model-along-a-reaction-path)
+shows where.
+
+![HCN, the transition state, and HNC in SAMSON, from the MACE IRC path](docs/images/hcn_irc_snapshots.png)
+
+*Frames of the IRC path in SAMSON. The bonds are the ones drawn on import;
+SAMSON does not redraw them per frame.*
 
 **Cross-check with xTB.** Before paying for DFT, repeat the search with the
-**xTB** backend (see [install](#optional-xtb-as-a-cross-check)). It is
+**xTB** backend (see [install](#optional-xtb-and-psi4-reference-methods)). It is
 independent of any MLIP training set. When the two agree, both are more
 believable; when they disagree, the reaction needs QM. On the same HCN scan,
 GFN2-xTB finds its TS at r(C–H) 1.16 Å, r(N–H) 1.32 Å (−1426 cm⁻¹) with a
 3.18 eV barrier. MACE and xTB disagree by 0.55 eV, and both miss the reference
 value. xTB is a subprocess, ~0.1 s per call for small molecules, so exact
 Hessians and scans take tens of seconds rather than seconds.
+
+### Benchmarking a model along a reaction path
+
+A barrier that is off says *that* the model is wrong, not *where*. The benchmark
+evaluates the model and a reference on the same frames of a path (an IRC, a
+scan, a QST band) and plots both energy profiles, each relative to its own
+first frame, with their difference, plus the mean per-atom forces and the force
+error (mean over atoms, and the worst atom). For a MACE committee it also plots
+the committee spread, which needs no reference calculation.
+
+- **Panel** (Scan / QM export tab): after an IRC, scan, or QST, choose the
+  reference (Psi4 or xTB, with the settings of the model section) and the
+  number of frames, and press **Benchmark last path…**. It writes
+  `<prefix>_energy.png`, `<prefix>_forces.png`, and `<prefix>.csv`, and logs
+  the largest errors.
+- **Command line**, on any trajectory from `samson-mlip --trajectory`:
+
+```bash
+samson-mlip ts.xyz model.model --irc --trajectory irc.extxyz
+samson-mlip-benchmark irc.extxyz --model model.model --reference psi4 --angle 2-0-1 --ends HCN,HNC
+```
+
+![MACE-MP-0 vs PBE energy along the HCN → HNC IRC](docs/images/hcn_irc_benchmark_energy.png)
+
+*HCN → HNC, 29 frames of the MACE IRC with PBE/def2-TZVP from Psi4 (under a
+minute). The error is zero at HCN and −0.03 eV at HNC, but +0.5 to +0.65 eV
+across the whole bent region (H–C–N from about 120° to 50°): the part of
+configuration space the foundation model's crystal training data never covered.*
+
+The error profile says where training data belongs: along the whole bent
+region, not only at the TS. Frames where the reference disagrees are the ones
+to label for fine-tuning, and the committee spread, which is free, is the
+signal for choosing them in an active-learning loop.
 
 ### Viewing normal modes
 
@@ -354,6 +406,7 @@ samson-mlip hcn_bent.xyz model.model --scan 2-1:1.0:13 --exact-hessian --freq --
 samson-mlip guess.xyz model.model --ts --recompute-hessian 5 --export-qm ts.inp --qm-level "r2SCAN-3c"
 samson-mlip hcn_bent.xyz auto --backend xtb --scan 2-1:1.0:13 --exact-hessian --freq
 samson-mlip anion.xyz auto --backend xtb --xtb-method gfn2 --charge -1 --solvent water --relax
+samson-mlip ts_guess.xyz auto --backend psi4 --psi4-method pbe --basis def2-tzvp --ts --freq
 samson-mlip molecule.xyz model.model --relax --fmax 0.001 --freq
 ```
 
@@ -428,6 +481,7 @@ number that is easy to misinterpret.
 |---|---|---|---|
 | MACE | `mace.calculators.MACECalculator` | trained MACE checkpoint/model | `cpu` or `cuda` in the panel |
 | DeepMD | `deepmd.calculator.DP` | `.pb`, `.pth`, `.json`, depending on backend | controlled by the installed DeepMD runtime |
+| Psi4 | `psi4_backend.Psi4Calculator` (a worker running `psi4.gradient`) | the Psi4 environment's `python`; any method/basis with gradients | CPU threads (half the cores, up to 8) |
 | xTB | `xtb_backend.XTBCalculator` (runs `xtb --grad`) | the `xtb` executable; method GFN2 / GFN1 / GFN-FF | CPU; threads via `OMP_NUM_THREADS` |
 
 The chemical species and cutoff compatibility are determined by the model, not
@@ -461,8 +515,11 @@ it.
 - Transition states by P-RFO (Sella, optionally from exact Hessians) or the
   dimer method, bond scans refined to a TS, QST2/QST3-style NEB path searches,
   and IRC.
-- Gaussian / ORCA input export (TS, QST2/QST3, IRC, Opt); no DFT runs inside
-  the tool. GFN-xTB (molecules only) is available as a semi-empirical backend.
+- Gaussian / ORCA input export (TS, QST2/QST3, IRC, Opt). GFN-xTB and Psi4
+  (DFT and other methods with gradients) are available as backends for
+  molecules; Psi4 is meant for reference calculations on small systems.
+- Model-vs-reference benchmarks along a path (energies, forces, committee
+  spread), in the panel and as `samson-mlip-benchmark`.
 - Finite-difference frequencies (6 force calls per free atom): meant for
   molecules and small clusters.
 - MACE committee uncertainty (multiple checkpoints); DeepMD committee not yet.

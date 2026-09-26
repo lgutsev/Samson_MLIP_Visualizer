@@ -118,14 +118,10 @@ def panel_settings() -> dict[str, Any]:
             "device": window.device.currentText(),
             "dtype": window.dtype.currentText(),
         }
-        if settings["backend"] == "xtb":
-            xtb = window._xtb_options()
-            settings.update(
-                xtb_method=xtb["method"],
-                charge=xtb["charge"],
-                multiplicity=xtb["multiplicity"],
-                solvent=xtb["solvent"],
-            )
+        options = window._program_options(settings["backend"])
+        if options is not None:
+            settings[f"{settings['backend']}_method"] = options.pop("method")
+            settings.update(options)  # basis (Psi4), charge, multiplicity, solvent (xTB)
         return settings
     except Exception:  # noqa: BLE001 - no panel, or no model chosen yet
         return {}

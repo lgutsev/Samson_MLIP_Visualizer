@@ -31,6 +31,10 @@ _REMEMBERED = (
     "xtb_solvent",
     "xtb_charge",
     "xtb_multiplicity",
+    "psi4_method",
+    "psi4_basis",
+    "bench_reference",
+    "bench_points",
     "min_distance",
     "max_force_std",
     "optimizer",
@@ -164,10 +168,12 @@ def _make_window():
 
             # --- model settings shared by every task -------------------------------
             self.backend = QtWidgets.QComboBox()
-            self.backend.addItems(["MACE", "DeepMD", "xTB"])
+            self.backend.addItems(["MACE", "DeepMD", "xTB", "Psi4"])
             self.backend.setToolTip(
                 "xTB runs the GFN-xTB program (semi-empirical, no training set) as an "
-                "independent cross-check; its 'model file' is the xtb executable."
+                "independent cross-check; its 'model file' is the xtb executable. Psi4 runs "
+                "DFT (default PBE, the level MACE-MP-0 was trained on) or other quantum "
+                "chemistry; its 'model file' is the python of the environment with Psi4."
             )
             self.model_path = QtWidgets.QLineEdit()
             self.model_path.setPlaceholderText(
@@ -210,12 +216,17 @@ def _make_window():
             charge_row = QtWidgets.QHBoxLayout()
             charge_row.addWidget(self.xtb_charge)
             charge_row.addWidget(self.xtb_multiplicity)
-            self._xtb_widgets = (
-                self.xtb_method,
-                self.xtb_solvent,
-                self.xtb_charge,
-                self.xtb_multiplicity,
+            self.psi4_method = QtWidgets.QComboBox()
+            self.psi4_method.setEditable(True)
+            self.psi4_method.addItems(["pbe", "pbe0", "b3lyp-d3bj", "wb97x-d", "hf", "mp2"])
+            self.psi4_method.setToolTip(
+                "Any Psi4 method with gradients. PBE is what MACE-MP-0 was trained on."
             )
+            self.psi4_basis = QtWidgets.QLineEdit("def2-tzvp")
+            self.psi4_basis.setToolTip("Psi4 basis set, e.g. def2-svp, def2-tzvp, cc-pvtz.")
+            self._xtb_widgets = (self.xtb_method, self.xtb_solvent)
+            self._psi4_widgets = (self.psi4_method, self.psi4_basis)
+            self._charge_widgets = (self.xtb_charge, self.xtb_multiplicity)
 
             settings = grid(
                 [
@@ -223,6 +234,7 @@ def _make_window():
                     [("Model file(s)", model_row)],
                     [("MACE device", self.device), ("MACE dtype", self.dtype)],
                     [("xTB / solvent", xtb_row), ("Charge, mult.", charge_row)],
+                    [("Psi4 method", self.psi4_method), ("Basis", self.psi4_basis)],
                     [
                         ("Min. atom distance", self.min_distance),
                         ("Max committee σ", self.max_force_std),
@@ -316,6 +328,7 @@ def _make_window():
                 self.qst_button,
                 self.irc_button,
                 self.scan_button,
+                self.bench_button,
             ]
             self.backend.currentTextChanged.connect(self._backend_changed)
             self._backend_changed(self.backend.currentText())
@@ -541,6 +554,8 @@ def _make_window():
             self.path_animate.clicked.connect(self._toggle_path_animation)
             self._last_path = None
             self._last_path_home = 0
+            # (structure, frame positions, x values, x label, (TS position, label) or None)
+            self._last_frames = None
 
             layout = QtWidgets.QVBoxLayout(page)
             layout.addLayout(
@@ -602,6 +617,20 @@ def _make_window():
             )
             export.clicked.connect(self._export_qm)
 
+            self.bench_reference = QtWidgets.QComboBox()
+            self.bench_reference.addItems(["Psi4", "xTB"])
+            self.bench_reference.setToolTip(
+                "Reference method, with the Psi4 / xTB settings of the model section."
+            )
+            self.bench_points = int_spin(3, 1000, 30, "Frames to evaluate, spread along the path.")
+            self.bench_button = QtWidgets.QPushButton("Benchmark last path…")
+            self.bench_button.setToolTip(
+                "Evaluate the current model and the reference on the frames of the last IRC, "
+                "scan, or QST path; write energy and force figures and a CSV, and log where "
+                "they disagree (and the committee spread, for a MACE committee)."
+            )
+            self.bench_button.clicked.connect(self._benchmark_path)
+
             layout = QtWidgets.QVBoxLayout(page)
             layout.addLayout(
                 grid(
@@ -622,6 +651,10 @@ def _make_window():
                 )
             )
             layout.addWidget(export)
+            layout.addLayout(
+                grid([[("Benchmark against", self.bench_reference), ("Frames", self.bench_points)]])
+            )
+            layout.addWidget(self.bench_button)
             return page
 
         def _ts_options_changed(self, *_):
@@ -637,31 +670,46 @@ def _make_window():
         # --- small helpers ---------------------------------------------------------
 
         def _backend_changed(self, text):
-            from .xtb_backend import find_xtb, is_xtb_executable
+            from .calculators import PROGRAMS, find_program
+            from .psi4_backend import has_psi4
+            from .xtb_backend import is_xtb_executable
 
-            is_mace = text.lower() == "mace"
-            is_xtb = text.lower() == "xtb"
-            self.device.setEnabled(is_mace)
-            self.dtype.setEnabled(is_mace)
+            backend = text.lower()
+            self.device.setEnabled(backend == "mace")
+            self.dtype.setEnabled(backend == "mace")
             for widget in self._xtb_widgets:
-                widget.setEnabled(is_xtb)
-            # The model field holds the xtb executable for xTB; swap it with the backend.
+                widget.setEnabled(backend == "xtb")
+            for widget in self._psi4_widgets:
+                widget.setEnabled(backend == "psi4")
+            for widget in self._charge_widgets:
+                widget.setEnabled(backend in PROGRAMS)
+            # For xTB and Psi4 the model field holds the program; swap it with the backend.
             current = self.model_path.text().strip()
-            holds_xtb = bool(current) and is_xtb_executable(current)
-            if is_xtb and not holds_xtb:
-                found = find_xtb()
+            fits = {"xtb": is_xtb_executable, "psi4": has_psi4}
+            holds_program = bool(current) and any(check(current) for check in fits.values())
+            if backend in PROGRAMS and not (current and fits[backend](current)):
+                found = find_program(backend)
                 if found is not None:
                     self.model_path.setText(str(found))
-            elif not is_xtb and holds_xtb:
+            elif backend not in PROGRAMS and holds_program:
                 self.model_path.setText(_default_model_path())
 
-        def _xtb_options(self):
-            return {
-                "method": self.xtb_method.currentText(),
-                "charge": self.xtb_charge.value(),
-                "multiplicity": self.xtb_multiplicity.value(),
-                "solvent": self.xtb_solvent.text().strip() or None,
-            }
+        def _program_options(self, backend):
+            """xTB / Psi4 options from the panel (``None`` for MLIPs)."""
+            from .calculators import program_options
+
+            return program_options(
+                backend,
+                method=(
+                    self.xtb_method.currentText()
+                    if backend == "xtb"
+                    else self.psi4_method.currentText().strip()
+                ),
+                basis=self.psi4_basis.text().strip(),
+                charge=self.xtb_charge.value(),
+                multiplicity=self.xtb_multiplicity.value(),
+                solvent=self.xtb_solvent.text().strip() or None,
+            )
 
         def _ensemble_changed(self, text):
             self.temperature.setEnabled(text != "NVE")
@@ -683,7 +731,9 @@ def _make_window():
                     continue
                 widget, value = getattr(self, name), self._settings.value(name)
                 try:
-                    if isinstance(widget, QtWidgets.QComboBox):
+                    if isinstance(widget, QtWidgets.QComboBox) and widget.isEditable():
+                        widget.setCurrentText(str(value))
+                    elif isinstance(widget, QtWidgets.QComboBox):
                         index = widget.findText(str(value))
                         if index >= 0:
                             widget.setCurrentIndex(index)
@@ -805,9 +855,9 @@ def _make_window():
             backend = self.backend.currentText().lower()
             device = self.device.currentText()
             dtype = self.dtype.currentText()
-            xtb = self._xtb_options() if backend == "xtb" else None
+            options = self._program_options(backend)
             calculator = create_calculator(
-                backend, model_files, device=device, dtype=dtype, xtb=xtb
+                backend, model_files, device=device, dtype=dtype, options=options
             )
             first_model = model_files if isinstance(model_files, str) else model_files[0]
             try:
@@ -816,7 +866,7 @@ def _make_window():
                     model_path=first_model,
                     device=device,
                     dtype=dtype,
-                    settings=xtb,
+                    settings=options,
                 )
                 self._log("Run provenance:\n" + provenance.as_text())
                 if not isinstance(model_files, str):
@@ -969,6 +1019,10 @@ def _make_window():
                 structure, [frame.positions for frame in frames], name="IRC path"
             )
             self._last_path_home = len(result.reverse)
+            self._last_frames = (
+                structure, [frame.positions for frame in frames],
+                [frame.arc for frame in frames], "IRC coordinate (Å·amu½)", (0.0, "TS"),
+            )
             self.path_animate.setEnabled(True)
             self._log(
                 f"Added 'IRC path' ({len(frames)} frames, TS at frame {self._last_path_home})."
@@ -1362,6 +1416,10 @@ def _make_window():
                 )
                 self._last_path = add_frames_path(reactant, result.images, name=f"{label} path")
                 self._last_path_home = 0  # the reactant geometry
+                self._last_frames = (
+                    reactant, list(result.images), list(range(len(result.images))),
+                    f"{label} image", None,
+                )
                 self._log(
                     f"Added '{label} path' ({len(result.images)} frames, reactant → product) "
                     "on the reactant model; scrub it in Document View or press Animate last path."
@@ -1428,6 +1486,10 @@ def _make_window():
                 self.path_animate.setEnabled(True)
                 peak = len(result.reverse)
                 self._last_path_home = peak  # the transition state
+                self._last_frames = (
+                    structure, [frame.positions for frame in frames],
+                    [frame.arc for frame in frames], "IRC coordinate (Å·amu½)", (0.0, "TS"),
+                )
                 state = "stopped" if result.stopped else "finished"
                 self._log(
                     f"IRC {state}: {len(result.reverse)} reverse + "
@@ -1511,6 +1573,10 @@ def _make_window():
                 name = f"Bond scan {pair[0]}-{pair[1]}"
                 self._last_path = add_frames_path(structure, result.frames, name=name)
                 self._last_path_home = result.highest
+                self._last_frames = (
+                    structure, list(result.frames), list(result.distances),
+                    f"r({pair[0]}-{pair[1]}) (Å)", None,
+                )
                 self.path_animate.setEnabled(True)
                 self._log(
                     f"Added '{name}' ({len(result.frames)} frames): separately relaxed, "
@@ -1526,6 +1592,93 @@ def _make_window():
                     if result.ts.converged and self.ts_check.isChecked():
                         frequencies = self._report_frequencies(structure)
                         self._confirm_with_irc(structure, frequencies, pair=pair)
+
+            self._run_task(task)
+
+        def _benchmark_path(self):
+            if self._last_frames is None:
+                self._show_error(
+                    RuntimeError("Run an IRC, scan, or QST first: the benchmark uses its frames.")
+                )
+                return
+            chosen, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self, "Benchmark report: file name prefix", "benchmark", "PNG and CSV (*)"
+            )
+            if not chosen:
+                return
+            prefix = Path(chosen).with_suffix("")
+
+            def task():
+                from ase import Atoms
+
+                from .benchmark import basis_name, benchmark_path, write_report
+                from .calculators import create_calculator, find_program
+
+                structure, positions, coordinate, label, mark = self._last_frames
+                symbols = structure.ase_atoms.get_chemical_symbols()
+                frames = [Atoms(symbols, positions=frame) for frame in positions]
+                backend = self.backend.currentText().lower()
+                model = create_calculator(
+                    backend,
+                    self._model_files(),
+                    device=self.device.currentText(),
+                    dtype=self.dtype.currentText(),
+                    options=self._program_options(backend),
+                )
+                reference_backend = self.bench_reference.currentText().lower()
+                program = find_program(reference_backend)
+                if program is None:
+                    raise RuntimeError(
+                        f"No {self.bench_reference.currentText()} installation found; see "
+                        "'Optional: xTB and Psi4' in the README."
+                    )
+                options = self._program_options(reference_backend)
+                reference = create_calculator(reference_backend, program, options=options)
+                reference_name = (
+                    f"{options['method'].upper()}/{basis_name(options['basis'])}"
+                    if reference_backend == "psi4"
+                    else f"{options['method'].upper()}-xTB"
+                )
+                names = (self.backend.currentText(), reference_name)
+                keep = ()
+                if mark is not None:
+                    distance = [abs(value - mark[0]) for value in coordinate]
+                    keep = (distance.index(min(distance)),)
+                self._log(
+                    f"Benchmark: {names[0]} vs {names[1]} on up to {self.bench_points.value()} "
+                    f"of {len(frames)} frames…"
+                )
+                bench = benchmark_path(
+                    frames,
+                    model,
+                    reference,
+                    names=names,
+                    coordinate=coordinate,
+                    coordinate_label=label,
+                    points=self.bench_points.value(),
+                    keep=keep,
+                    on_progress=lambda done, total: self._log(f"  frame {done}/{total}"),
+                    should_stop=self._poll_stop,
+                )
+                written = write_report(bench, prefix, mark=mark)
+                summary = bench.summary()
+                self._log(
+                    f"Peak: {names[0]} {summary['model_peak_ev']:+.3f} eV, {names[1]} "
+                    f"{summary['reference_peak_ev']:+.3f} eV. Largest energy error "
+                    f"{summary['energy_error_max_ev']:+.3f} eV at "
+                    f"{summary['energy_error_max_at']:.2f}; "
+                    f"mean force error {summary['force_error_mean_ev_per_angstrom']:.3f} eV/Å, "
+                    f"worst atom {summary['force_error_max_ev_per_angstrom']:.3f} eV/Å."
+                )
+                if "committee_force_std_max_ev_per_angstrom" in summary:
+                    self._log(
+                        "Committee spread: energy σ up to "
+                        f"{summary['committee_energy_std_max_ev']:.3f} eV, force σ up to "
+                        f"{summary['committee_force_std_max_ev_per_angstrom']:.3f} eV/Å."
+                    )
+                if bench.stopped:
+                    self._log("Stopped early; the report covers the frames evaluated so far.")
+                self._log("Wrote " + ", ".join(str(path) for path in written.values()))
 
             self._run_task(task)
 

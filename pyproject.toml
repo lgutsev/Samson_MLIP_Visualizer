@@ -22,12 +22,15 @@ classifiers = [
 samson-mlip = "samson_mlip_visualizer.cli:main"
 samson-remote = "samson_mlip_visualizer.remote.client:main"
 samson-mcp = "samson_mlip_visualizer.remote.mcp_server:main"
+samson-mlip-benchmark = "samson_mlip_visualizer.benchmark:main"
 
 [project.optional-dependencies]
 mace = ["mace-torch>=0.3"]
 deepmd = ["deepmd-kit>=3.0"]
 # P-RFO transition-state searches (TS search, QST refinement); pulls in jax.
 ts = ["sella>=2.6"]
+# Benchmark figures (samson-mlip-benchmark, the panel's Benchmark button).
+plot = ["matplotlib>=3.7"]
 test = ["pytest>=8", "ruff>=0.6"]
 
 [project.urls]

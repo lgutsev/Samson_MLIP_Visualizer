@@ -19,7 +19,7 @@ from typing import Any
 
 import numpy as np
 
-from ..calculators import create_calculator
+from ..calculators import create_calculator, program_options
 from ..compat import assert_model_covers_structure
 from ..engine import evaluate, relax
 from ..md import ENSEMBLES, md_warnings, parse_pairs, run_md
@@ -163,23 +163,25 @@ class JobManager:
         backend = _get(params, "backend", str, "mace").lower()
         device = _get(params, "device", str, "cpu")
         dtype = _get(params, "dtype", str, "float64")
-        xtb = None
-        if backend == "xtb":
-            xtb = {
-                "method": _get(params, "xtb_method", str, "gfn2"),
-                "charge": _get(params, "charge", int, 0),
-                "multiplicity": _get(params, "multiplicity", int, 1),
-                "solvent": _get(params, "solvent", str, None) or None,
-            }
-        key = (backend, tuple(paths), device, dtype, tuple(sorted((xtb or {}).items())))
+        options = program_options(
+            backend,
+            method=_get(params, "xtb_method" if backend == "xtb" else "psi4_method", str, None),
+            basis=_get(params, "basis", str, None),
+            charge=_get(params, "charge", int, 0),
+            multiplicity=_get(params, "multiplicity", int, 1),
+            solvent=_get(params, "solvent", str, None),
+        )
+        key = (backend, tuple(paths), device, dtype, tuple(sorted((options or {}).items())))
         if key not in self._calculators:
             argument = paths[0] if len(paths) == 1 else paths
             # Keep one calculator: a second MACE model would double GPU memory.
             self._calculators = {
-                key: create_calculator(backend, argument, device=device, dtype=dtype, xtb=xtb)
+                key: create_calculator(
+                    backend, argument, device=device, dtype=dtype, options=options
+                )
             }
         provenance = collect_provenance(
-            backend=backend, model_path=paths[0], device=device, dtype=dtype, settings=xtb
+            backend=backend, model_path=paths[0], device=device, dtype=dtype, settings=options
         ).as_dict()
         return self._calculators[key], provenance
 

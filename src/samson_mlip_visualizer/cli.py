@@ -11,7 +11,7 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
-from .calculators import create_calculator
+from .calculators import PROGRAMS, create_calculator, find_program, program_options
 from .compat import assert_model_covers_structure
 from .engine import evaluate, relax
 from .md import ENSEMBLES, md_warnings, parse_pairs, run_md
@@ -35,15 +35,20 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         nargs="+",
         help="Trained model file(s). Several MACE files form an uncertainty committee. "
-        "With --backend xtb: the xtb executable, or 'auto' to find it.",
+        "With --backend xtb or psi4: the xtb executable or the Psi4 environment's python, "
+        "or 'auto' to find it.",
     )
-    parser.add_argument("--backend", choices=["mace", "deepmd", "xtb"], default="mace")
+    parser.add_argument("--backend", choices=["mace", "deepmd", "xtb", "psi4"], default="mace")
     parser.add_argument(
         "--xtb-method", choices=["gfn2", "gfn1", "gfnff"], default="gfn2", help="xTB method"
     )
     parser.add_argument(
         "--solvent", default=None, help="xTB implicit solvent (ALPB), e.g. water or toluene"
     )
+    parser.add_argument(
+        "--psi4-method", default="pbe", help="Psi4 method, e.g. pbe, pbe0, b3lyp-d3bj, mp2"
+    )
+    parser.add_argument("--basis", default="def2-tzvp", help="Psi4 basis set")
     parser.add_argument("--device", default="cpu", help="MACE device, e.g. cpu or cuda")
     parser.add_argument("--dtype", default="float64", choices=["float64", "float32"])
     mode = parser.add_mutually_exclusive_group()
@@ -388,37 +393,50 @@ def _run_qst(args, reactant, calculator):
     return evaluate(reactant)
 
 
+INSTALL_HINTS = {
+    "xtb": "micromamba create -n xtb -c conda-forge xtb (or set XTB_EXE)",
+    "psi4": "micromamba create -n qm -c conda-forge python=3.11 psi4 (or set PSI4_PYTHON)",
+}
+
+
+def auto_program(backend: str) -> Path:
+    """The xtb executable or Psi4 Python for a model argument of 'auto'."""
+    found = find_program(backend)
+    if found is None:
+        raise SystemExit(
+            f"No {backend} installation found; install it with: {INSTALL_HINTS[backend]}"
+        )
+    return found
+
+
+def backend_settings(args, backend: str):
+    """xTB / Psi4 options from the command line (``None`` for MLIPs)."""
+    return program_options(
+        backend,
+        method=args.xtb_method if backend == "xtb" else args.psi4_method,
+        basis=args.basis,
+        charge=args.charge,
+        multiplicity=args.multiplicity,
+        solvent=args.solvent,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
     from ase.io import read, write
 
     atoms = read(args.structure)
-    xtb = settings = None
-    if args.backend == "xtb":
-        if [str(path) for path in args.model] == ["auto"]:
-            from .xtb_backend import find_xtb
-
-            found = find_xtb()
-            if found is None:
-                raise SystemExit(
-                    "No xtb executable found; install it with `micromamba create -n xtb "
-                    "-c conda-forge xtb`, or pass its path or set XTB_EXE."
-                )
-            args.model = [found]
-        xtb = settings = {
-            "method": args.xtb_method,
-            "charge": args.charge,
-            "multiplicity": args.multiplicity,
-            "solvent": args.solvent,
-        }
+    settings = backend_settings(args, args.backend)
+    if args.backend in PROGRAMS and [str(path) for path in args.model] == ["auto"]:
+        args.model = [auto_program(args.backend)]
     model_arg = args.model[0] if len(args.model) == 1 else args.model
     calculator = create_calculator(
         args.backend,
         model_arg,
         device=args.device,
         dtype=args.dtype,
-        xtb=xtb,
+        options=settings,
     )
     atoms.calc = calculator
 
