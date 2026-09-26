@@ -79,8 +79,12 @@ def _rigid_body_basis(atoms: Atoms) -> np.ndarray:
             vectors.append((np.cross(axis, centred) * sqrt_mass).ravel())
     # SVD rather than QR: a linear molecule's axial rotation is ~1e-18, not exactly
     # zero, and QR would turn it into an arbitrary direction that eats a real mode.
+    # The cutoff is loose on purpose: a relaxed linear molecule keeps a residual
+    # bend (HCN at 179.9997° gives 1e-6 relative), and keeping that near-null
+    # rotation projects out one of the two bends. Nonlinear molecules sit at 0.2
+    # and above (water, NH3, CH4, benzene, Cu55); a real 1° bend gives 3e-3.
     u, singular, _ = np.linalg.svd(np.array(vectors).T, full_matrices=False)
-    return u[:, singular > 1e-6 * singular.max()]
+    return u[:, singular > 1e-3 * singular.max()]
 
 
 def _hessian_block(

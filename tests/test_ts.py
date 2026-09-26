@@ -133,6 +133,18 @@ def test_projection_handles_linear_molecules():
         harmonic_frequencies(dimer, project_rigid_body=True)
 
 
+def test_nearly_linear_molecules_keep_both_bends():
+    # A relaxed linear molecule is never exactly linear; a 1e-4 Å residual bend
+    # once kept the axial rotation as a rigid mode and dropped one of the bends.
+    chain = Atoms("Cu3", positions=[[0, 0, 0], [2.3, 1e-4, 0], [4.6, 0, 0]])
+    chain.calc = EMT()
+    result = harmonic_frequencies(chain)
+    assert result.rigid_body_modes_removed == 5 and len(result.wavenumbers_cm) == 4
+    bent = Atoms("Cu3", positions=[[0, 0, 0], [2.3, 0.4, 0], [4.6, 0, 0]])  # ~20° bend
+    bent.calc = EMT()
+    assert harmonic_frequencies(bent).rigid_body_modes_removed == 6
+
+
 def test_hessian_mode_guides_dimer_on_emt_cluster():
     atoms = relaxed_copper([[0, 0, 0], [2.5, 0, 0], [1.25, 2.17, 0], [1.25, 0.72, 2.04]])
     mode = initial_mode(atoms, use_hessian=True, magnitude=0.1)
