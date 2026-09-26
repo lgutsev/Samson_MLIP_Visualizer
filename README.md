@@ -125,6 +125,18 @@ Constraints work with Langevin, Bussi and NVE.
 
 ### Transition states and frequencies (TS search tab)
 
+**Checklist.** A TS is not confirmed until an IRC reaches both minima:
+
+1. Relax the end points (float64, tight Fmax, e.g. 0.001 eV/Å).
+2. Find the TS: P-RFO or dimer from a guess, QST2/QST3 from two minima, or
+   scan-to-TS from a bond that forms or breaks.
+3. Characterize it with frequencies: exactly one imaginary mode, and the mode
+   moves the atoms that react (**Animate** / **Arrows**).
+4. Confirm connectivity with IRC, relaxing both ends to the intended minima
+   (*Confirm with IRC* does this after any search). QST2/QST3 alone does not
+   prove it: the final P-RFO refinement can slide to another saddle.
+5. Optionally, export for quantum chemistry (Scan / QM export tab).
+
 Both methods climb from a guess geometry to the nearest first-order saddle point,
 so start **near** the transition state (neither finds one from a minimum; use
 **Reaction path** below when you have the two minima instead).
@@ -171,8 +183,15 @@ below experiment (~0.25 eV): a model-accuracy limit, not a search failure.
   steepest descent (step in Å·amu½), optionally relaxing both end points to
   report the minima. **Every step is kept**: the panel adds an **IRC path** with
   all frames in order (reverse end → TS → forward end), which SAMSON's path
-  controls can scrub, and **Animate last path** loops (stopping returns to the
-  TS). On ammonia it reaches both pyramids in 49 steps per side.
+  controls can scrub, and **Animate last path** plays it back and forth
+  (stopping returns to the TS). On ammonia it reaches both pyramids in 49 steps
+  per side. **Confirm with IRC** (TS search tab) runs the same check automatically
+  after a TS search, QST, or scan. It logs the energy of each relaxed end, the
+  scanned distance at each end, and, for QST, whether the ends are the reactant
+  and product.
+
+Paths only move atoms: SAMSON keeps drawing the bonds from import, so a
+hydrogen can look bonded to its old partner throughout.
 
 `samson-mlip --irc --trajectory irc.extxyz` and `--qst PRODUCT [--qst-guess
 GUESS]` do the same headlessly and write every frame (IRC) or image (band),
@@ -195,10 +214,15 @@ would in Gaussian:
    press **Scan bond and find TS**. At each point that distance is held fixed
    (RATTLE) while the rest relaxes, continuing from the previous point. P-RFO
    then starts from the highest point. This is Gaussian's `Opt=ModRedundant`
-   scan followed by `Opt=TS`. The scan is added as a path, and the panel warns if
-   the maximum lies at an end of the range, which means the scan did not bracket
-   the TS. Constrained relaxation uses FIRE: LBFGS overshot into a collapse when
-   scanning H across linear HCN.
+   scan followed by `Opt=TS`. The scan is added as a path. Its frames are
+   separately relaxed, constrained snapshots, not a reaction animation: watch
+   the IRC path for that. The panel warns when the maximum lies at an end of the
+   range (the TS is not bracketed), and when the geometry **jumps** between
+   points. A jump means the constrained minimum switched to another arrangement,
+   so the profile is not a reaction path there and its highest point can be an
+   artifact. More points don't fix a jump: it means one distance does not
+   describe the reaction. Constrained relaxation uses FIRE: LBFGS overshot into
+   a collapse when scanning H across linear HCN.
 4. Relax in float64, use more NEB images, try the dimer method, and always
    confirm with frequencies and IRC.
 
@@ -222,12 +246,17 @@ The default level (B3LYP-D3(BJ) with 6-31G(d) or def2-SVP) is only a starting
 point. The level of theory, charge, and multiplicity are yours to check. Periodic
 structures are refused.
 
-Example, HCN → HNC with MACE-MP-0 small (float64): a 13-point H–N scan from
-2.29 to 1.0 Å peaks at 1.43 Å, and P-RFO from an exact Hessian converges in 5
-steps to a TS with one imaginary mode (−989 cm⁻¹), about 20 s in total. The
-geometry is reasonable (r(C–H) 1.21 Å, r(N–H) 1.35 Å), but the 2.63 eV barrier
-is well above the ~2.1 eV of high-level ab initio work. This is the case where
-the exported `Opt=(TS,CalcFC)` input should give the final answer.
+Example, HCN → HNC with MACE-MP-0 small (float64). Scanning r(N–H) from
+relaxed HCN to 1.0 Å jumps twice. First the constrained structure stays linear
+and squeezes H into C, then it snaps to a bent geometry. After the TS it snaps
+to linear HNC. The highest scan point is the squeezed artifact. Along the IRC
+the H–C–N angle changes steadily but r(N–H) does not, so the distance is a poor
+scan coordinate for this reaction. P-RFO from an exact Hessian still reaches
+the TS: r(C–H) 1.21 Å, r(N–H) 1.35 Å, one imaginary mode (−988 cm⁻¹). The IRC
+confirms it: one end relaxes to HCN and the other to HNC (+0.63 eV). The 2.63 eV
+barrier is well above the ~2.1 eV of high-level ab initio work. The TS is right
+for this model, but the model is wrong for this chemistry, so the exported
+`Opt=(TS,CalcFC)` input should give the final answer.
 
 ### Viewing normal modes
 

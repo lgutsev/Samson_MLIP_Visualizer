@@ -103,11 +103,31 @@ Gaussian escalation path:
 - **xTB backend: deferred.** `tblite` publishes no Windows wheels on PyPI, so
   it cannot be pip-installed into SAMSON's Python.
 
-Validation, HCN → HNC with MACE-MP-0 small (CUDA, float64): the scan peaks at
-r(H–N) = 1.43 Å, and exact-Hessian P-RFO converges in 5 steps to a TS with one
-imaginary mode (−989 cm⁻¹), about 20 s end to end. The barrier is 2.63 eV
-against ~2.1 eV from high-level ab initio work, a model limit. This is the case
-for the exported `Opt=(TS,CalcFC)` input.
+HCN → HNC with MACE-MP-0 small (CUDA, float64). The TS (r(C–H) 1.21 Å,
+r(N–H) 1.35 Å, H–C–N 68°, one imaginary mode at −988 cm⁻¹, 2.63 eV above HCN)
+is confirmed by IRC: the reverse branch relaxes to HCN (r(C–H) 1.088 Å, 180°)
+and the forward branch to HNC (r(N–H) 1.020 Å, 0°, +0.634 eV). The barrier is
+well above the ~2.1 eV from high-level ab initio work, a model limit, so this
+is the case for the exported `Opt=(TS,CalcFC)` input.
+
+The scan that led there was not a reaction path, though. A first check reported
+only that P-RFO converged from its highest point, and a review of the SAMSON
+path showed the geometry jumping. Per-frame geometry showed why:
+
+- From linear HCN, fixing r(N–H) exerts no bending force, so the constrained
+  minimum stays linear and squeezes H into C (r(C–H) 0.81 Å, +3.3 eV). Then it
+  snaps to a bent structure. After the TS it snaps again, to linear HNC.
+- 27 points instead of 13 move the snaps (points 9→10 and 19→20) but don't
+  remove them. The "highest point" was then the squeezed linear artifact.
+  P-RFO still reached the real TS.
+- Along the IRC, r(N–H) is not monotonic (it barely changes while the angle
+  leaves 180°), but the H–C–N angle is. A single distance does not describe this
+  reaction.
+
+So scans now report `jumps` (an atom moved more than three steps and 0.3 Å
+after superposition), and the panel and the bridge can confirm any TS with an
+IRC (`check_irc`) that reports where both relaxed ends land. QST ends are
+matched to the reactant and product by aligned RMSD.
 
 ## Working notes
 

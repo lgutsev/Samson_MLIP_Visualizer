@@ -103,6 +103,17 @@ order as `structure.get` with `models="all"`. Every edit is one undo step.
 | `job.status` / `job.stop` / `job.list` | progress, log and result / stop after the current step / all jobs |
 | `python.exec` | **opt-in only**: run code in SAMSON's Python; returns stdout, stderr and the last expression |
 
+**Transition-state workflow.** Clients (and assistants, through the MCP
+instructions) should follow this order: relax the end points (float64, tight
+`fmax`); find the TS (`ts` from a guess, `qst` from two minima, or `scan` from a
+forming or breaking bond); check frequencies (exactly one imaginary mode, moving
+the right atoms); then confirm connectivity with `irc`, or `check_irc: true` on
+`ts`/`qst`/`scan`. That option reports each relaxed end's energy relative to the
+TS, the scanned pair distance (`scan`), and the matched minimum plus `connects`
+(`qst`). Only then use `qm.export`. A TS is not confirmed until an IRC reaches
+both minima: QST's final P-RFO can slide to another saddle, and a scan whose
+`jumps` list is not empty is not a reaction path.
+
 **Selection semantics.** "Selected atoms" are atoms picked individually;
 "effectively selected" also counts atoms inside a selected model (SAMSON's
 `isSelected`). The panel's pair buttons use the first.
