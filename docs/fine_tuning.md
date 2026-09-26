@@ -239,6 +239,26 @@ HCN is the worked example. The reusable pieces are moving into
 - `labeled_structure`: `REF_energy` (on the foundation scale), `REF_forces`,
   `REF_stress`, plus the code's raw energy.
 
+**Labeling on an HPC** (`samson_mlip_visualizer.labeling`). The tool never
+submits anything. `write_label_package` turns `frames.extxyz` +
+`manifest.json` into a folder you copy to the cluster:
+
+- one input per frame: Gaussian `Force NoSymm SCF=Tight`, or ORCA
+  `EnGrad TightSCF`, with PBE/def2-TZVP by default so corrections stay small;
+- `run_gaussian.slurm` / `run_orca.slurm`, a SLURM array (one task per frame)
+  with `<ACCOUNT>`, `<PARTITION>`, and `<MODULE>` placeholders;
+- a README with the exact steps and what to copy back (`outputs/`).
+
+Back on the desktop, `collect_labels` checks every output before accepting
+it: normal termination, a converged SCF, the energy consistent between ORCA's
+`.out` and `.engrad`, and the geometry matching its frame to 1e-4 Å. It writes
+`labeled.extxyz` (with per-element offsets applied if given) and
+`collect_report.json` listing every rejected frame and why. The parsers were
+tested against Gaussian 16 and ORCA 5 output written to their documented
+formats, not against real runs, so run one real output through
+`collect_labels` before relying on it. VASP packages (pymatgen `MPStaticSet`)
+come with the first periodic target.
+
 mace-torch 0.3.16 can keep all foundation elements during fine-tuning
 (`--foundation_model_elements=True`), which avoids the element loss above; the
 HCN run did not use it.

@@ -179,7 +179,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     qm.add_argument(
         "--qm-job",
-        choices=["ts", "opt", "irc"],
+        choices=["ts", "opt", "irc", "force"],
         default=None,
         help="Job for --export-qm (default: ts after --ts/--scan/--qst, else opt)",
     )
