@@ -197,7 +197,8 @@ class Dispatcher:
                 self._job_start,
                 "Start an MLIP job; returns at once. params: kind (single_point|relax|md|ts|"
                 "frequencies|irc|qst|scan), model?, backend?, device?, dtype?, models?, and kind "
-                "options.",
+                "options. ts/qst/scan take check_irc: a TS is not confirmed until an IRC "
+                "reaches both intended minima.",
             ),
             "qm.export": (
                 self._qm_export,

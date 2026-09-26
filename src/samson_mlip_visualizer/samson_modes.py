@@ -55,7 +55,8 @@ def add_frames_path(structure: SamsonStructure, frames, *, name: str) -> Any:
 
     Every frame becomes one step of the path, in order, so SAMSON's path controls
     (or :class:`PathPlayer`) can scrub or animate it. The atoms are returned to
-    their current positions afterwards. One undo step.
+    their current positions afterwards. One undo step. Only positions change
+    between frames: SAMSON keeps drawing the bonds the structure had on import.
     """
     import samson
 
@@ -112,7 +113,10 @@ def add_mode_arrows(
 
 
 class PathPlayer:
-    """Loop a SAMSON path by stepping it on a Qt timer (SAMSON's main thread)."""
+    """Loop a SAMSON path by stepping it on a Qt timer (SAMSON's main thread).
+
+    ``bounce`` plays it forward and back (reaction paths); otherwise it wraps
+    from the last frame to the first (periodic mode oscillations)."""
 
     def __init__(self, interval_ms: int = 40):
         from PySide6 import QtCore
@@ -122,16 +126,20 @@ class PathPlayer:
         self._timer.timeout.connect(self._advance)
         self.path = None
         self.home_step = 0
+        self.bounce = False
+        self._direction = 1
 
     @property
     def playing(self) -> bool:
         return self._timer.isActive()
 
-    def play(self, path: Any, home_step: int = 0) -> None:
+    def play(self, path: Any, home_step: int = 0, *, bounce: bool = False) -> None:
         """Loop ``path``; stopping returns it to ``home_step`` (the original geometry)."""
         self.stop()
         self.path = path
         self.home_step = home_step
+        self.bounce = bounce
+        self._direction = 1
         self._timer.start()
 
     def stop(self) -> None:
@@ -146,8 +154,21 @@ class PathPlayer:
 
     def _advance(self) -> None:
         try:
-            steps = int(self.path.numberOfSteps)
-            self.path.currentStep = (int(self.path.currentStep) + 1) % steps
+            current, steps = int(self.path.currentStep), int(self.path.numberOfSteps)
+            if self.bounce:
+                step, self._direction = bounce_step(current, steps, self._direction)
+            else:
+                step = (current + 1) % steps
+            self.path.currentStep = step
         except Exception:  # noqa: BLE001 - deleted path: stop quietly
             self._timer.stop()
             self.path = None
+
+
+def bounce_step(current: int, steps: int, direction: int) -> tuple[int, int]:
+    """Next frame and direction when playing ``steps`` frames forward and back."""
+    if steps < 2:
+        return 0, direction
+    if not 0 <= current + direction < steps:
+        direction = -direction
+    return current + direction, direction

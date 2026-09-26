@@ -4,7 +4,9 @@
 saddle point in both directions: steepest descent in mass-weighted coordinates,
 started along the imaginary mode, with the step shortened whenever the energy
 would rise. It is the counterpart of Gaussian's ``IRC`` keyword and confirms
-which minima a transition state connects.
+which minima a transition state connects. A TS found by any search here (P-RFO,
+dimer, QST2/QST3, scan) is not confirmed until an IRC reaches the intended minima:
+QST's final P-RFO refinement, for one, can slide to a different saddle.
 
 :func:`qst` is the counterpart of Gaussian's ``Opt=QST2`` / ``QST3``: from a
 reactant and a product (QST2), plus optionally a transition-state guess (QST3),
@@ -49,6 +51,8 @@ class IRCResult:
     reverse: list[PathFrame] = field(default_factory=list)
     forward_minimum_ev: float | None = None
     reverse_minimum_ev: float | None = None
+    forward_minimum_positions: np.ndarray | None = None
+    reverse_minimum_positions: np.ndarray | None = None
     stopped: bool = False
 
     def frames(self, ts_positions: np.ndarray) -> list[PathFrame]:
@@ -149,9 +153,34 @@ def irc(
             end.set_positions(frames[-1].positions)
             relaxed = relax(end, fmax=min(fmax, 0.02), max_steps=500, optimizer="LBFGS")
             setattr(result, f"{name}_minimum_ev", relaxed.evaluation.energy_ev)
+            setattr(result, f"{name}_minimum_positions", end.get_positions().copy())
         atoms.set_positions(ts_positions)
         atoms.get_potential_energy()
     return result
+
+
+def _aligned_displacements(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Per-atom distances (Å) between two conformations of the same atoms after
+    optimal superposition (Kabsch), so rigid-body motion does not count."""
+    a = np.asarray(a, float) - np.mean(a, axis=0)
+    b = np.asarray(b, float) - np.mean(b, axis=0)
+    u, _, vt = np.linalg.svd(a.T @ b)
+    d = np.sign(np.linalg.det(u @ vt))
+    return np.linalg.norm(a @ (u @ np.diag([1.0, 1.0, d]) @ vt) - b, axis=1)
+
+
+def aligned_rmsd(a: np.ndarray, b: np.ndarray) -> float:
+    """RMSD (Å) between two conformations of the same atoms after superposition."""
+    return float(np.sqrt(np.mean(_aligned_displacements(a, b) ** 2)))
+
+
+def match_minimum(
+    positions: np.ndarray, references: dict[str, np.ndarray], *, tolerance: float = 0.1
+) -> str | None:
+    """Name of the reference conformation within ``tolerance`` Å RMSD, or ``None``."""
+    rmsd = {name: aligned_rmsd(positions, reference) for name, reference in references.items()}
+    best = min(rmsd, key=rmsd.get, default=None)
+    return best if best is not None and rmsd[best] <= tolerance else None
 
 
 @dataclass
@@ -162,8 +191,23 @@ class ScanResult:
     highest: int
     stopped: bool = False
     bracketed: bool = True
+    # Points where the relaxed geometry snapped to another arrangement rather than
+    # following the previous one: index k means the step from k-1 to k.
+    jumps: list[int] = field(default_factory=list)
     ts: TSResult | None = None
     ts_positions: np.ndarray | None = None
+
+
+def scan_jumps(frames: Sequence[np.ndarray], distances: Sequence[float]) -> list[int]:
+    """Scan points whose geometry jumped: some atom moved (after superposition) by
+    more than three distance steps and 0.3 Å. A jump means the constrained minimum
+    switched branch, so the profile there is not a reaction path."""
+    return [
+        k
+        for k in range(1, len(frames))
+        if _aligned_displacements(frames[k - 1], frames[k]).max()
+        > max(0.3, 3 * abs(distances[k] - distances[k - 1]))
+    ]
 
 
 def scan_to_ts(
@@ -191,6 +235,11 @@ def scan_to_ts(
     point then seeds :func:`prfo_search`. ``on_progress(index, distance, energy,
     positions)`` reports each relaxed point. The atoms end at the TS (or, without
     ``refine``, at the highest scan point).
+
+    The frames are separately relaxed, constrained snapshots, not a trajectory.
+    When one distance does not describe the reaction, the constrained minimum can
+    switch branch between points (``ScanResult.jumps``), and the highest point
+    may then be an artifact of the constraint; confirm the refined TS with IRC.
     """
     from ase.constraints import FixAtoms, FixBondLengths
 
@@ -236,6 +285,7 @@ def scan_to_ts(
         raise ValueError("The scan was stopped before its first point")
     highest = int(np.argmax(energies))
     result = ScanResult(distances, energies, frames, highest, stopped)
+    result.jumps = scan_jumps(frames, distances)
     # A maximum at either end means the scan did not bracket the transition state.
     result.bracketed = 0 < highest < len(energies) - 1
     atoms.set_positions(frames[highest])

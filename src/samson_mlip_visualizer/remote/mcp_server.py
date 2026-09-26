@@ -26,7 +26,15 @@ INSTRUCTIONS = (
     "Tools act on the document open in the user's running SAMSON (molecular modeling). "
     "Positions are in Å. Atom indices in selection and atom-editing tools count over all "
     "structural models in document order. Edits are single undo steps; MLIP jobs run "
-    "asynchronously: start one, then poll samson_job_status."
+    "asynchronously: start one, then poll samson_job_status. "
+    "Transition states, in this order: (1) relax the end points (float64, tight fmax); "
+    "(2) find the TS: ts (P-RFO/dimer) from a guess, qst from two minima, or scan from a "
+    "forming/breaking bond; (3) characterize it with frequencies: exactly one imaginary "
+    "mode, moving the right atoms; (4) confirm connectivity with irc (or check_irc=true), "
+    "relaxing both ends to the intended minima; (5) optionally samson_export_qm. A TS is "
+    "not confirmed until an IRC reaches both minima: QST's final P-RFO can slide to "
+    "another saddle, and a scan's frames are constrained snapshots (check its 'jumps') "
+    "whose highest point can be an artifact."
 )
 
 _INDICES = {"type": "array", "items": {"type": "integer", "minimum": 0}}
@@ -207,14 +215,20 @@ _JOB_START_SCHEMA = _schema(
                 "report_interval, fixed_distances ('0-3, 5-9:1.2'), trajectory, "
                 "max_temperature_k. ts: method (prfo|dimer; prfo = Sella P-RFO, like "
                 "Gaussian Opt=TS), fmax, max_steps, check_frequencies, exact_hessian "
-                "(CalcFC), recompute_every (RecalcFC=N); dimer also start "
+                "(CalcFC), recompute_every (RecalcFC=N), check_irc (after the frequency "
+                "check, with one imaginary mode: IRC both ways, report where the relaxed ends "
+                "land, add the IRC path); dimer also start "
                 "(hessian|pair|random), pair ('4-7'), displacement. irc (from a TS): step "
                 "(Å·amu½), max_steps per side, fmax, relax_ends, trajectory (file for all "
                 "frames), return_positions; adds an 'IRC path' with every frame. qst "
                 "(QST2/QST3: select reactant, [guess,] product models in document order): "
-                "images, fmax, max_steps, refine, check_frequencies; adds the path and a TS "
-                "model. scan (hard cases: ModRedundant scan then TS): pair ('4-7'), stop (Å), "
-                "start?, points, relax_fmax, refine, exact_hessian, fmax; adds the scan path."
+                "images, fmax, max_steps, refine, check_frequencies, check_irc (matches the "
+                "ends to reactant and product: 'connects'); adds the path and a TS model. "
+                "scan (hard cases: ModRedundant scan then TS): pair ('4-7'), stop (Å), "
+                "start?, points, relax_fmax, refine, exact_hessian, fmax, check_irc (reports "
+                "the pair distance at each end); adds the scan path (constrained snapshots, "
+                "not a trajectory; 'jumps' lists points where the geometry snapped). A TS "
+                "from ts, qst, or scan is not confirmed until an IRC reaches both minima."
             ),
         },
     },
@@ -245,8 +259,9 @@ class McpServer:
             {
                 "name": "samson_start_job",
                 "description": "Start an MLIP job (single point, relax, MD, TS search, "
-                "frequencies, IRC, QST2/QST3 path search) on the open structure. Returns at "
-                "once; poll samson_job_status.",
+                "frequencies, IRC, QST2/QST3 path search, bond scan) on the open structure. "
+                "Returns at once; poll samson_job_status. A TS is not confirmed until an IRC "
+                "reaches both intended minima (irc job, or check_irc=true).",
                 "inputSchema": _JOB_START_SCHEMA,
             }
         )

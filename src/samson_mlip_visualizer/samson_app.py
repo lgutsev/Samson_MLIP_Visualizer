@@ -47,6 +47,7 @@ _REMEMBERED = (
     "ts_fmax",
     "ts_steps",
     "ts_check",
+    "ts_check_irc",
     "qst_mode",
     "qst_images",
     "qst_fmax",
@@ -436,6 +437,13 @@ def _make_window():
             self.ts_recompute = int_spin(
                 0, 10000, 0, "Recompute the exact Hessian every N steps (RecalcFC=N); 0 = never."
             )
+            self.ts_check_irc = QtWidgets.QCheckBox("Confirm with IRC (both ends relaxed)")
+            self.ts_check_irc.setToolTip(
+                "After the frequency check finds one imaginary mode, follow the IRC both ways "
+                "and report where the relaxed ends land. A TS is not confirmed until an IRC "
+                "reaches the intended minima. Applies to TS search, QST, and scan; uses the "
+                "IRC settings on the Reaction path tab."
+            )
 
             self._ts_use_pair = use_pair
             settings = grid(
@@ -449,6 +457,7 @@ def _make_window():
                     ],
                     [("Maximum steps", self.ts_steps), ("", self.ts_check)],
                     [("Recompute Hessian", self.ts_recompute), ("", self.ts_exact_hessian)],
+                    [None, ("", self.ts_check_irc)],
                 ]
             )
 
@@ -863,6 +872,70 @@ def _make_window():
             self._set_modes(structure, result)
             return result
 
+        def _confirm_with_irc(self, structure, frequencies, *, references=None, pair=None):
+            """IRC from a TS with one imaginary mode, if 'Confirm with IRC' is checked:
+            adds the IRC path and logs where both relaxed ends land."""
+            if not self.ts_check_irc.isChecked():
+                return
+            if frequencies.n_imaginary != 1:
+                self._log("IRC check skipped: the TS needs exactly one imaginary mode.")
+                return
+            import numpy as np
+
+            from .reaction_path import irc, match_minimum
+            from .samson_modes import add_frames_path
+
+            atoms = structure.ase_atoms
+            self._log("Confirming with IRC: following the imaginary mode both ways…")
+
+            def progress(direction, step, energy, max_force, positions):
+                sync_positions(structure, positions)
+                if step % 10 == 0:
+                    self._log(f"IRC {direction:7s} step {step:4d} | E {energy:.8f} eV")
+
+            result = irc(
+                atoms,
+                step=self.irc_step.value(),
+                max_steps=self.irc_steps.value(),
+                fmax=self.irc_fmax.value(),
+                relax_ends=True,
+                on_progress=progress,
+                should_stop=self._poll_stop,
+            )
+            ts_positions = atoms.get_positions()
+            sync_positions(structure, ts_positions)
+            frames = result.frames(ts_positions)
+            self._last_path = add_frames_path(
+                structure, [frame.positions for frame in frames], name="IRC path"
+            )
+            self._last_path_home = len(result.reverse)
+            self.path_animate.setEnabled(True)
+            self._log(
+                f"Added 'IRC path' ({len(frames)} frames, TS at frame {self._last_path_home})."
+            )
+            if result.stopped:
+                self._log("IRC stopped; the connectivity is unconfirmed.")
+                return
+            landed = set()
+            for name in ("reverse", "forward"):
+                positions = getattr(result, f"{name}_minimum_positions")
+                relative = getattr(result, f"{name}_minimum_ev") - result.ts_energy_ev
+                text = f"IRC {name} end: E − E(TS) {relative:+.4f} eV"
+                if pair is not None:
+                    distance = np.linalg.norm(positions[pair[0]] - positions[pair[1]])
+                    text += f", r({pair[0]}-{pair[1]}) {distance:.3f} Å"
+                if references:
+                    match = match_minimum(positions, references)
+                    landed.add(match)
+                    text += f", {match or 'neither minimum'}"
+                self._log(text)
+            if references:
+                self._log(
+                    "IRC confirms the TS connects " + " and ".join(references) + "."
+                    if landed == set(references)
+                    else "Warning: the IRC does not connect the intended minima."
+                )
+
         # --- normal-mode display -----------------------------------------------------
 
         def _set_modes(self, structure, frequencies):
@@ -1163,6 +1236,7 @@ def _make_window():
                             "Warning: not a first-order saddle point. Try another starting "
                             "geometry or initial direction."
                         )
+                    self._confirm_with_irc(structure, frequencies)
 
             self._run_task(task)
 
@@ -1190,6 +1264,10 @@ def _make_window():
                 others = [extract_structure(models=[model]) for model in models[1:]]
                 guess = others[0].ase_atoms if qst3 else None
                 product = others[-1].ase_atoms
+                references = {
+                    "reactant": reactant.ase_atoms.get_positions().copy(),
+                    "product": product.get_positions().copy(),
+                }
                 refine = ", then P-RFO refinement" if self.qst_refine.isChecked() else ""
                 self._log(
                     f"{label}: {self.qst_images.value()} images, IDPP interpolation, "
@@ -1247,6 +1325,7 @@ def _make_window():
                         frequencies = self._report_frequencies(ts_structure)
                         if frequencies.n_imaginary != 1:
                             self._log("Warning: the refined structure is not a first-order saddle.")
+                        self._confirm_with_irc(ts_structure, frequencies, references=references)
 
             self._run_task(task)
 
@@ -1294,7 +1373,7 @@ def _make_window():
                     f"IRC {state}: {len(result.reverse)} reverse + "
                     f"{len(result.forward)} forward frames. Added 'IRC path' with all "
                     f"{len(frames)} frames (TS is frame {peak}); scrub it in Document View or "
-                    "press Animate last path."
+                    "press Animate last path. Bonds stay as drawn on import."
                 )
                 ends = []
                 for name in ("reverse", "forward"):
@@ -1363,11 +1442,21 @@ def _make_window():
                         "Warning: the maximum is at an end of the scan, so the scan did not "
                         "bracket the transition state; extend the range."
                     )
+                if result.jumps:
+                    self._log(
+                        f"Warning: the geometry jumped at scan point(s) {result.jumps}: the "
+                        "constrained minimum switched branch, so this profile is not a reaction "
+                        "path and its highest point may be an artifact. Confirm the TS with IRC."
+                    )
                 name = f"Bond scan {pair[0]}-{pair[1]}"
                 self._last_path = add_frames_path(structure, result.frames, name=name)
                 self._last_path_home = result.highest
                 self.path_animate.setEnabled(True)
-                self._log(f"Added '{name}' ({len(result.frames)} frames).")
+                self._log(
+                    f"Added '{name}' ({len(result.frames)} frames): separately relaxed, "
+                    "constrained snapshots, not a trajectory. Watch the IRC path for the "
+                    "reaction. Bonds stay as drawn on import."
+                )
                 if result.ts is not None:
                     state = "converged" if result.ts.converged else "not converged"
                     self._log(
@@ -1375,7 +1464,8 @@ def _make_window():
                         f"E = {result.ts.evaluation.energy_ev:.8f} eV"
                     )
                     if result.ts.converged and self.ts_check.isChecked():
-                        self._report_frequencies(structure)
+                        frequencies = self._report_frequencies(structure)
+                        self._confirm_with_irc(structure, frequencies, pair=pair)
 
             self._run_task(task)
 
@@ -1433,7 +1523,7 @@ def _make_window():
                     return
                 if self._player is None:
                     self._player = PathPlayer()
-                self._player.play(self._last_path, home_step=self._last_path_home)
+                self._player.play(self._last_path, home_step=self._last_path_home, bounce=True)
                 self.path_animate.setText("Stop animation")
             except Exception as exc:
                 self._show_error(exc)

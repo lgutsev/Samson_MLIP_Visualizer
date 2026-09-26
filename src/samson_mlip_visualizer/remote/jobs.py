@@ -410,6 +410,59 @@ class JobManager:
         }
         if result.converged and _get(job.params, "check_frequencies", bool, True):
             summary["frequencies"] = self._frequencies(job, atoms, pump, show)
+            irc_check = self._check_irc(job, atoms, pump, show, summary["frequencies"])
+            if irc_check is not None:
+                summary["irc"] = irc_check
+        return summary
+
+    def _check_irc(
+        self, job, atoms, pump, show, frequencies, *, references=None, pair=None
+    ) -> dict[str, Any] | None:
+        """With ``check_irc``, follow the IRC from a TS with one imaginary mode and
+        report where both relaxed ends land: matched against ``references`` (name →
+        positions) when given, and the ``pair`` distance at each end."""
+        if not _get(job.params, "check_irc", bool, False):
+            return None
+        if frequencies["n_imaginary"] != 1:
+            job.log.append("IRC check skipped: the TS needs exactly one imaginary mode")
+            return {"skipped": "needs exactly one imaginary mode"}
+        from ..reaction_path import irc, match_minimum
+
+        structure = self._structure
+
+        def progress(direction, step, energy, max_force, positions):
+            job.step = step
+            show(positions)
+
+        job.log.append("IRC check: following the imaginary mode both ways…")
+        result = irc(atoms, relax_ends=True, on_progress=progress, should_stop=pump)
+        frames = [frame.positions for frame in result.frames(atoms.get_positions().copy())]
+        self._publish.append(lambda: _publish_path(structure, frames, "IRC path"))
+        summary: dict[str, Any] = {"stopped": result.stopped}
+        for name in ("reverse", "forward"):
+            positions = getattr(result, f"{name}_minimum_positions")
+            end: dict[str, Any] = {"minimum_ev": getattr(result, f"{name}_minimum_ev")}
+            if positions is not None:
+                end["minimum_minus_ts_ev"] = end["minimum_ev"] - result.ts_energy_ev
+                if pair is not None:
+                    i, j = pair
+                    end["pair_distance"] = float(np.linalg.norm(positions[i] - positions[j]))
+                if references:
+                    end["matches"] = match_minimum(positions, references)
+                job.log.append(
+                    f"IRC {name} end: E − E(TS) {end['minimum_minus_ts_ev']:+.4f} eV"
+                    + (f", r(pair) {end['pair_distance']:.3f} Å" if "pair_distance" in end else "")
+                    + (f", matches {end['matches'] or 'neither minimum'}" if references else "")
+                )
+            summary[name] = end
+        if references and not result.stopped:
+            landed = {summary[name].get("matches") for name in ("reverse", "forward")}
+            summary["connects"] = landed == set(references)
+            job.log.append(
+                "IRC confirms the TS connects " + " and ".join(references)
+                if summary["connects"]
+                else "Warning: the IRC does not connect the intended minima"
+            )
         return summary
 
     def _irc(self, job, atoms, pump, show) -> dict[str, Any]:
@@ -504,7 +557,14 @@ class JobManager:
             "energies_ev": result.energies_ev,
             "highest": result.highest,
             "bracketed": result.bracketed,
+            "jumps": result.jumps,
         }
+        if result.jumps:
+            job.log.append(
+                f"Warning: the geometry jumped at scan point(s) {result.jumps}: the constrained "
+                "minimum switched branch, so this profile is not a reaction path and its "
+                "highest point may be an artifact. Confirm the TS with an IRC."
+            )
         if result.ts is not None:
             summary["ts"] = {
                 "converged": result.ts.converged,
@@ -513,7 +573,13 @@ class JobManager:
                 "max_force_ev_per_angstrom": result.ts.evaluation.max_force_ev_per_angstrom,
             }
             if result.ts.converged and _get(params, "check_frequencies", bool, True):
-                summary["ts"]["frequencies"] = self._frequencies(job, atoms, pump, show)
+                frequencies = self._frequencies(job, atoms, pump, show)
+                summary["ts"]["frequencies"] = frequencies
+                irc_check = self._check_irc(
+                    job, atoms, pump, show, frequencies, pair=(parsed[0].i, parsed[0].j)
+                )
+                if irc_check is not None:
+                    summary["ts"]["irc"] = irc_check
         return summary
 
     def _qst(self, job, atoms, pump, show) -> dict[str, Any]:
@@ -535,6 +601,7 @@ class JobManager:
                 )
             pump()
 
+        references = {"reactant": atoms.get_positions().copy(), "product": product.get_positions()}
         result = qst(
             atoms,
             product,
@@ -569,7 +636,14 @@ class JobManager:
                 ts_atoms = atoms.copy()
                 ts_atoms.calc = atoms.calc
                 ts_atoms.set_positions(result.ts_positions)
-                summary["ts"]["frequencies"] = self._frequencies(job, ts_atoms, pump, show)
+                frequencies = self._frequencies(job, ts_atoms, pump, show)
+                summary["ts"]["frequencies"] = frequencies
+                # QST leaves the reactant model in place, so the IRC is not shown live.
+                irc_check = self._check_irc(
+                    job, ts_atoms, pump, lambda positions: None, frequencies, references=references
+                )
+                if irc_check is not None:
+                    summary["ts"]["irc"] = irc_check
 
             symbols = atoms.get_chemical_symbols()
 
