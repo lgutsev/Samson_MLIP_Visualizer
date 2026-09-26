@@ -39,3 +39,18 @@ def test_provenance_roundtrips_through_dict_and_text(tmp_path):
     assert flat["mlip_backend"] == "deepmd"
     assert flat["mlip_model_sha256"] == prov.model_sha256
     assert "deepmd" in prov.as_text()
+
+
+def test_model_card_is_recorded(tmp_path):
+    model = tmp_path / "tuned.model"
+    model.write_bytes(b"abc")
+    (tmp_path / "tuned.model.json").write_text(
+        '{"fine_tuned_from": "MACE-MP-0 small", "elements": "H, C, N"}', encoding="utf-8"
+    )
+    flat = collect_provenance(backend="mace", model_path=model, device="cpu", dtype="float64")
+    assert flat.as_dict()["mlip_setting_model_fine_tuned_from"] == "MACE-MP-0 small"
+    assert "model_elements" in flat.as_text()
+    (tmp_path / "tuned.model.json").write_text("not json", encoding="utf-8")
+    assert not collect_provenance(
+        backend="mace", model_path=model, device="cpu", dtype="float64"
+    ).settings

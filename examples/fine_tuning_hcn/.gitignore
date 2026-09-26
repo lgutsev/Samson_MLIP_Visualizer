@@ -1,0 +1,8 @@
+# Outputs of the scripts
+round*/
+final/
+train_r*.extxyz
+shift.json
+times.json
+rounds.json
+loop.log

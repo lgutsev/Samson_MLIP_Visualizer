@@ -287,7 +287,8 @@ def _mark(axes, mark):
     position, label = mark
     for ax in axes:
         ax.axvline(position, color=_MUTED, lw=0.8, ls=(0, (3, 3)), zorder=0)
-    axes[0].annotate(
+    # On the lower panel: the upper one holds the legend and the peak labels.
+    axes[1].annotate(
         label, (position, 1.0), xycoords=("data", "axes fraction"), xytext=(-4, -4),
         textcoords="offset points", ha="right", va="top", color=_INK2,
     )
@@ -300,7 +301,10 @@ def _descriptor(ax, bench: PathBenchmark):
         return
     label, values = bench.descriptor
     x = bench.coordinate
-    picks = sorted({int(np.argmin(np.abs(x - value))) for value in np.linspace(x[0], x[-1], 5)})
+    picks = sorted(
+        {int(np.argmin(np.abs(x - value))) for value in np.linspace(x[0], x[-1], 5)},
+        key=lambda index: x[index],  # left to right, also for a decreasing coordinate
+    )
     for n, index in enumerate(picks):
         text = f"{values[index]:.0f}°" if "∠" in label else f"{values[index]:.2f}"
         ax.annotate(
@@ -368,13 +372,14 @@ def plot_energy(
     far = len(x) - 1 if bench.reference_frame == 0 else 0
     bottom.annotate(
         f"{error[far]:+.2f} eV", (x[far], error[far]), xytext=(0, 9), textcoords="offset points",
-        ha="right" if far else "left", color=_INK2,
+        ha="right" if x[far] >= x[bench.reference_frame] else "left", color=_INK2,
     )
     if bench.committee_energy_std is not None:
         bottom.plot(x, bench.committee_energy_std, color=_MUTED, lw=1.2, ls=(0, (4, 2)),
                     label="committee σ")
         bottom.legend(frameon=False, loc="upper right", labelcolor=_INK2)
-    bottom.set_ylabel(f"{bench.model} − {bench.reference} (eV)")
+    difference = f"{bench.model} − {bench.reference}"
+    bottom.set_ylabel(f"{difference if len(difference) <= 28 else 'Model − reference'} (eV)")
     bottom.set_xlabel(bench.coordinate_label)
     low, high = min(error.min(), 0.0), max(error.max(), 0.0)
     if bench.committee_energy_std is not None:

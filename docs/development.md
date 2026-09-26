@@ -159,6 +159,33 @@ The goal was a cross-check that doesn't depend on any MLIP training set.
   gives 2.63 eV. The two disagree by 0.55 eV, the warning sign the cross-check
   exists to catch.
 
+### A reference method, a benchmark, and a fine-tune
+
+With MACE, xTB, and PBE disagreeing on the HCN barrier (2.63, 3.18, and
+2.00 eV; CCSD(T)//PBE 2.07 eV), the question became where the model goes wrong.
+
+- **Psi4 backend** (`psi4_backend.py`, `psi4_worker.py`): PBE, MACE-MP-0's own
+  training level, in a worker process in the Psi4 environment. JSON lines over
+  stdin/stdout, with replies tagged `@@SAMSON ` so library prints cannot corrupt
+  them. Psi4 writes `timer.dat` into the working directory at import, so the
+  worker moves to a private directory first.
+- **Benchmark** (`benchmark.py`, `samson-mlip-benchmark`, panel button): model
+  and reference on the same path frames. It reports energies relative to each
+  method's own first frame, force errors, and committee spread. Frames are
+  spread along the path coordinate: IRC steps shorten near minima, so picking
+  by index crowded the ends. A model and a reference with the same name
+  silently merged into one series until names were checked.
+- **Fine-tune** ([fine_tuning.md](fine_tuning.md)): plain fine-tuning on 87 PBE
+  structures from the MACE-MP-0 IRC brought the barrier to 1.99 eV in one
+  active-learning round, in 8½ minutes. The review of that run is recorded in
+  the write-up: how far the held-out frames are from the training data, a
+  three-seed committee too correlated to trust as an uncertainty, the element
+  table cut to H, C, N, and C≡C made 0.04 Å too short.
+- **Bug:** relaxed HCN (179.9997°) lost a bend in the frequency code. The
+  near-null axial rotation survived the 1e-6 rigid-body cutoff; the cutoff is
+  now 1e-3, from the singular values of real linear and nonlinear molecules.
+  The earlier QR → SVD fix had handled exactly linear input only.
+
 ## Working notes
 
 - Tests run in CI (Python 3.10/3.12) without SAMSON or Qt; the Qt transport and

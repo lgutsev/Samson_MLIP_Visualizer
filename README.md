@@ -335,8 +335,30 @@ configuration space the foundation model's crystal training data never covered.*
 
 The error profile says where training data belongs: along the whole bent
 region, not only at the TS. Frames where the reference disagrees are the ones
-to label for fine-tuning, and the committee spread, which is free, is the
-signal for choosing them in an active-learning loop.
+to label for fine-tuning.
+
+### Fine-tuning for a reaction
+
+[`docs/fine_tuning.md`](docs/fine_tuning.md) documents fine-tuning MACE-MP-0
+small to PBE for HCN ⇌ HNC, with the scripts in
+[`examples/fine_tuning_hcn/`](examples/fine_tuning_hcn/). The seed data were
+87 PBE-labeled structures from the foundation model's own IRC (29 frames plus
+two rattled copies of each). A committee of three was fine-tuned in parallel
+on the laptop GPU. The run took about 8½ minutes end to end, including the DFT.
+
+| | MACE-MP-0 small | Fine-tuned | PBE/def2-TZVP |
+|---|---|---|---|
+| Barrier | 2.63 eV | 1.99 eV | 2.00 eV |
+| TS imaginary mode | −987 cm⁻¹ | −1090 cm⁻¹ | −1072 cm⁻¹ |
+| Largest error on its own IRC / scan | 0.65 / 0.66 eV | 0.012 / 0.079 eV | — |
+
+![Fine-tuned MACE vs PBE along its own IRC](docs/images/hcn_irc_benchmark_finetuned.png)
+
+The tuned model is a specialist. It knows only H, C, and N, and it gets C≡C
+0.04 Å too short. The three-seed committee's spread also underestimates its
+error away from the path. The write-up covers these, which frames were held
+out and how far they are from the training data, and what a model card
+records in the provenance.
 
 ### Viewing normal modes
 

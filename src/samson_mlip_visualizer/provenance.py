@@ -8,6 +8,7 @@ into an output structure's metadata by the CLI, and unit tested without SAMSON.
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
@@ -86,6 +87,23 @@ class Provenance:
         return "\n".join(lines)
 
 
+def model_card(model_path: str | Path) -> dict[str, str]:
+    """What a model says about itself: ``<model file>.json`` next to it, if any.
+
+    A fine-tuned model should carry one (what it was tuned from and on, the
+    reference level, its elements), so every run with it records that it is a
+    specialist rather than the foundation model. Unreadable cards are ignored.
+    """
+    card = Path(str(Path(model_path).expanduser()) + ".json")
+    try:
+        data = json.loads(card.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {f"model_{key}": str(value) for key, value in data.items()}
+
+
 def collect_provenance(
     *,
     backend: str,
@@ -94,7 +112,8 @@ def collect_provenance(
     dtype: str,
     settings: dict[str, object] | None = None,
 ) -> Provenance:
-    """``settings`` records backend options that change the numbers (xTB method, charge, ...)."""
+    """``settings`` records backend options that change the numbers (xTB method, charge, ...);
+    a model card (:func:`model_card`) is added to them."""
     if backend in ("xtb", "psi4"):
         device, dtype = "cpu", "float64"  # the MACE device/dtype settings do not apply
     sha256, size = model_digest(model_path)
@@ -130,6 +149,7 @@ def collect_provenance(
         created_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         versions=versions,
         settings={
-            name: str(value) for name, value in (settings or {}).items() if value is not None
+            **model_card(model_path),
+            **{name: str(value) for name, value in (settings or {}).items() if value is not None},
         },
     )
