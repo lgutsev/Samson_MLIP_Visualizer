@@ -524,10 +524,12 @@ frequency and IRC checks). In 37 s it had the Walden transition state (one
 imaginary mode, −743 cm⁻¹) and an IRC connecting the two ion–dipole complexes.
 Checked against CCSD(T)/CBS literature values, AIMNet2's TS is right but its
 barrier from the complex is 9.3 kcal/mol instead of 3.4, and PBE has no barrier
-at all. MACE-MP-0 small fine-tuned to ωB97X-D in about 20 minutes on the laptop
-gives 3.3 kcal/mol and the literature geometries within 0.05 Å.
+at all. Fine-tuning AIMNet2 on ωB97X-D data along the path plus the free
+fragments (about 7 minutes of CPU training) fixes it: the tuned model matches
+ωB97X-D at every stationary point relative to the separated F⁻ + CH₃Cl, within
+1 kcal/mol of CCSD(T), with a barrier of 3.26 kcal/mol.
 [`examples/sn2_f_ch3cl/`](examples/sn2_f_ch3cl/) has the full comparison, the
-benchmarks along the path, and the fine-tune.
+benchmarks along the path, and the AIMNet2 and MACE fine-tunes.
 
 ## Surface and passivant models
 
