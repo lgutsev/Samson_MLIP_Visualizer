@@ -62,7 +62,7 @@ charge per structure). Every round writes its training set, models,
 exploration, evaluation, selection manifest and labels under `round_NN/` plus a
 `rounds.json`, and a restarted run picks up where it stopped. Worked example,
 with the round table:
-[examples/active_learning_sn2](../examples/active_learning_sn2/README.md)
+[examples/sn2_f_ch3cl](../examples/sn2_f_ch3cl/README.md#active-learning-with-the-library-loop)
 (converged in one round of selection, about 5 minutes of DFT).
 
 ## Inside the fine-tuning step
