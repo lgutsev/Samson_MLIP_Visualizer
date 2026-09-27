@@ -69,6 +69,22 @@ def _finite(value: float) -> float | None:
     return float(value) if np.isfinite(value) else None
 
 
+def _pumping(job, pump, interval_s: float = 0.1) -> Callable[[], bool]:
+    """A per-step stop check that also turns SAMSON's event loop at least every
+    ``interval_s``: pumping only at the report interval can leave SAMSON silent for
+    seconds, and Windows then flags it as not responding."""
+    last = [0.0]
+
+    def check() -> bool:
+        now = time.monotonic()
+        if now - last[0] >= interval_s:
+            last[0] = now
+            pump()
+        return job.stop_requested
+
+    return check
+
+
 def _thin(values, most: int = 201) -> list[float]:
     """At most ``most`` evenly spaced entries (first and last kept), as floats for JSON."""
     values = np.asarray(values, float)
@@ -751,11 +767,10 @@ class JobManager:
                     f"λ {records['lam'][-1]:+.4f} eV/Å  T {records['temperature'][-1]:6.1f} K"
                 )
                 show(atoms.get_positions())
-                pump()
 
         return constrained_md(
             atoms, coordinate, **settings, on_step=on_step,
-            should_stop=lambda: job.stop_requested, **options,
+            should_stop=_pumping(job, pump), **options,
         )
 
     def _move_coordinate(self, job, atoms, pump, show, coordinate, settings, target, seed):
@@ -954,7 +969,6 @@ class JobManager:
                     f"last height {last:.4f} eV"
                 )
             show(atoms.get_positions())
-            pump()
 
         try:
             result = metadynamics(
@@ -962,7 +976,7 @@ class JobManager:
                 pace=int(_number(params, "pace", 50)), timestep_fs=settings["timestep_fs"],
                 friction_per_fs=_number(params, "friction_per_fs", 0.01),
                 seed=_get(params, "seed", int, 0), record_every=every, on_progress=progress,
-                should_stop=lambda: job.stop_requested,
+                should_stop=_pumping(job, pump),
             )
         finally:
             atoms.calc = base

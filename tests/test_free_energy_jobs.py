@@ -126,3 +126,17 @@ def test_free_energy_jobs_check_their_inputs(springs):
     for options, message in cases:
         status = run(dispatcher, model=model, **options)
         assert status["state"] == "failed" and message in status["error"], (options, status)
+
+
+def test_free_energy_jobs_keep_samson_responsive_between_reports(springs, monkeypatch):
+    """SAMSON's event loop turns on a timer, not only at report_interval: a long gap
+    lets Windows flag SAMSON as hung (it did, at 50 steps × 0.11 s per report)."""
+    samson, dispatcher, model = springs
+    clock = iter(range(10**6))  # every call to the clock is 1 s later
+    monkeypatch.setattr(jobs_module.time, "monotonic", lambda: float(next(clock)))
+    before = samson.events
+    options = {**MD, "report_interval": 10**6}
+    status = run(dispatcher, "slow_growth", model, coordinate=COORDINATE, end=0.05,
+                 increment=1e-3, equilibration_steps=20, **options)
+    assert status["state"] == "finished", status["error"]
+    assert samson.events - before >= 60  # about every one of the 70 steps, nothing logged
