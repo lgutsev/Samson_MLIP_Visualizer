@@ -26,9 +26,10 @@ crosses zero. The grey dashes show the potential energy along the model's IRC.*
     over a wide range of ξ (−1.7 to −0.5 Å in 20 ps of free MD), and the free
     minimum sits at ξ = −0.91 Å, not at the static complex (−0.65 Å). At the
     TS, the three heavy atoms are locked in a line.
-- **The independent estimates agree.**
-  - Well-tempered metadynamics gives 0.33 eV. That is within its own run-to-run drift
-    (about ±0.04 eV over the last 200 hills) of the blue-moon value.
+- **The independent estimates agree on the picture; only blue moon pins the
+  number.**
+  - Two well-tempered metadynamics runs give 0.33 and 0.37 eV, still drifting
+    after 50 ps. That is 0.05–0.1 eV above the blue-moon value.
   - The reactant well of −k_BT ln P(ξ) from free MD lies on top of the
     blue-moon profile.
   - The rate formula gives k = 3.5 × 10⁸ s⁻¹ from the complex and a
@@ -111,7 +112,7 @@ The static curve is the fine-tuned model's potential energy along its own IRC.
 | reactant free-energy minimum ξ_min          | −0.91 Å (blue moon), −0.89 Å (peak of P(ξ))                |
 | ξ* (top of the barrier)                     | +0.08 Å                                                    |
 | **ΔA‡, blue moon + TI**                     | **0.268 eV (6.19 kcal/mol)**, ± 0.01 eV                    |
-| ΔA‡, well-tempered metadynamics             | 0.33 eV (0.24–0.33 over the run), 42 barrier crossings      |
+| ΔA‡, well-tempered metadynamics             | 0.37 eV (0.21–0.37 over the run; a second run 0.33 eV)      |
 | ΔA‡, slow growth forward / reverse          | 0.351 / 0.215 eV (hysteresis up to 0.25 eV)                |
 | ΔE‡, static, from the complex               | 0.141 eV (3.25 kcal/mol)                                   |
 | ΔA, well → ξ = 2.0 Å (products)             | −1.09 ± 0.01 eV                                            |
@@ -124,22 +125,32 @@ The metadynamics run needed one correction. With the upper wall at ξ = +1.0 Å,
 the walker crossed the barrier once, after 12 ps, and never came back: the
 product side is 1 eV downhill, and 50 ps of 20 meV hills could not fill it. Its
 barrier (0.31 eV) therefore rested on a single crossing. With the wall at
-+0.5 Å, just past ξ*, it went from the well to beyond the TS and back 42 times.
++0.5 Å, just past ξ*, it went from the well to beyond the TS and back 30 times.
 
 The barrier read from the accumulated bias still moves:
-- 0.29 eV after 100 hills;
-- 0.24 eV after 200;
-- 0.33 eV after 300;
-- 0.32 eV after 400;
-- 0.33 eV after 500.
+- 0.21 eV after 100 hills;
+- 0.29 eV after 200;
+- 0.32 eV after 300;
+- 0.33 eV after 400;
+- 0.37 eV after 500.
 
-The final hills are 3 meV high.
+The final hills are 3 meV high. An earlier run with the same settings ended at
+0.33 eV. That run used ASE's Langevin default `fixcm=True`, which ASE warns
+skews NVT sampling for small systems; the library now uses `fixcm=False`.
 
-Metadynamics is the cheapest route to the whole profile, but here it does not
-pin the barrier down to better than about 0.05 eV. The ~0.06 eV it sits above
-the blue-moon value is within that. A longer run, or several walkers, would
-settle it. The blue-moon integration, 20 independent windows with per-window
-error bars, is the number to quote.
+Both runs end 0.05–0.1 eV above the blue-moon value, and both are still
+rising. The likely cause is the same one that hurts slow growth: the angle
+at which F⁻ approaches relaxes slowly compared with the hill deposition, so
+the bias partly fills a side-on approach instead of the backside barrier.
+(A slow-growth run through the SAMSON bridge showed this directly. With one
+seed, F⁻ was pulled in about 50° off the backside line, and the barrier came
+out at 0.83 eV. Two other seeds gave 0.30 and 0.32 eV.)
+
+Metadynamics is the cheapest route to the whole profile, but on one
+coordinate it does not pin this barrier down. The blue-moon integration is
+the number to quote: 20 independent, equilibrated windows with per-window
+error bars. Metadynamics on ξ together with the F–C–Cl angle would be the
+fix, and it would be a two-dimensional extension of the bias.
 
 ## Comparison: Cl⁻ + CH₃Cl (GFN2-xTB), the tutorial's system
 
@@ -160,7 +171,7 @@ image of the forward start, with the two chlorines swapped.
 | Quantity                                | GFN2-xTB (here)                                  | VASP tutorial (MLFF)        |
 | --------------------------------------- | ------------------------------------------------ | --------------------------- |
 | reactant free-energy minimum             | ξ = −1.41 Å (blue moon), −1.47 Å (peak of P(ξ))  | ξ_ref = −1.5 Å              |
-| **ΔA‡, blue moon + TI**                  | **0.512 eV (11.8 kcal/mol)**, ± 0.01 eV          | literature blue moon 0.418 eV |
+| **ΔA‡, blue moon + TI**                  | **0.512 eV (11.8 kcal/mol)**, ± 0.01 eV          | 0.418 eV (cited blue moon)  |
 | ΔA‡, slow growth forward / reverse       | 0.64 / 0.55 eV, each from its own start (hysteresis up to 0.21 eV) | 0.406 eV (forward) |
 | ΔE‡, static, from the complex (ξ = −1.17 Å) | 0.460 eV (10.6 kcal/mol)                     | —                           |
 | P(ξ_ref)                                 | 2.30 Å⁻¹                                         | 1.54 Å⁻¹                    |
@@ -181,16 +192,116 @@ What agrees:
 What differs:
 - **The forward slow growth** overshoots by 0.13 eV and ends 0.17 eV above its
   start.
-- **The barrier** is higher than the tutorial's. The tutorial does not say
-  which functional its force field was trained on, and GGA functionals are
-  known to underestimate SN2 barriers. So the 0.1 eV gap says more about the
-  reference potentials than about xTB. For F⁻, where the model was fitted to
-  CCSD(T)-quality data, the static barrier is right.
+- **The barrier** is higher than the tutorial's. The literature value the
+  tutorial cites is from a PW91 (GGA) study, and PW91 puts the static barrier
+  5 kcal/mol below coupled cluster, against xTB's 3 kcal/mol (see
+  [the literature comparison](#comparison-with-the-literature)). So xTB's higher
+  barrier is the less wrong one, and both are too low.
 
 Entropy raises the Cl⁻ barrier much less than the F⁻ one: 0.05 eV above the
 static value here, against 0.13 eV for F⁻. In free MD the chloride drifts out to
 the 5 Å wall (the flat stretch of −k_BT ln P(ξ) below ξ = −2 Å). Most of that
 extra room lies beyond the part of the well that sets the barrier.
+
+## Comparison with the literature
+
+The high-level references are static (electronic) energies; the only
+finite-temperature free-energy barrier found for either reaction is Bučko's
+PW91 blue-moon study of Cl⁻ + CH₃Cl, which is where the VASP tutorial's
+comparison value comes from.
+
+| Quantity | Here | Literature |
+| --- | --- | --- |
+| **F⁻ + CH₃Cl**, static barrier from the C₃ᵥ complex | 3.25 kcal/mol (fine-tuned AIMNet2) | 3.39 kcal/mol, CCSD(T)-based focal point [1] |
+| F⁻ + CH₃Cl, entrance → exit complex | ΔA = −25.1 kcal/mol (well → ξ = 2 Å, free energy) | ΔE = −26.0 kcal/mol (electronic, complex to complex) [1] |
+| F⁻ + CH₃Cl, free-energy barrier at 300 K | 6.2 kcal/mol | none found |
+| **Cl⁻ + CH₃Cl**, static central barrier | 10.6 kcal/mol (GFN2-xTB) | 13.6 kcal/mol, W1′ and W2h [2]; 8.6 kcal/mol, PW91 [3] |
+| Cl⁻ + CH₃Cl, blue-moon barrier on ξ = d₁ − d₂, 300 K | 11.8 kcal/mol (0.512 eV, xTB) | 10.8 kcal/mol (0.466 eV), PW91 [3] |
+| thermal rise of the barrier (free − static) | +1.2 (Cl, xTB), +2.9 kcal/mol (F) | +2.2 kcal/mol, PW91, Cl [3] |
+| shift of the reactant minimum in ξ at 300 K | 0.24 Å (Cl), 0.26 Å (F) | 0.2 Å (1.3 → 1.5 Å), PW91, Cl [3] |
+
+What this says:
+
+- **The F⁻ model is right where it can be checked.** Its static barrier and
+  reaction energy match the coupled-cluster values to about 1 kcal/mol, the
+  accuracy it was fitted for. Nobody seems to have published a free-energy
+  barrier for F⁻ + CH₃Cl to compare the 6.2 kcal/mol against.
+- **The thermal part behaves as in the one published study.** Bučko's PW91
+  blue moon for Cl⁻ + CH₃Cl found the same two effects seen here: the barrier
+  rises with temperature (by 2.2 kcal/mol) and the reactant minimum moves
+  about 0.2 Å outward along ξ. Here the rise is 2.9 kcal/mol for F⁻ and
+  1.2 kcal/mol for Cl⁻ with xTB, and the minima move 0.26 and 0.24 Å.
+- **For Cl⁻ + CH₃Cl, both low-level potentials are too low.** xTB's static
+  barrier is 3 kcal/mol below W1′/W2h, and PW91's is 5 kcal/mol below. Adding a
+  thermal rise of about 1–2 kcal/mol to 13.6 suggests a classical free-energy
+  barrier near 15 kcal/mol (0.65 eV). That is an estimate, not a computed
+  number; the way to get it is the fine-tune-then-blue-moon route used for F⁻.
+- **The value the tutorial cites (0.418 eV) matches Bučko's two-coordinate
+  result (40 kJ/mol).** The one-coordinate value on ξ = d₁ − d₂, the coordinate
+  used here and in the tutorial, is 45 kJ/mol (0.466 eV). Bučko shows the
+  barrier depends by about 0.05 eV on the choice of coordinate.
+- **The rate constants have no experimental counterpart.** They are canonical
+  transition-state-theory rates for crossing from a thermalized complex. In
+  the gas phase the complex is not thermalized and, for F⁻, the TS lies
+  12 kcal/mol below the separated reactants [1]. Trajectory studies also find
+  barrier recrossing and non-statistical behaviour for Cl⁻ + CH₃Cl [4] and
+  F⁻ + CH₃Cl [5]. The rates are the tutorial's quantity, computed the
+  tutorial's way; they are not predictions of a measured rate.
+
+[1] I. Szabó, A. G. Császár, G. Czakó, *Chem. Sci.* **4**, 4362 (2013),
+doi:10.1039/c3sc52157e.
+[2] S. Parthiban, G. de Oliveira, J. M. L. Martin, *J. Phys. Chem. A* **105**,
+895 (2001), doi:10.1021/jp0031000.
+[3] T. Bučko, *J. Phys.: Condens. Matter* **20**, 064211 (2008),
+doi:10.1088/0953-8984/20/6/064211.
+[4] L. Sun, K. Song, W. L. Hase, *J. Am. Chem. Soc.* **123**, 5753 (2001),
+doi:10.1021/ja004077z.
+[5] H. Wang, W. L. Hase, *J. Am. Chem. Soc.* **119**, 3093 (1997),
+doi:10.1021/ja962622j.
+
+## Running it from SAMSON
+
+The same methods are bridge jobs, `slow_growth`, `blue_moon` and
+`metadynamics` (see [`docs/samson_api.md`](../../docs/samson_api.md)). Each
+works on the open structure with any backend, shows the run live, and leaves
+its frames as a path that can be scrubbed.
+
+With the complex open in SAMSON, an assistant (or `samson_start_job`) runs
+blue moon with:
+
+```json
+{"kind": "blue_moon", "options": {
+  "backend": "aimnet2", "model": "<aimnet env python>", "aimnet_model": "<fine-tuned .pt>",
+  "charge": -1, "coordinate": "0-4, 0-5:-1", "values": [-0.9, -0.6, -0.3, -0.1, 0.1, 0.3],
+  "steps": 1200, "skip": 300, "hydrogen_mass": 3, "timestep_fs": 2}}
+```
+
+The job returns:
+- the integrated profile with its error;
+- `xi_min`, `xi_star`, and `barrier_ev`;
+- the generalized velocity at the TS window.
+
+That call took 14 minutes in SAMSON on the laptop. It found:
+- ξ* = 0.080 Å, the same as the 20-window run above;
+- A(ξ*) = 0.25 eV above the ξ = −0.9 Å window;
+- ⟨|ξ̇*|⟩ = 8.09 × 10¹² Å/s, also the same.
+
+The mean force is already slightly positive at ξ = −0.9 Å, so the minimum lies
+just below the first window. The job then reports the barrier from the lowest
+window as a lower bound and says to add windows at lower ξ.
+
+![Slow growth over the Walden barrier, rendered in SAMSON](images/walden_slow_growth.gif)
+
+*A slow-growth job run from SAMSON (seed 1, ξ from −0.9 to +1.2 Å in 4.2 ps,
+barrier 0.30 eV), rendered frame by frame through the bridge with
+[`samson_clip.py`](samson_clip.py). F⁻ comes in from the back, the CH₃
+umbrella turns inside out, and Cl⁻ leaves. The molecule's overall tumbling is
+removed for viewing. One carbon–halogen stick is drawn, to whichever halogen
+is less stretched relative to its bond length.*
+
+Run slow growth from SAMSON with several seeds. One seed there pulled F⁻ in
+about 50° off the backside line and gave 0.83 eV; seeds 1 and 2 gave 0.30 and
+0.32 eV.
 
 ## Reproducing
 
@@ -224,3 +335,4 @@ in parallel.
 | [`run.py`](run.py)                      | one task: `slow_growth forward\|reverse`, `window XI`, `free_md`, `ts_velocity XI`, `metadynamics`      |
 | [`launch.py`](launch.py)                | runs the tasks in parallel                                                                             |
 | [`analyze.py`](analyze.py)              | integration, errors, hysteresis, P(ξ), rate, metadynamics free energy, figures                         |
+| [`samson_clip.py`](samson_clip.py)      | renders a SAMSON path (such as a bridge `slow_growth` run) into a GIF/WebP through the bridge          |
