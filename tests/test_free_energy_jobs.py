@@ -81,7 +81,9 @@ def test_blue_moon_job_integrates_the_exact_profile(springs, tmp_path):
     assert blue["xi_min"] == pytest.approx(0.0, abs=0.15)  # the springs' symmetric minimum
     assert blue["xi_star"] is None and "barrier_ev" not in blue
     assert all(e > 0 for e in blue["free_energy_error_ev"][1:])
-    assert np.load(output)["lam_2"].shape == (8000,)
+    saved = np.load(output)
+    assert saved["lam_2"].shape == (8000,)
+    assert saved["frames"].shape == (3, 3, 3)  # one frame per window, for a clip
     assert blue["moved_atoms"] and blue["publish_errors"]  # the fake has no SBPath
     atoms = samson.models[0].atoms
     d01 = np.linalg.norm(np.subtract(atoms[1].position, atoms[0].position))

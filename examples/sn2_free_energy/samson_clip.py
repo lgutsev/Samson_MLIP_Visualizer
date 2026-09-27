@@ -1,9 +1,11 @@
 """Render a SAMSON path (for example a bridge slow_growth run) as a clip.
 
-    python samson_clip.py "<path name prefix>" OUTDIR [--fps F] [--size WxH] [--title T]
+    python samson_clip.py "<path name prefix>" OUTDIR [--frames FILE] [--fps F]
+                          [--size WxH] [--title T]
 
 Needs the bridge running in SAMSON with python.exec allowed. Run it with any Python
-that has numpy and Pillow; everything goes through the bridge:
+that has numpy and Pillow (and imageio with imageio-ffmpeg for an MP4); everything
+goes through the bridge:
 
 1. Read every frame of the path (python.exec steps it, structure.get reads it).
 2. Align the frames for viewing: centre of mass on the camera target and overall
@@ -17,7 +19,8 @@ that has numpy and Pillow; everything goes through the bridge:
    viewport, and label it with ξ and both distances.
 
 Each frame is its own request, so SAMSON keeps processing events. Writes
-OUTDIR/frames/*.png, clip.gif and clip.webp, and leaves the path on its first frame.
+OUTDIR/frames/*.png, clip.gif, clip.webp and clip.mp4, and leaves the path on its
+first frame.
 The nucleophile and leaving group must be different elements.
 """
 
@@ -46,6 +49,8 @@ parser.add_argument("--carbon", type=int, default=0)
 parser.add_argument("--nucleophile", type=int, default=5)
 parser.add_argument("--leaving", type=int, default=4)
 parser.add_argument("--title", default="F⁻ + CH₃Cl, fine-tuned AIMNet2, slow growth at 300 K")
+parser.add_argument("--frames", help="read frames from this file (a job's output .npz with "
+                    "'frames', or any ASE trajectory) instead of the SAMSON path")
 args = parser.parse_args()
 width, height = (int(v) for v in args.size.split("x"))
 out = Path(args.outdir)
@@ -64,11 +69,28 @@ nucleophile, leaving = symbols[args.nucleophile], symbols[args.leaving]
 if nucleophile == leaving:
     raise SystemExit("the nucleophile and the leaving group must be different elements")
 m = np.array([MASSES[s] for s in symbols])
-steps = int(execute(find + "int(p.numberOfSteps)"))
-frames = []
-for k in range(steps):
-    execute(find + f"p.currentStep = {k}")
-    frames.append(np.asarray(client.call("structure.get")["positions"]))
+if args.frames:
+    source = Path(args.frames)
+    if source.suffix == ".npz":
+        frames = list(np.load(source)["frames"])
+    else:
+        from ase.io import read
+
+        frames = [image.get_positions() for image in read(source, ":")]
+else:
+    # All frames in one call: a step set in one request is not reliably applied to
+    # the atoms by the time the next request reads them.
+    result = execute("import json\n"
+                     "from samson_mlip_visualizer.samson_bridge import extract_structure\n"
+                     + find + "frames = []\n"
+                     "for k in range(int(p.numberOfSteps)):\n"
+                     "    p.currentStep = k\n"
+                     "    frames.append(extract_structure(SAMSON).ase_atoms.get_positions()"
+                     ".round(5).tolist())\n"
+                     "p.currentStep = 0\n"
+                     "json.dumps(frames)")
+    frames = [np.asarray(x) for x in json.loads(result.strip("'"))]
+steps = len(frames)
 print(f"read {steps} frames")
 
 # SAMSON's front view looks along +y with +z up, so screen x is world x.
@@ -120,6 +142,15 @@ try:
                        < d_leaving / BOND_TO_CARBON[leaving])
         execute(write.replace("POSITIONS", json.dumps(np.round(x, 5).tolist()))
                 .replace("NUCLEOPHILE", str(swapped)).replace("LEAVING", str(not swapped)))
+        shown = np.asarray(client.call("structure.get")["positions"])
+        if np.abs(shown - x).max() > 1e-3:
+            # Seen once: SAMSON kept re-applying a path frame over written positions,
+            # which renders a static clip. Stop rather than write one.
+            raise SystemExit(
+                f"frame {k}: SAMSON did not keep the written positions (off by "
+                f"{np.abs(shown - x).max():.2f} Å). Something is re-applying a path "
+                "frame; close any path animation, or restart SAMSON, and rerun "
+                "(with --frames FILE to skip reading the path).")
         png = out / "frames" / f"frame_{k:04d}.png"
         # Capture 1.5× larger and keep the centre: closer, without the navigation cube.
         client.call("view.capture", path=str(png), width=width * 3 // 2,
@@ -142,12 +173,31 @@ finally:
             + "for b in list(SAMSON.getNodes('node.type bond')):\n"
             f"    if {{str(b.leftAtom.elementSymbol), str(b.rightAtom.elementSymbol)}} == "
             f"{{'C', {nucleophile!r}}}: b.erase()\nSAMSON.endHolding()\n"
-            + find + "p.currentStep = 0")
+            + ("" if args.frames else find + "p.currentStep = 0"))
 
 duration = int(1000 / args.fps)
-small = [im.resize((width * 2 // 3, height * 2 // 3), Image.LANCZOS) for im in images]
-small[0].save(out / "clip.gif", save_all=True, append_images=small[1:], duration=duration,
-              loop=0, optimize=True)
+# GIF: one 256-colour palette for every frame (from a strip of sample frames), no
+# dithering. Per-frame palettes shift the colours between frames, and dithering
+# crawls on the background gradient.
+picks = images[:: max(1, len(images) // 8)]
+strip = Image.new("RGB", (width, height * len(picks)))
+for i, image in enumerate(picks):
+    strip.paste(image, (0, i * height))
+palette = strip.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
+quantized = [image.quantize(palette=palette, dither=Image.Dither.NONE) for image in images]
+quantized[0].save(out / "clip.gif", save_all=True, append_images=quantized[1:],
+                  duration=duration, loop=0)
 images[0].save(out / "clip.webp", save_all=True, append_images=images[1:],
                duration=duration, loop=0, quality=85)
-print(f"wrote {out / 'clip.gif'} and {out / 'clip.webp'}")
+written = ["clip.gif", "clip.webp"]
+try:  # an MP4 when imageio-ffmpeg is installed (it bundles ffmpeg)
+    import imageio.v2 as imageio
+
+    with imageio.get_writer(out / "clip.mp4", fps=args.fps, codec="libx264", quality=8,
+                            pixelformat="yuv420p", macro_block_size=8) as writer:
+        for image in images:
+            writer.append_data(np.asarray(image))
+    written.append("clip.mp4")
+except ImportError:
+    print("no MP4: pip install imageio imageio-ffmpeg")
+print(f"wrote {', '.join(written)} in {out}")

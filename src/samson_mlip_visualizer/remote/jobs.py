@@ -838,7 +838,7 @@ class JobManager:
             "xi_at_max": float(xi[top]),
             "end_ev": float(profile[-1]),
             "mean_temperature_k": float(record.temperature.mean()),
-            "output": self._save_output(job, record.as_dict()),
+            "output": self._save_output(job, {**record.as_dict(), "frames": frames}),
             "note": "slow growth is irreversible work: run it both ways, the hysteresis is "
             "its error; blue_moon gives the converged profile",
         }
@@ -933,6 +933,7 @@ class JobManager:
         self._publish.append(lambda: _publish_path(structure, frames, "Blue moon windows"))
         summary["output"] = self._save_output(job, {
             "xi": xi, "mean_force": gradient, "free_energy": profile, "error": error,
+            "frames": frames,  # the end of each window, in run order
             **{f"lam_{k}": r.lam for k, r in enumerate(records)},
             **{f"z_{k}": r.z for k, r in enumerate(records)},
             **{f"g_{k}": r.g for k, r in enumerate(records)},
@@ -1008,7 +1009,7 @@ class JobManager:
             "xi_visited": [float(trace.min()), float(trace.max())],
             "output": self._save_output(job, {
                 "xi": trace, "centers": result["centers"], "heights": heights,
-                "sigma": sigma, "bias_factor": bias_factor,
+                "sigma": sigma, "bias_factor": bias_factor, "frames": result["frames"],
             }),
             "note": "the free energy is −γ/(γ−1)·V(ξ); trust it only after many crossings "
             "between the states, once the hills have become small",

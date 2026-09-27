@@ -290,7 +290,7 @@ The mean force is already slightly positive at ξ = −0.9 Å, so the minimum li
 just below the first window. The job then reports the barrier from the lowest
 window as a lower bound and says to add windows at lower ξ.
 
-![Slow growth over the Walden barrier, rendered in SAMSON](images/walden_slow_growth.gif)
+![Slow growth over the Walden barrier, rendered in SAMSON](images/walden_slow_growth.webp)
 
 *A slow-growth job run from SAMSON (seed 1, ξ from −0.9 to +1.2 Å in 4.2 ps,
 barrier 0.30 eV), rendered frame by frame through the bridge with
@@ -298,6 +298,11 @@ barrier 0.30 eV), rendered frame by frame through the bridge with
 umbrella turns inside out, and Cl⁻ leaves. The molecule's overall tumbling is
 removed for viewing. One carbon–halogen stick is drawn, to whichever halogen
 is less stretched relative to its bond length.*
+
+A 20 ps `metadynamics` job from SAMSON used the same settings as the runs above,
+plus `max_distances: "0-5:5.0"`. It made 10 transitions, and its barrier moved
+between 0.21 and 0.27 eV as the 200 hills accumulated, ending at 0.27 eV. That
+is too short to converge: the last hill was 6 meV.
 
 Run slow growth from SAMSON with several seeds. One seed there pulled F⁻ in
 about 50° off the backside line and gave 0.83 eV; seeds 1 and 2 gave 0.30 and
@@ -335,4 +340,4 @@ in parallel.
 | [`run.py`](run.py)                      | one task: `slow_growth forward\|reverse`, `window XI`, `free_md`, `ts_velocity XI`, `metadynamics`      |
 | [`launch.py`](launch.py)                | runs the tasks in parallel                                                                             |
 | [`analyze.py`](analyze.py)              | integration, errors, hysteresis, P(ξ), rate, metadynamics free energy, figures                         |
-| [`samson_clip.py`](samson_clip.py)      | renders a SAMSON path (such as a bridge `slow_growth` run) into a GIF/WebP through the bridge          |
+| [`samson_clip.py`](samson_clip.py)      | renders a SAMSON path (such as a bridge `slow_growth` run) into GIF, WebP and MP4 through the bridge  |
