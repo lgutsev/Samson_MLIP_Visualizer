@@ -45,6 +45,26 @@ tool: you copy the package, run it, and copy the results back.
    improving, never on committee spread alone. Then install the model with its
    model card.
 
+**Automated: `samson-mlip-finetune config.json`** runs these steps as rounds
+(`samson_mlip_visualizer.active_learning`). Each round trains a committee (or
+reuses it), explores from a TS guess (P-RFO with an exact Hessian,
+frequencies, IRC, and an optional bond scan), evaluates against the reference
+on frames of that round's own IRC and scan that it was not trained on, and
+then stops or selects (the three sources above; the held-out frames are never
+candidates), labels through a cached reference (`reference_cache`: each
+structure computed once), and adds the labels to the training set. It stops
+only when the barrier, the largest IRC error and the largest scan error are all
+within your tolerances; the committee spread is logged next to the real error
+every round and used for selection, never for stopping. Two model plug-ins:
+MACE (a committee of seeds, `training.train_local`) and AIMNet2 (members
+fine-tuned from different AIMNet2 ensemble members in the aimnet environment,
+charge per structure). Every round writes its training set, models,
+exploration, evaluation, selection manifest and labels under `round_NN/` plus a
+`rounds.json`, and a restarted run picks up where it stopped. Worked example,
+with the round table:
+[examples/sn2_f_ch3cl](../examples/sn2_f_ch3cl/README.md#active-learning-with-the-library-loop)
+(converged in one round of selection, about 5 minutes of DFT).
+
 ## Inside the fine-tuning step
 
 ![Multihead fine-tuning of MACE](images/finetuning_multihead.svg)
@@ -140,9 +160,9 @@ against real output.
 ## Not built yet
 
 - An evaluation report: errors binned by distance from the training data,
-  a forgetting table, and committee spread against the real error.
-- A `samson-mlip-finetune` command, and panel buttons for exporting frames
-  and loading labels.
+  and a forgetting table (the loop already logs committee spread against the
+  real error every round).
+- Panel buttons for exporting frames, loading labels, and running the loop.
 - The HCN example rebuilt on the new modules, as an end-to-end regression
   test.
 - VASP labeling packages, for periodic systems.
