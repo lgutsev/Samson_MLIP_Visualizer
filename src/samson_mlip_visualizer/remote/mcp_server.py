@@ -204,7 +204,10 @@ _JOB_START_SCHEMA = _schema(
     {
         "kind": {
             "type": "string",
-            "enum": ["single_point", "relax", "md", "ts", "frequencies", "irc", "qst", "scan"],
+            "enum": [
+                "single_point", "relax", "md", "ts", "frequencies", "irc", "qst", "scan",
+                "slow_growth", "blue_moon", "metadynamics",
+            ],
         },
         "options": {
             "type": "object",
@@ -235,7 +238,22 @@ _JOB_START_SCHEMA = _schema(
                 "start?, points, relax_fmax, refine, exact_hessian, fmax, check_irc (reports "
                 "the pair distance at each end); adds the scan path (constrained snapshots, "
                 "not a trajectory; 'jumps' lists points where the geometry snapped). A TS "
-                "from ts, qst, or scan is not confirmed until an IRC reaches both minima."
+                "from ts, qst, or scan is not confirmed until an IRC reaches both minima. "
+                "Free energies along a reaction coordinate xi = sum c*d(i,j), all with "
+                "coordinate ('0-4, 0-5:-1' = d(0,4) - d(0,5), 0-based), temperature_k, "
+                "timestep_fs (default 1), hydrogen_mass (3 = tritium allows 2 fs), seed, "
+                "report_interval, output (.npz of the raw records): slow_growth (constrained "
+                "MD with xi moved at a fixed rate; irreversible, so run both ways): end, "
+                "start?, increment (A/step, default 0.001), equilibration_steps, "
+                "andersen_probability; blue_moon (constrained MD at fixed xi, thermodynamic "
+                "integration of the mean force; the converged profile): values (list) or "
+                "start/stop/points, steps per window (2000), skip, increment (for moving "
+                "between windows); returns the profile with errors, xi_min, xi_star, "
+                "barrier_ev and the TS generalized velocity; metadynamics (well-tempered, "
+                "Langevin): steps, height (eV), sigma (A), bias_factor, pace, lower_wall, "
+                "upper_wall, wall_k, max_distances ('0-5:5.0' keeps an ion from leaving); "
+                "keep upper_wall just past the TS so the walker recrosses. Each adds its "
+                "frames as a path."
             ),
         },
     },
@@ -266,7 +284,9 @@ class McpServer:
             {
                 "name": "samson_start_job",
                 "description": "Start an MLIP job (single point, relax, MD, TS search, "
-                "frequencies, IRC, QST2/QST3 path search, bond scan) on the open structure. "
+                "frequencies, IRC, QST2/QST3 path search, bond scan, and free energies along "
+                "a reaction coordinate: slow growth, blue moon, metadynamics) on the open "
+                "structure. "
                 "Returns at once; poll samson_job_status. A TS is not confirmed until an IRC "
                 "reaches both intended minima (irc job, or check_irc=true).",
                 "inputSchema": _JOB_START_SCHEMA,

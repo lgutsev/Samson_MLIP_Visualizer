@@ -1,4 +1,5 @@
-"""MLIP jobs started through the bridge: single point, relax, MD, TS search, frequencies.
+"""MLIP jobs started through the bridge: single point, relax, MD, TS search, frequencies,
+reaction paths, and free energies along a reaction coordinate.
 
 A job runs on SAMSON's main thread like a panel job, but it starts from a
 scheduled callback after the request that created it has been answered. Its
@@ -28,8 +29,11 @@ from ..samson_bridge import choose_structural_models, extract_structure, sync_po
 from ..ts import dimer_search, prfo_search
 from ..vibrations import harmonic_frequencies
 
-KINDS = ("single_point", "relax", "md", "ts", "frequencies", "irc", "qst", "scan")
-_MOVES_ATOMS = ("relax", "md", "ts", "irc", "scan")
+KINDS = (
+    "single_point", "relax", "md", "ts", "frequencies", "irc", "qst", "scan",
+    "slow_growth", "blue_moon", "metadynamics",
+)
+_MOVES_ATOMS = ("relax", "md", "ts", "irc", "scan", "slow_growth", "blue_moon", "metadynamics")
 # job parameter naming each program backend's method (AIMNet2: which network)
 _METHOD_KEYS = {"xtb": "xtb_method", "psi4": "psi4_method", "aimnet2": "aimnet_model"}
 _MISSING = object()
@@ -63,6 +67,14 @@ def _number(params: dict[str, Any], name: str, default: float) -> float:
 def _finite(value: float) -> float | None:
     """JSON has no NaN or infinity; report them as null."""
     return float(value) if np.isfinite(value) else None
+
+
+def _thin(values, most: int = 201) -> list[float]:
+    """At most ``most`` evenly spaced entries (first and last kept), as floats for JSON."""
+    values = np.asarray(values, float)
+    if len(values) > most:
+        values = values[np.unique(np.linspace(0, len(values) - 1, most).round().astype(int))]
+    return [round(float(value), 6) for value in values]
 
 
 def _publish_path(structure, frames, name: str) -> dict[str, Any]:
@@ -683,4 +695,299 @@ class JobManager:
             "classification": result.classification(),
             "hint": result.soft_mode_hint(),
             "rigid_body_modes_removed": result.rigid_body_modes_removed,
+        }
+
+    # --- free energies along a reaction coordinate ------------------------------------
+
+    def _free_energy_setup(self, job, atoms):
+        """The coordinate, masses, and MD settings shared by the free-energy jobs."""
+        from ..free_energy import parse_coordinate
+
+        params = job.params
+        try:
+            coordinate = parse_coordinate(_get(params, "coordinate", str))
+        except ValueError as exc:
+            raise JobSpecError(str(exc)) from exc
+        indices = [index for a, b, _ in coordinate.terms for index in (a, b)]
+        if max(indices) >= len(atoms) or min(indices) < 0:
+            raise JobSpecError(
+                f"coordinate names atom {max(indices)}; the structure has {len(atoms)} atoms"
+            )
+        masses = atoms.get_masses().copy()
+        hydrogens = np.array(atoms.get_chemical_symbols()) == "H"
+        hydrogen_mass = _get(params, "hydrogen_mass", (int, float), None)
+        if hydrogen_mass:
+            masses[hydrogens] = float(hydrogen_mass)
+        timestep = _number(params, "timestep_fs", 1.0)
+        if hydrogens.any() and timestep > 1.0 and (hydrogen_mass or 1.0) < 2.5:
+            job.log.append(
+                f"Warning: a {timestep:g} fs step with light hydrogens; set hydrogen_mass=3 "
+                "(tritium, as the VASP tutorial does) or use timestep_fs <= 1"
+            )
+        settings = {
+            "temperature_k": _number(params, "temperature_k", 300.0),
+            "timestep_fs": timestep,
+            "andersen_probability": _number(params, "andersen_probability", 0.05),
+            "masses": masses,
+        }
+        job.log.append(
+            "ξ = " + " ".join(f"{c:+g}·d({a},{b})" for a, b, c in coordinate.terms)
+            + f" = {coordinate.value(atoms.get_positions()):+.4f} Å now"
+        )
+        return coordinate, settings
+
+    def _constrained_run(self, job, atoms, pump, show, coordinate, settings, label, **options):
+        """``constrained_md`` with the job's progress log, live view, and stop button."""
+        from ..free_energy import constrained_md
+
+        every = max(1, int(_number(job.params, "report_interval", 10)))
+        first = job.step
+
+        def on_step(step, records):
+            job.step = first + step + 1
+            if (step + 1) % every == 0:
+                job.log.append(
+                    f"{label} step {step + 1:6d}  ξ {records['value'][-1]:+.4f} Å  "
+                    f"λ {records['lam'][-1]:+.4f} eV/Å  T {records['temperature'][-1]:6.1f} K"
+                )
+                show(atoms.get_positions())
+                pump()
+
+        return constrained_md(
+            atoms, coordinate, **settings, on_step=on_step,
+            should_stop=lambda: job.stop_requested, **options,
+        )
+
+    def _move_coordinate(self, job, atoms, pump, show, coordinate, settings, target, seed):
+        """Drag ξ to ``target`` with a short slow-growth run (``increment`` Å per step)."""
+        here = coordinate.value(atoms.get_positions())
+        steps = int(np.ceil(abs(target - here) / self._increment(job)))
+        if steps:
+            self._constrained_run(
+                job, atoms, pump, show, coordinate, settings, "move", steps=steps,
+                target=here, increment=(target - here) / steps, seed=seed,
+            )
+
+    @staticmethod
+    def _increment(job) -> float:
+        rate = abs(_number(job.params, "increment", 1e-3))
+        if rate <= 0:
+            raise JobSpecError("increment must be positive")
+        return rate
+
+    @staticmethod
+    def _save_output(job, arrays: dict[str, Any]) -> str | None:
+        path = _get(job.params, "output", str, None)
+        if path:
+            np.savez(path, **{key: np.asarray(value) for key, value in arrays.items()})
+        return path
+
+    def _slow_growth(self, job, atoms, pump, show) -> dict[str, Any]:
+        from ..free_energy import slow_growth_profile
+
+        params = job.params
+        coordinate, settings = self._free_energy_setup(job, atoms)
+        here = coordinate.value(atoms.get_positions())
+        start = float(_get(params, "start", (int, float), here))
+        end = float(_get(params, "end", (int, float)))
+        rate = self._increment(job)
+        seed = _get(params, "seed", int, 0)
+        self._move_coordinate(job, atoms, pump, show, coordinate, settings, start, seed)
+        equilibration = int(_number(params, "equilibration_steps", 500))
+        if equilibration and not job.stop_requested:
+            self._constrained_run(job, atoms, pump, show, coordinate, settings, "hold",
+                                  steps=equilibration, target=start, seed=seed + 1)
+        if job.stop_requested:
+            return {"stopped": True}
+        steps = max(1, int(round(abs(end - start) / rate)))
+        every = max(1, int(_number(params, "report_interval", 10)))
+        job.log.append(f"slow growth: ξ {start:+.3f} → {end:+.3f} Å in {steps} steps")
+        record = self._constrained_run(
+            job, atoms, pump, show, coordinate, settings, "grow", steps=steps, target=start,
+            increment=(end - start) / steps, seed=seed + 2, record_every=every,
+        )
+        xi, profile = slow_growth_profile(record)
+        top = int(np.argmax(profile))
+        job.log.append(
+            f"highest ΔA {profile[top]:+.4f} eV at ξ {xi[top]:+.3f} Å; end {profile[-1]:+.4f} eV"
+        )
+        structure, frames = self._structure, record.frames
+        name = f"Slow growth ξ {start:+.2f} → {end:+.2f}"
+        self._publish.append(lambda: _publish_path(structure, frames, name))
+        return {
+            "stopped": len(profile) < steps,
+            "steps": len(profile),
+            "xi": _thin(xi),
+            "free_energy_ev": _thin(profile),
+            "max_ev": float(profile[top]),
+            "xi_at_max": float(xi[top]),
+            "end_ev": float(profile[-1]),
+            "mean_temperature_k": float(record.temperature.mean()),
+            "output": self._save_output(job, record.as_dict()),
+            "note": "slow growth is irreversible work: run it both ways, the hysteresis is "
+            "its error; blue_moon gives the converged profile",
+        }
+
+    def _blue_moon(self, job, atoms, pump, show) -> dict[str, Any]:
+        from ..free_energy import (
+            blue_moon_gradient,
+            generalized_velocity,
+            integrate_gradient,
+            integration_error,
+            zero_crossing,
+        )
+
+        params = job.params
+        coordinate, settings = self._free_energy_setup(job, atoms)
+        values = _get(params, "values", list, None)
+        if values is None:
+            values = np.linspace(
+                float(_get(params, "start", (int, float))),
+                float(_get(params, "stop", (int, float))),
+                int(_number(params, "points", 11)),
+            ).tolist()
+        if len(values) < 2 or not all(
+            isinstance(v, (int, float)) and not isinstance(v, bool) for v in values
+        ):
+            raise JobSpecError("blue_moon needs two or more numeric values, or start/stop/points")
+        steps = int(_number(params, "steps", 2000))
+        skip = int(_number(params, "skip", steps // 5))
+        if skip >= steps - 10:
+            raise JobSpecError("skip must leave at least 10 steps of each window")
+        every = max(1, int(_number(params, "report_interval", 10)))
+        seed = _get(params, "seed", int, 0)
+        temperature = settings["temperature_k"]
+        windows, frames, records = [], [], []
+        for k, target in enumerate(float(v) for v in values):
+            self._move_coordinate(job, atoms, pump, show, coordinate, settings, target,
+                                  seed + 1000 + k)
+            if job.stop_requested:
+                break
+            record = self._constrained_run(
+                job, atoms, pump, show, coordinate, settings, f"window {k + 1}",
+                steps=steps, target=target, seed=seed + k, record_every=every,
+            )
+            if len(record.lam) < steps:
+                break  # stopped inside the window: drop it
+            gradient, error = blue_moon_gradient(record, temperature, skip)
+            windows.append({"xi": target, "mean_force_ev_per_angstrom": gradient,
+                            "error_ev_per_angstrom": error,
+                            "mean_temperature_k": float(record.temperature[skip:].mean())})
+            frames.append(atoms.get_positions().copy())
+            records.append(record)
+            job.log.append(
+                f"window {k + 1}/{len(values)}: ξ {target:+.3f} Å  dA/dξ {gradient:+.4f} ± "
+                f"{error:.4f} eV/Å"
+            )
+        summary: dict[str, Any] = {"stopped": len(windows) < len(values), "windows": windows}
+        if len(windows) < 2:
+            return summary
+        # Integrate in increasing ξ, whatever order the windows ran in.
+        order = np.argsort([w["xi"] for w in windows], kind="stable")
+        records = [records[k] for k in order]
+        xi = np.array([windows[k]["xi"] for k in order])
+        gradient = np.array([windows[k]["mean_force_ev_per_angstrom"] for k in order])
+        profile = integrate_gradient(xi, gradient)
+        error = integration_error(xi, [windows[k]["error_ev_per_angstrom"] for k in order])
+        xi_min = zero_crossing(xi, gradient, up=True)
+        xi_star = zero_crossing(xi, gradient, up=False)
+        summary.update({"xi": xi.tolist(), "free_energy_ev": profile.tolist(),
+                        "free_energy_error_ev": error.tolist(),
+                        "xi_min": xi_min, "xi_star": xi_star})
+        if xi_star is not None:
+            nearest = int(np.argmin(np.abs(xi - xi_star)))
+            summary["ts_window"] = {
+                "xi": float(xi[nearest]),
+                "generalized_velocity_A_per_s": generalized_velocity(
+                    records[nearest].z[skip:], temperature
+                ),
+            }
+        if xi_min is not None and xi_star is not None and xi_min < xi_star:
+            barrier = float(np.interp(xi_star, xi, profile) - np.interp(xi_min, xi, profile))
+            summary["barrier_ev"] = barrier
+            job.log.append(f"barrier ΔA‡ {barrier:.4f} eV (ξ {xi_min:+.3f} → {xi_star:+.3f} Å)")
+        structure = self._structure
+        self._publish.append(lambda: _publish_path(structure, frames, "Blue moon windows"))
+        summary["output"] = self._save_output(job, {
+            "xi": xi, "mean_force": gradient, "free_energy": profile, "error": error,
+            **{f"lam_{k}": r.lam for k, r in enumerate(records)},
+            **{f"z_{k}": r.z for k, r in enumerate(records)},
+            **{f"g_{k}": r.g for k, r in enumerate(records)},
+        })
+        return summary
+
+    def _metadynamics(self, job, atoms, pump, show) -> dict[str, Any]:
+        from ..free_energy import MetadynamicsCalculator, fes_from_hills, metadynamics
+
+        params = job.params
+        coordinate, settings = self._free_energy_setup(job, atoms)
+        atoms.set_masses(settings["masses"])
+        wall_k = _number(params, "wall_k", 20.0)
+        walls = []
+        lower = _get(params, "lower_wall", (int, float), None)
+        upper = _get(params, "upper_wall", (int, float), None)
+        if lower is not None:
+            walls.append(("xi_lower", None, float(lower), wall_k))
+        if upper is not None:
+            walls.append(("xi_upper", None, float(upper), wall_k))
+        for pair in parse_pairs(_get(params, "max_distances", str, "")):
+            if pair.target is None:
+                raise JobSpecError("max_distances needs limits, like '0-5:5.0'")
+            walls.append(("distance_upper", (pair.i, pair.j), pair.target, wall_k))
+        sigma = _number(params, "sigma", 0.08)
+        bias_factor = _number(params, "bias_factor", 10.0)
+        if bias_factor <= 1:
+            raise JobSpecError("bias_factor must be above 1")
+        base = atoms.calc
+        bias = MetadynamicsCalculator(
+            base, coordinate, height=_number(params, "height", 0.02), sigma=sigma,
+            temperature_k=settings["temperature_k"], bias_factor=bias_factor, walls=walls,
+        )
+        every = max(1, int(_number(params, "report_interval", 10)))
+
+        def progress(step, xi):
+            job.step = step + 1
+            if step % (10 * every) == 0:
+                last = bias.heights[-1] if bias.heights else 0.0
+                job.log.append(
+                    f"step {step:7d}  ξ {xi:+.4f} Å  hills {len(bias.centers)}  "
+                    f"last height {last:.4f} eV"
+                )
+            show(atoms.get_positions())
+            pump()
+
+        try:
+            result = metadynamics(
+                atoms, bias, steps=int(_number(params, "steps", 10000)),
+                pace=int(_number(params, "pace", 50)), timestep_fs=settings["timestep_fs"],
+                friction_per_fs=_number(params, "friction_per_fs", 0.01),
+                seed=_get(params, "seed", int, 0), record_every=every, on_progress=progress,
+                should_stop=lambda: job.stop_requested,
+            )
+        finally:
+            atoms.calc = base
+        trace = result["xi"]
+        low = max(trace.min(), lower) if lower is not None else trace.min()
+        high = min(trace.max(), upper) if upper is not None else trace.max()
+        grid = np.linspace(low, high, 200)
+        fes = fes_from_hills(grid, result["centers"], result["heights"], sigma, bias_factor)
+        frames = result["frames"][:: max(1, len(result["frames"]) // 400)]
+        structure = self._structure
+        self._publish.append(lambda: _publish_path(structure, frames, "Metadynamics trajectory"))
+        heights = result["heights"]
+        return {
+            "stopped": job.stop_requested,
+            "steps": int(job.step),
+            "hills": len(result["centers"]),
+            "last_hill_height_ev": float(heights[-1]) if len(heights) else None,
+            "xi": _thin(grid),
+            "free_energy_ev": _thin(fes),
+            "xi_at_min": float(grid[int(np.argmin(fes))]),
+            "xi_visited": [float(trace.min()), float(trace.max())],
+            "output": self._save_output(job, {
+                "xi": trace, "centers": result["centers"], "heights": heights,
+                "sigma": sigma, "bias_factor": bias_factor,
+            }),
+            "note": "the free energy is −γ/(γ−1)·V(ξ); trust it only after many crossings "
+            "between the states, once the hills have become small",
         }

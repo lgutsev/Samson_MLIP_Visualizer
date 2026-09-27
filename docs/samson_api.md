@@ -98,7 +98,7 @@ order as `structure.get` with `models="all"`. Every edit is one undo step.
 | `history.undo` / `history.redo` | SAMSON's undo and redo |
 | `file.import` / `file.export` | SAMSON's importer / write a structure with ASE |
 | `command.run` | run a SAMSON command by its interface name (false if none matched) |
-| `job.start` | (`backend: "xtb"` uses the xtb executable as `model`, with `xtb_method`, `charge`, `multiplicity`, `solvent`; `backend: "psi4"` uses the Psi4 environment's python, with `psi4_method`, `basis`, `charge`, `multiplicity`; `backend: "aimnet2"` uses the aimnet environment's python, with `aimnet_model` (registry name or `.pt` file), `charge`, `multiplicity`) start `single_point`, `relax`, `md`, `ts` (`method`: `prfo`/`dimer`), `frequencies`, `irc` (adds an IRC path with every frame; `trajectory` writes them too), `qst` (QST2/QST3 from the selected models; adds the path and a TS model), or `scan` (`pair='I-J'`, `stop`, `points`: bond scan, then P-RFO from the highest point; adds the scan path). `ts`/`scan` take `exact_hessian`, and `ts` takes `recompute_every` (Gaussian `CalcFC` / `RecalcFC=N`); returns at once |
+| `job.start` | (`backend: "xtb"` uses the xtb executable as `model`, with `xtb_method`, `charge`, `multiplicity`, `solvent`; `backend: "psi4"` uses the Psi4 environment's python, with `psi4_method`, `basis`, `charge`, `multiplicity`; `backend: "aimnet2"` uses the aimnet environment's python, with `aimnet_model` (registry name or `.pt` file), `charge`, `multiplicity`) start `single_point`, `relax`, `md`, `ts` (`method`: `prfo`/`dimer`), `frequencies`, `irc` (adds an IRC path with every frame; `trajectory` writes them too), `qst` (QST2/QST3 from the selected models; adds the path and a TS model), or `scan` (`pair='I-J'`, `stop`, `points`: bond scan, then P-RFO from the highest point; adds the scan path), or the free-energy jobs `slow_growth`, `blue_moon`, `metadynamics` (below). `ts`/`scan` take `exact_hessian`, and `ts` takes `recompute_every` (Gaussian `CalcFC` / `RecalcFC=N`); returns at once |
 | `qm.export` | write a Gaussian (`.gjf`/`.com`) or ORCA (`.inp`) input from the selected models: `path`, `job` (`auto`: 1 model → `ts`, 2 → `qst2`, 3 → `qst3`; or `ts`/`opt`/`irc`), `level`, `charge`, `multiplicity` |
 | `job.status` / `job.stop` / `job.list` | progress, log and result / stop after the current step / all jobs |
 | `python.exec` | **opt-in only**: run code in SAMSON's Python; returns stdout, stderr and the last expression |
@@ -113,6 +113,34 @@ TS, the scanned pair distance (`scan`), and the matched minimum plus `connects`
 (`qst`). Only then use `qm.export`. A TS is not confirmed until an IRC reaches
 both minima: QST's final P-RFO can slide to another saddle, and a scan whose
 `jumps` list is not empty is not a reaction path.
+
+**Free-energy jobs.** Three more job types sample a reaction coordinate
+ξ = Σ c·d(i, j) at finite temperature, as in
+[`examples/sn2_free_energy`](../examples/sn2_free_energy/README.md). Each job:
+- takes `coordinate` (for example `"0-4, 0-5:-1"` = d(0,4) − d(0,5), 0-based);
+- also takes `temperature_k`, `timestep_fs` (default 1), `hydrogen_mass` (3 is
+  tritium, which allows a 2 fs step), `seed`, `report_interval`, and `output` (an
+  `.npz` of the raw records);
+- adds its frames to SAMSON as a path.
+
+The three types are:
+- **`slow_growth`**: constrained MD with ξ dragged from `start` (default: now)
+  to `end` at `increment` Å per step. It gives the integrated constraint force.
+  This is irreversible work: run it both ways, and read the hysteresis as its
+  error.
+- **`blue_moon`**: constrained MD at fixed ξ for each of `values` (or
+  `start`/`stop`/`points`), `steps` per window, dropping the first `skip`. The
+  job moves between windows by slow growth. It integrates the mean force and
+  returns:
+  - the profile with its error;
+  - `xi_min`, `xi_star`, and `barrier_ev`;
+  - the generalized velocity at the TS window, for a rate.
+
+  This is the converged method.
+- **`metadynamics`**: well-tempered, with Langevin dynamics. It takes `steps`,
+  `height`, `sigma`, `bias_factor`, `pace`, `lower_wall`/`upper_wall`, `wall_k`,
+  and `max_distances` (`"0-5:5.0"` keeps an ion from leaving). Put the upper
+  wall just past the TS so the walker keeps recrossing.
 
 **Selection semantics.** "Selected atoms" are atoms picked individually;
 "effectively selected" also counts atoms inside a selected model (SAMSON's

@@ -85,6 +85,26 @@ class DistanceCombination:
         return total / self.z(positions, masses) ** 2
 
 
+def parse_coordinate(text: str) -> DistanceCombination:
+    """Read ``"0-4, 0-5:-1"`` (0-based atom pairs, ``:c`` a coefficient, default 1) as
+    ξ = d(0,4) − d(0,5)."""
+    terms = []
+    for chunk in text.replace(";", ",").split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        pair, _, coefficient = chunk.partition(":")
+        try:
+            a, b = (int(part) for part in pair.replace(" ", "").split("-"))
+            terms.append((a, b, float(coefficient) if coefficient.strip() else 1.0))
+        except ValueError as exc:
+            raise ValueError(f"Cannot read coordinate term {chunk!r}; use 0-based pairs with "
+                             "optional coefficients, like '0-4, 0-5:-1'") from exc
+    if not terms:
+        raise ValueError("The reaction coordinate needs at least one pair, like '0-4, 0-5:-1'")
+    return DistanceCombination(terms)
+
+
 # --- constrained molecular dynamics (blue moon, slow growth) ------------------------
 
 
@@ -124,13 +144,15 @@ def constrained_md(
     record_every: int = 0,
     tolerance: float = 1e-10,
     on_step: Callable[[int, ConstrainedRecord], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> ConstrainedRecord:
     """Velocity Verlet with ξ(R) held at ``target`` (default: its current value)
     by SHAKE/RATTLE, moved by ``increment`` Å per step (slow growth when ≠ 0),
     with an Andersen thermostat (each atom's velocity redrawn with
     ``andersen_probability`` per step). ``masses`` overrides the atoms' masses
     (e.g. tritium, 3.0, to allow a longer step). The atoms keep their calculator;
-    positions and velocities are updated in place."""
+    positions and velocities are updated in place. ``should_stop`` is checked after
+    every step; the steps run so far are returned."""
     rng = np.random.default_rng(seed)
     m = np.asarray(masses if masses is not None else atoms.get_masses(), float)
     kt = KB * temperature_k
@@ -205,6 +227,8 @@ def constrained_md(
             frames.append(positions.copy())
         if on_step is not None:
             on_step(step, records)
+        if should_stop is not None and should_stop():
+            break
     atoms.set_velocities(velocities)
     result = ConstrainedRecord(**{k: np.array(v) for k, v in records.items()})
     result.frames = frames
@@ -237,6 +261,23 @@ def integrate_gradient(xi: Sequence[float], gradient: Sequence[float]) -> np.nda
     """Cumulative trapezoid of dA/dξ (thermodynamic integration), A(ξ₀) = 0."""
     xi, gradient = np.asarray(xi, float), np.asarray(gradient, float)
     return np.concatenate([[0.0], np.cumsum(0.5 * (gradient[1:] + gradient[:-1]) * np.diff(xi))])
+
+
+def integration_error(xi: Sequence[float], error: Sequence[float]) -> np.ndarray:
+    """Standard error of :func:`integrate_gradient`'s running sum, windows independent."""
+    xi, error = np.asarray(xi, float), np.asarray(error, float)
+    increments = (0.5 * np.diff(xi)) ** 2 * (error[1:] ** 2 + error[:-1] ** 2)
+    return np.concatenate([[0.0], np.sqrt(np.cumsum(increments))])
+
+
+def zero_crossing(xi: Sequence[float], gradient: Sequence[float], *, up: bool) -> float | None:
+    """The first ξ where dA/dξ crosses zero upward (a minimum) or downward (a
+    maximum), linearly interpolated; None if it never does."""
+    for k in range(len(xi) - 1):
+        a, b = gradient[k], gradient[k + 1]
+        if (a < 0 <= b) if up else (a > 0 >= b):
+            return float(xi[k] - a * (xi[k + 1] - xi[k]) / (b - a))
+    return None
 
 
 # --- metadynamics ---------------------------------------------------------------------
@@ -327,9 +368,10 @@ class MetadynamicsCalculator(Calculator):
 def metadynamics(atoms: Atoms, bias: MetadynamicsCalculator, *, steps: int, pace: int = 50,
                  timestep_fs: float = 1.0, friction_per_fs: float = 0.01, seed: int = 0,
                  record_every: int = 10, on_progress: Callable[[int, float], None] | None = None,
-                 ) -> dict:
+                 should_stop: Callable[[], bool] | None = None) -> dict:
     """Langevin dynamics on ``bias`` (set as the atoms' calculator), a hill every
-    ``pace`` steps. Returns ξ every ``record_every`` steps, the hills, and frames."""
+    ``pace`` steps. Returns ξ every ``record_every`` steps, the hills, and frames.
+    ``should_stop`` is checked after every step."""
     from ase.md.langevin import Langevin
     from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 
@@ -337,8 +379,11 @@ def metadynamics(atoms: Atoms, bias: MetadynamicsCalculator, *, steps: int, pace
     if atoms.get_velocities() is None or not np.any(atoms.get_velocities()):
         MaxwellBoltzmannDistribution(atoms, temperature_K=bias.temperature_k,
                                      rng=np.random.default_rng(seed))
+    # fixcm=False: removing the centre-of-mass motion each step skews the NVT
+    # distribution of a small molecule, and a free molecule's drift is harmless.
     dynamics = Langevin(atoms, timestep_fs * units.fs, temperature_K=bias.temperature_k,
-                        friction=friction_per_fs / units.fs, rng=np.random.default_rng(seed))
+                        friction=friction_per_fs / units.fs, fixcm=False,
+                        rng=np.random.default_rng(seed))
     trace, frames = [], []
     for step in range(steps):
         dynamics.run(1)
@@ -350,6 +395,8 @@ def metadynamics(atoms: Atoms, bias: MetadynamicsCalculator, *, steps: int, pace
             frames.append(atoms.get_positions().copy())
             if on_progress:
                 on_progress(step, xi)
+        if should_stop is not None and should_stop():
+            break
     return {"xi": np.array(trace), "centers": np.array(bias.centers),
             "heights": np.array(bias.heights), "frames": frames}
 
