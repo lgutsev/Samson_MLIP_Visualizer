@@ -917,10 +917,18 @@ class JobManager:
                     records[nearest].z[skip:], temperature
                 ),
             }
-        if xi_min is not None and xi_star is not None and xi_min < xi_star:
-            barrier = float(np.interp(xi_star, xi, profile) - np.interp(xi_min, xi, profile))
+        if xi_star is not None:
+            top = float(np.interp(xi_star, xi, profile))
+            if xi_min is not None and xi_min < xi_star:
+                barrier, low = top - float(np.interp(xi_min, xi, profile)), xi_min
+            else:
+                # The minimum lies before the first window: a lower bound.
+                left = int(np.argmin(np.where(xi <= xi_star, profile, np.inf)))
+                barrier, low = top - float(profile[left]), float(xi[left])
+                summary["barrier_is_lower_bound"] = True
+                job.log.append("No minimum inside the windows before ξ*: add windows at lower ξ")
             summary["barrier_ev"] = barrier
-            job.log.append(f"barrier ΔA‡ {barrier:.4f} eV (ξ {xi_min:+.3f} → {xi_star:+.3f} Å)")
+            job.log.append(f"barrier ΔA‡ {barrier:.4f} eV (ξ {low:+.3f} → {xi_star:+.3f} Å)")
         structure = self._structure
         self._publish.append(lambda: _publish_path(structure, frames, "Blue moon windows"))
         summary["output"] = self._save_output(job, {
