@@ -1,0 +1,31 @@
+{
+ "output": "D:\\MLIP_Work_Folder\\sn2_F_CH3Cl\\active_learning",
+ "system": {"charge": -1, "multiplicity": 1},
+ "model": {
+  "plugin": "aimnet2",
+  "python": "D:\\MLIP_Work_Folder\\envs\\mlip\\python.exe",
+  "members": [
+   "D:\\MLIP_Work_Folder\\cache\\aimnet\\aimnet2_wb97m_d3_0.pt",
+   "D:\\MLIP_Work_Folder\\cache\\aimnet\\aimnet2_wb97m_d3_1.pt",
+   "D:\\MLIP_Work_Folder\\cache\\aimnet\\aimnet2_wb97m_d3_2.pt"
+  ],
+  "epochs": 800,
+  "warm_start_epochs": 300,
+  "lr": 5e-05
+ },
+ "reference": {
+  "program": "psi4", "method": "wb97x-d", "basis": "def2-tzvpd", "threads": 8, "memory_mb": 1900,
+  "cache": "D:\\MLIP_Work_Folder\\sn2_F_CH3Cl\\wb97xd_cache.json"
+ },
+ "seed_data": ["D:\\MLIP_Work_Folder\\sn2_F_CH3Cl\\finetune\\train.extxyz"],
+ "explore": {
+  "ts_start": "D:\\MLIP_Work_Folder\\sn2_F_CH3Cl\\active_learning\\ts_start.xyz",
+  "ts_fmax": 0.005,
+  "irc": {"step": 0.05, "max_steps": 400, "fmax": 0.01},
+  "scan": {"pair": [0, 5], "start": 2.8, "stop": 1.4, "points": 15},
+  "held_out_points": 15
+ },
+ "tolerances": {"barrier_kcal": 0.5, "path_max_ev": 0.010, "scan_max_ev": 0.020},
+ "budget": {"committee": 4, "diverse": 3, "random": 2, "rattle_copies": 1, "rattle_sigma": 0.03,
+            "min_distance": 0.05, "max_rounds": 4}
+}

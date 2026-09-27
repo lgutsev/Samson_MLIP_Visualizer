@@ -454,6 +454,57 @@ in `D:\MLIP_Work_Folder\cache\aimnet\finetuned\` (with its model card), loaded
 by the AIMNet2 backend as `aimnet_model`. It is still a specialist for this
 reaction; the neutral molecules above are the only other chemistry checked.
 
+### Active learning with the library loop
+
+The steps above were run by hand. `samson-mlip-finetune` runs them as rounds
+(`samson_mlip_visualizer.active_learning`; config:
+[`active_learning_config.json`](active_learning_config.json)): train an
+AIMNet2 committee (three members fine-tuned from AIMNet2 ensemble members 0, 1
+and 2), explore (P-RFO with an exact Hessian, IRC, and the r(C–F) scan), check
+against ωB97X-D on held-out frames, and stop or select, label and repeat. It
+started from the complex-only labels (93 structures), with tolerances of
+0.5 kcal/mol on the barrier, 10 meV on the IRC and 20 meV off the path (the
+scan).
+
+| Round | Training | Barrier model / ωB97X-D (kcal/mol) | IRC max error (meV) | Scan max error (meV) | Error / spread at the worst scan frame | Labeled | Status |
+|---|---|---|---|---|---|---|---|
+| 0 | 93 | 3.27 / 3.27 | 0.9 | **29.4** | 1.5× | 6 | continued |
+| 1 | 99 | 3.29 / 3.28 | 0.8 | **6.3** | 1.1× | 0 | converged |
+
+![Off-path error by round, with the committee spread and the selected frames](images/active_learning_scan.png)
+
+*Errors on the held-out scan frames, relative to the first one (2.8 Å, zero by
+construction), so round 0's flat −20 to −29 meV is largely an error at that
+far end. Dashed: committee spread. Dotted: the three frames labeled in round 0.*
+
+- **Selection fired, and one round was enough.** Round 0 failed only off the
+  path (29 meV against 20). Of 770 candidates (the round's IRC and the scan
+  frames not held out), it selected three scan frames by committee spread
+  (0.07–0.19 eV/Å force spread, 0.075–0.093 Å from the training data), labeled
+  with one rattled copy each. The diversity and spot-check passes found nothing
+  else at least 0.05 Å from the data: the IRC lies on the training path. Round
+  1 met every tolerance, with the scan error down to 6.3 meV.
+- **Committee spread and real error:** at the worst scan frame the error was
+  1.5× (round 0) and 1.1× (round 1) the spread, far better than the HCN MACE
+  committee (its spread was 6× below the real error on its scan), because the members start from different
+  AIMNet2 models. On the IRC the committee *over*estimates (error 0.2× the
+  spread). Frame by frame the spread did not track the error (correlation 0.03
+  and −0.47 on the scan), so it is good for choosing where to look, not for
+  deciding when to stop, which is why the loop never stops on it.
+- **Cost:** 58 new ωB97X-D calculations (about 5 minutes; the rest came from
+  the shared cache). Training dominated: about 14 minutes per round-0 member
+  (800 epochs) and 12 per round-1 member (300 warm-start epochs), the three in
+  parallel on the CPU, slowed in round 1 by another job running on the laptop.
+- The tolerances cover the path and the region the scan visits, not the
+  separated fragments. Those were not checked for this committee; since it
+  starts from the complex-only labels, they are presumably off as in the
+  complex-only fine-tune above. Adding the fragment structures to the seed data
+  would bring them in.
+
+Outputs are in `D:\MLIP_Work_Folder\sn2_F_CH3Cl\active_learning\` (`rounds.json`,
+and per round the training set, models, exploration, evaluation, selection
+manifest and labels); `plot_active_learning.py` draws the figure.
+
 ## Reproduce
 
 Environments: SAMSON's Python (the package, mace-torch), an aimnet
