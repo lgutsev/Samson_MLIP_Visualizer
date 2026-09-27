@@ -433,8 +433,8 @@ class ActiveLearning:
         for number in range(max_rounds):
             row = next((r for r in self.rounds() if r["round"] == number), None)
             directory = self.output / f"round_{number:02d}"
-            if row and row["status"] == "converged":
-                self.log(f"round {number}: converged earlier; nothing to do")
+            if row and (row["status"] == "converged" or row["status"].startswith("stopped")):
+                self.log(f"round {number}: {row['status']} earlier; nothing to do")
                 return self.rounds()
             data = self._training_set(number)
             began = time.perf_counter()
@@ -452,6 +452,14 @@ class ActiveLearning:
                 self.log(f"round {number}: all tolerances met; stopping")
                 return self.rounds()
             selection = self._select(directory, model, exploration, evaluation, data)
+            if not selection["frames"]:
+                # Every candidate is within min_distance of the data: more rounds of
+                # the same exploration cannot add anything.
+                row.update(status="stopped: nothing new to label", selected=selection["summary"],
+                           labeled=0, wall_s=round(time.perf_counter() - began, 1))
+                self._save_row(row)
+                self.log(f"round {number}: {'; '.join(failed)}, but no candidate is new; stopping")
+                return self.rounds()
             labeled = self._label(directory, number, selection)
             row.update(status="continued", selected=selection["summary"],
                        labeled=len(labeled), wall_s=round(time.perf_counter() - began, 1))
@@ -546,8 +554,12 @@ class ActiveLearning:
                       "barrier_reference_kcal": barrier["reference"],
                       "barrier_error_kcal": barrier["model"] - barrier["reference"]}
         if exploration.scan:
+            # About half the scan frames (evenly spread, both ends kept) are held out;
+            # the rest stay candidates, so off-path frames can be selected.
+            scan_points = int(self.config.explore.get(
+                "held_out_scan_points", (len(exploration.scan) + 1) // 2))
             _, evaluation["scan"] = self._benchmark("scan", exploration.scan, calc,
-                                                    "scan_distance", data, None, folder)
+                                                    "scan_distance", data, scan_points, folder)
         evaluation["new_reference_calculations"] = getattr(self.reference, "computed", 0) - before
         path.write_text(json.dumps(evaluation, indent=1))
         return evaluation

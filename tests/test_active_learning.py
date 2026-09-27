@@ -109,6 +109,9 @@ def test_loop_selects_then_stops_on_reference_errors(setup):
     held |= {f"scan frame {k}" for k in first["scan"]["frame_indices"]}
     sources = [f["source"] for f in first["selected"]["frames"]]
     assert not held & set(sources)
+    # Only part of the scan is held out, so off-path frames stay candidates.
+    assert len(first["scan"]["frame_indices"]) < 11
+    assert any(s.startswith("scan") for s in sources)
     assert {f["reason"] for f in first["selected"]["frames"]} <= {"committee", "diversity",
                                                                   "spot-check"}
     # ...and keeps min_distance from each other and from the training data.
@@ -120,6 +123,19 @@ def test_loop_selects_then_stops_on_reference_errors(setup):
             assert structure_distance(a, b) >= 0.05
     # Round 1 trained on the seed plus the new labels.
     assert rows[1]["training_structures"] == len(seed) + first["labeled"]
+
+
+def test_stops_cleanly_when_nothing_is_new(setup):
+    config, reference = setup
+    config.budget["min_distance"] = 10.0  # no candidate can be that far from the data
+    loop = al.ActiveLearning(config, ToyPlugin(), reference, explorer=toy_explorer([]),
+                             log=lambda *_: None)
+    rows = loop.run()
+    assert [r["status"] for r in rows] == ["stopped: nothing new to label"]
+    assert rows[0]["labeled"] == 0 and rows[0]["failed"]
+    assert not (Path(config.output) / "round_00" / "labeled.extxyz").exists()
+    # A restart does not try again.
+    assert loop.run()[0]["status"] == "stopped: nothing new to label"
 
 
 def test_resume_skips_finished_stages(setup):
