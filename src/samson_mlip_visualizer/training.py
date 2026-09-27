@@ -5,7 +5,7 @@ One :class:`TrainingSpec` describes a run; the same spec becomes a local run
 package (:func:`write_training_package`) that the user copies to a cluster,
 runs, and copies back. Nothing is ever submitted from here.
 
-Two modes, both on top of a MACE foundation model:
+Three modes, two of them on top of a MACE foundation model:
 
 - ``plain``: single-head fine-tuning on the reference labels. All foundation
   elements are kept (``--foundation_model_elements``); without it, mace-torch
@@ -19,6 +19,10 @@ Two modes, both on top of a MACE foundation model:
   trained on, ~595 MB, downloaded by mace-torch into the MACE folder of
   :mod:`.paths` and randomly subsampled to ``replay_samples``) or a file of
   your own.
+- ``scratch``: a new, small MACE (``architecture``) with fixed per-element
+  energies (``e0s``) and no foundation model. For a Δ-learning correction on
+  top of GFN-xTB (:mod:`.delta`): the residual is not an energy surface a
+  foundation model has learned, so there is nothing to fine-tune from.
 
 Every installed model gets a model card (:func:`install_models`), which the
 tool records in the provenance of each run with it.
@@ -37,7 +41,10 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-MODES = ("plain", "multihead")
+MODES = ("plain", "multihead", "scratch")
+# A small MACE for a Δ-learning correction: the residual is smooth and short-ranged.
+SCRATCH_ARCHITECTURE = {"hidden_irreps": "32x0e+32x1o", "r_max": 5.0, "num_interactions": 2,
+                        "correlation": 3, "max_ell": 3}
 MP_REPLAY_URL = (
     "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mp_0b/mp_traj_combined.xyz"
 )
@@ -49,7 +56,7 @@ class TrainingSpec:
     """One fine-tuning run (all seeds share it)."""
 
     name: str
-    foundation: str  # a model file, or "small"/"medium"/"large" (downloaded by mace-torch)
+    foundation: str  # a model file, or "small"/"medium"/"large"; "" for scratch
     train_file: str
     mode: str = "plain"
     replay: str | None = None  # multihead: "mp" or a path to an extxyz replay set
@@ -72,14 +79,23 @@ class TrainingSpec:
     stress_key: str = "REF_stress"
     extra: tuple[str, ...] = ()  # more mace_run_train arguments, verbatim
     card: dict = field(default_factory=dict)  # what the data are (reference level, scope...)
+    architecture: dict = field(default_factory=dict)  # scratch: overrides SCRATCH_ARCHITECTURE
+    e0s: dict = field(default_factory=dict)  # scratch: eV per element, by atomic number
 
     def __post_init__(self):
         if self.mode not in MODES:
             raise ValueError(f"mode must be one of {', '.join(MODES)}")
         if self.mode == "multihead" and not self.replay:
             raise ValueError("Multihead fine-tuning needs a replay set: 'mp' or a file")
-        if self.mode == "plain" and self.replay:
+        if self.mode != "multihead" and self.replay:
             raise ValueError("A replay set needs mode='multihead'")
+        if self.mode == "scratch":
+            if not self.e0s:
+                raise ValueError("Training from scratch needs per-element energies (e0s)")
+            self.e0s = {int(z): float(e) for z, e in self.e0s.items()}
+            self.keep_foundation_elements = False
+        elif self.architecture or self.e0s:
+            raise ValueError("architecture and e0s are for mode='scratch'")
         self.seeds = tuple(int(seed) for seed in self.seeds)
 
     def model_name(self, seed: int) -> str:
@@ -93,20 +109,29 @@ class TrainingSpec:
         data = dict(data)
         data["seeds"] = tuple(data["seeds"])
         data["extra"] = tuple(data.get("extra", ()))
+        # JSON turns the atomic-number keys into strings
+        data["e0s"] = {int(z): e for z, e in data.get("e0s", {}).items()}
         return cls(**data)
 
 
 def train_arguments(spec: TrainingSpec, seed: int, workdir: str, *, train_file=None,
                     foundation=None) -> list[str]:
     """mace_run_train arguments for one seed (paths may be overridden for a package)."""
+    if spec.mode == "scratch":
+        from .delta import e0s_argument
+
+        model = ["--model=MACE", f"--E0s={e0s_argument(spec.e0s)}"] + [
+            f"--{key}={value}" for key, value in {**SCRATCH_ARCHITECTURE,
+                                                  **spec.architecture}.items()]
+    else:
+        model = [f"--foundation_model={foundation or spec.foundation}", "--E0s=foundation"]
     arguments = [
         f"--name={spec.model_name(seed)}",
-        f"--foundation_model={foundation or spec.foundation}",
+        *model,
         f"--train_file={train_file or spec.train_file}",
         f"--valid_fraction={spec.valid_fraction}",
         f"--energy_key={spec.energy_key}",
         f"--forces_key={spec.forces_key}",
-        "--E0s=foundation",
         "--loss=weighted",
         f"--energy_weight={spec.energy_weight}",
         f"--forces_weight={spec.forces_weight}",
@@ -134,7 +159,7 @@ def train_arguments(spec: TrainingSpec, seed: int, workdir: str, *, train_file=N
         arguments.append("--foundation_model_elements=True")
     if spec.mode == "plain":
         arguments.append("--multiheads_finetuning=False")
-    else:
+    elif spec.mode == "multihead":
         arguments += [
             "--multiheads_finetuning=True",
             f"--pt_train_file={spec.replay}",
@@ -394,11 +419,19 @@ def install_models(directory: str | Path, *, name: str | None = None,
         for log in logs:
             shutil.copyfile(log, target / f"{spec.model_name(seed)}_{log.name}")
             errors = final_errors(log.read_text(encoding="utf-8", errors="replace")) or errors
+        if spec.mode == "scratch":
+            origin = {"trained_from_scratch": {**SCRATCH_ARCHITECTURE, **spec.architecture},
+                      "e0s_eV": spec.e0s}
+        else:
+            origin = {
+                "fine_tuned_from": Path(spec.foundation).name,
+                "fine_tuning": spec.mode + (f" with replay '{spec.replay}' "
+                                            f"({spec.replay_samples} samples)"
+                                            if spec.mode == "multihead" else ""),
+                "keeps_foundation_elements": spec.keep_foundation_elements,
+            }
         Path(str(model) + ".json").write_text(json.dumps({
-            "fine_tuned_from": Path(spec.foundation).name,
-            "fine_tuning": spec.mode + (f" with replay '{spec.replay}' ({spec.replay_samples} "
-                                        "samples)" if spec.mode == "multihead" else ""),
-            "keeps_foundation_elements": spec.keep_foundation_elements,
+            **origin,
             "heads": "Default (fine-tuned, used by default) + pt_head (replay)"
             if spec.mode == "multihead" else "Default",
             "trained_on": Path(spec.train_file).name,

@@ -1,0 +1,8 @@
+# Outputs of the scripts (with DELTA_DIR unset)
+data/
+runs/
+models/
+test_set.extxyz
+results.json
+figures_data.json
+learning_curves.png

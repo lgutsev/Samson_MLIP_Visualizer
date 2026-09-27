@@ -116,6 +116,19 @@ def program_options(
     return None
 
 
+def _delta_baseline(paths: Sequence[Path]) -> dict | None:
+    """The one baseline all the MACE files need, or ``None`` for ordinary models."""
+    from .delta import delta_baseline
+
+    baselines = [delta_baseline(path) for path in paths]
+    if any(baseline != baselines[0] for baseline in baselines):
+        raise CalculatorLoadError(
+            "These models cannot form a committee: their cards name different Δ-learning "
+            "baselines (or only some of them are Δ-learning corrections)."
+        )
+    return baselines[0]
+
+
 def create_calculator(
     backend: Backend,
     model_path: ModelPaths,
@@ -137,6 +150,10 @@ def create_calculator(
     Python of an environment with aimnet and ``options`` are
     :class:`~.aimnet2_backend.AIMNet2Calculator` options (model, charge,
     multiplicity). Device and dtype apply to MACE only.
+
+    A MACE model whose card names a ``delta_baseline`` is a Δ-learning
+    correction (:mod:`.delta`), not a potential: it is returned wrapped in its
+    GFN-xTB baseline as a :class:`~.delta.DeltaCalculator`.
     """
     paths = _resolve_model_paths(model_path)
 
@@ -185,12 +202,21 @@ def create_calculator(
 
             if str(device).startswith("cuda"):
                 _assert_cuda_available()
+            baseline = _delta_baseline(paths)
             model_arg = str(paths[0]) if len(paths) == 1 else [str(p) for p in paths]
-            return MACECalculator(
+            correction = MACECalculator(
                 model_paths=model_arg,
                 device=device,
                 default_dtype=dtype,
             )
+            if baseline is None:
+                return correction
+            from .delta import DeltaCalculator, baseline_calculator
+
+            try:
+                return DeltaCalculator(baseline_calculator(baseline), correction)
+            except (FileNotFoundError, TypeError, ValueError) as exc:
+                raise CalculatorLoadError(str(exc)) from exc
         if backend == "deepmd":
             from deepmd.calculator import DP
 

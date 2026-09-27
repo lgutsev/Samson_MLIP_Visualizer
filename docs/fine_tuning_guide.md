@@ -157,6 +157,20 @@ The labeling collectors have so far been tested only on outputs written to the
 Gaussian 16 and ORCA 5 formats, so the smoke tests are also their first check
 against real output.
 
+## Δ-learning instead of fine-tuning
+
+When a cheap quantum method gets the shape of the surface right, train a
+small MACE from scratch on the residual E_ref − E_xTB instead of fine-tuning
+the foundation model (`TrainingSpec(mode="scratch", e0s=delta_e0s(frames),
+energy_key="DELTA_energy", forces_key="DELTA_forces")`, labels from
+`samson_mlip_visualizer.delta.delta_labels`). Put the baseline in the model
+card (`card={"delta_baseline": xtb_baseline_card("gfn1")}`) and the tool will
+always evaluate the model as xTB + correction. For HCN it needed about a
+quarter of the labels for better accuracy near the path. Like any MLIP, the
+correction must be trained where it will be used, and bond breaking needed
+labels of its own:
+[examples/delta_xtb_hcn](../examples/delta_xtb_hcn/README.md).
+
 ## Not built yet
 
 - An evaluation report: errors binned by distance from the training data,

@@ -397,6 +397,20 @@ error away from the path. The write-up covers these, which frames were held
 out and how far they are from the training data, and what a model card
 records in the provenance.
 
+
+### Δ-learning: GFN-xTB plus a learned correction
+
+Instead of fine-tuning the whole potential, a small MACE can learn only the
+difference between PBE and GFN-xTB, with xTB supplying the physics
+([`examples/delta_xtb_hcn/`](examples/delta_xtb_hcn/)). On the same 87 HCN
+structures and a held-out test set, the Δ-models trained on 20 structures beat
+direct fine-tuning on all 87 near the reaction path (0.014–0.032 against 0.092 eV
+mean energy error). Off the path the correction extrapolated badly until one
+round of 8 bond-stretch labels fixed it. A Δ-model's card names its baseline, and
+`create_calculator` always evaluates it as xTB + correction.
+
+![Δ-learning along the HCN path: baseline, residual, sum](examples/delta_xtb_hcn/images/delta_decomposition.png)
+
 ### Viewing normal modes
 
 After **Frequencies** (or a converged TS search with the frequency check), the

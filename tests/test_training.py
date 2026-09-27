@@ -141,3 +141,29 @@ def test_package_with_an_own_replay_file(data, tmp_path):
     assert '"--pt_train_file=../../data/replay.extxyz"' in script
     assert not (package / "download_mp_replay.sh").exists()
     assert (package / "data" / "replay.extxyz").is_file()
+
+
+def test_scratch_mode_for_a_delta_correction(data, tmp_path):
+    train_file, _ = data
+    scratch = TrainingSpec(name="delta", foundation="", train_file=str(train_file),
+                           mode="scratch", e0s={"1": -0.5, 8: 2.0},
+                           architecture={"r_max": 4.0}, energy_key="DELTA_energy",
+                           forces_key="DELTA_forces")
+    assert scratch.e0s == {1: -0.5, 8: 2.0} and not scratch.keep_foundation_elements
+    arguments = train_arguments(scratch, 1, "w")
+    assert "--model=MACE" in arguments and "--E0s={1:-0.5000000000,8:2.0000000000}" in arguments
+    assert "--r_max=4.0" in arguments and "--hidden_irreps=32x0e+32x1o" in arguments
+    assert "--energy_key=DELTA_energy" in arguments
+    assert not any(a.startswith(("--foundation_model", "--multiheads")) for a in arguments)
+    assert TrainingSpec.from_json(json.loads(json.dumps(scratch.to_json()))) == scratch
+    with pytest.raises(ValueError, match="e0s"):
+        TrainingSpec(name="x", foundation="", train_file="t", mode="scratch")
+    with pytest.raises(ValueError, match="scratch"):
+        TrainingSpec(name="x", foundation="f", train_file="t", e0s={1: 0.0})
+    # Installed like any other run, with a card that says it was not fine-tuned.
+    (tmp_path / "run" / "seed1").mkdir(parents=True)
+    (tmp_path / "run" / "spec.json").write_text(json.dumps({**scratch.to_json(), "seeds": [1]}))
+    (tmp_path / "run" / "seed1" / "delta_seed1.model").write_text("model")
+    (installed,) = install_models(tmp_path / "run", destination=tmp_path / "out")
+    card = json.loads((installed.parent / "delta_seed1.model.json").read_text())
+    assert "fine_tuned_from" not in card and card["trained_from_scratch"]["r_max"] == 4.0
