@@ -651,13 +651,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 def round_table(rows: Sequence[dict[str, Any]]) -> str:
     """A Markdown table of the rounds."""
     lines = ["| Round | Training | Barrier model / ref (kcal/mol) | IRC max err (meV) | "
-             "Scan max err (meV) | Spread at worst frame | Selected | Status |",
+             "Scan max err (meV) | Error / spread at the worst frame | Labeled | Status |",
              "|---|---|---|---|---|---|---|---|"]
     for r in rows:
         scan = r.get("scan")
         scan_cell = f"{1000 * scan['energy_error_max_abs_ev']:.1f}" if scan else "—"
-        ratio = r["irc"].get("error_over_spread_at_worst_frame")
-        ratio_cell = f"error {ratio:.1f}× spread" if ratio else "—"
+        # The path with the larger error says more about the committee.
+        worst = scan if scan else r["irc"]
+        ratio = worst.get("error_over_spread_at_worst_frame")
+        ratio_cell = f"{ratio:.1f}× ({'scan' if scan else 'IRC'})" if ratio else "—"
         cells = [str(r["round"]), str(r["training_structures"]),
                  f"{r['barrier_model_kcal']:.2f} / {r['barrier_reference_kcal']:.2f}",
                  f"{1000 * r['irc']['energy_error_max_abs_ev']:.1f}", scan_cell, ratio_cell,
