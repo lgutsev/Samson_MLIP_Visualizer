@@ -42,26 +42,32 @@ general accuracy. The fine-tuned AIMNet2 is the better model: it trained in
 committee), and it forgets far less. Its neutral CH₃F, CH₃Cl and CH₂F₂ keep
 their ωB97X-D bond lengths within 0.01 Å, where the tuned MACE stretched C–Cl
 in CH₃Cl to the length it saw in the complex and cannot evaluate a free ion at
-all. Keeping the charge input also exposes what neither fine-tune fixed: the
-training data are all complexes, so relative to the separated F⁻ + CH₃Cl the
-complexes are still 3.5–4.6 kcal/mol too deep and the reaction 6 kcal/mol too
-exothermic, and the TS is now 3.6 kcal/mol too low. A model for the whole
-reaction needs the free fragments in its data too. And none of it works
-without checking the reference level against the literature first:
-fine-tuning to PBE would have produced a confident model of a reaction with no
-barrier.
+all. Keeping the charge input also exposed what training on complexes alone
+cannot fix: relative to the separated F⁻ + CH₃Cl, the first AIMNet2 fine-tune
+left the complexes 3.5–4.6 kcal/mol too deep, the reaction 6 kcal/mol too
+exothermic, and the TS 3.6 kcal/mol too low. Adding 17 ωB97X-D calculations of
+the free fragments and of the complexes pulled apart (47 s of DFT, 7 minutes
+of training) fixed that. The retrained AIMNet2 reproduces ωB97X-D at every
+stationary point relative to the separated reactants, within 1 kcal/mol of the
+literature, and lost nothing on the path, off it, or on the neutral molecules.
+Free fragments and long-range ion–molecule configurations are the part of such
+a reaction that an MLIP does not get from the complexes; they have to be in
+the data. And none of it works without checking the reference level against
+the literature first: fine-tuning to PBE would have produced a confident model
+of a reaction with no barrier.
 
-| | AIMNet2 | Fine-tuned AIMNet2 | Fine-tuned MACE | Reference |
-|---|---|---|---|---|
-| Barrier from F⁻···CH₃Cl (kcal/mol) | 9.3 | **3.24** | **3.31** | 3.39 (CCSD(T)) |
-| Walden TS relative to F⁻ + CH₃Cl (kcal/mol) | −12.4 | −15.8 | cannot (no charge input) | −12.2 (CCSD(T)) |
-| Reaction energy, CH₃F + Cl⁻ (kcal/mol) | −38.7 | −38.0 | cannot | −31.9 (CCSD(T)) |
-| F⁻···CH₃Cl r(C–F) / r(C–Cl) (Å) | 2.454 / 1.878 | **2.497 / 1.852** | 2.516 / 1.851 | 2.498 / 1.843 (CCSD(T)) |
-| TS imaginary mode (cm⁻¹) | −743 | −446 | −445 | −450 (ωB97X-D) |
-| Max energy error on its own IRC | 0.28 eV | **0.9 meV** | 2 meV | vs ωB97X-D |
-| Max energy error on the C–F scan frames (off the path) | — | 47 meV | 44 meV | vs ωB97X-D |
-| CH₃Cl r(C–Cl), neutral, never trained on (Å) | 1.793 | **1.779** | 1.840 | 1.781 (ωB97X-D) |
-| Training cost | — | 5 min CPU, one model | 10 min GPU, three models | — |
+| | AIMNet2 | Fine-tuned AIMNet2, complexes only | Fine-tuned AIMNet2 + fragments | Fine-tuned MACE | Reference |
+|---|---|---|---|---|---|
+| Barrier from F⁻···CH₃Cl (kcal/mol) | 9.3 | 3.24 | **3.26** | 3.31 | 3.39 (CCSD(T)) |
+| F⁻···CH₃Cl relative to F⁻ + CH₃Cl (kcal/mol) | −21.7 | −19.1 | **−15.1** | cannot (no charge input) | −15.6 (CCSD(T)) |
+| Walden TS relative to F⁻ + CH₃Cl (kcal/mol) | −12.4 | −15.8 | **−11.8** | cannot | −12.2 (CCSD(T)) |
+| Reaction energy, CH₃F + Cl⁻ (kcal/mol) | −38.7 | −38.0 | **−32.9** | cannot | −31.9 (CCSD(T)) |
+| F⁻···CH₃Cl r(C–F) / r(C–Cl) (Å) | 2.454 / 1.878 | 2.497 / 1.852 | 2.517 / 1.850 | 2.516 / 1.851 | 2.498 / 1.843 (CCSD(T)) |
+| TS imaginary mode (cm⁻¹) | −743 | −446 | −448 | −445 | −450 (ωB97X-D) |
+| Max energy error on its own IRC | 0.28 eV | 0.9 meV | 1.5 meV | 2 meV | vs ωB97X-D |
+| Max energy error on the C–F scan frames (off the path) | — | 47 meV | **32 meV** | 44 meV | vs ωB97X-D |
+| CH₃Cl r(C–Cl), neutral (Å) | 1.793 | 1.779 | **1.781** | 1.840 | 1.781 (ωB97X-D) |
+| Training cost | — | 5 min CPU | 7 min CPU (+47 s DFT) | 10 min GPU, three models | — |
 
 *AIMNet2 and the fine-tunes at their own stationary points. The IRC errors are
 on each model's own path (for AIMNet2, its original IRC).*
@@ -352,9 +358,11 @@ random weights.
 
 ![Learning curve of the AIMNet2 fine-tune](images/aimnet2_finetune_learning_curve.png)
 
-*Validation errors: energy 28 → 1.0 meV, forces 174 → 11 meV/Å. The first Adam
-step overshoots, and there is one transient spike near epoch 660; the best
-epoch was the last, so longer training would still gain a little.*
+*Violet, complexes only: validation energy 28 → 1.0 meV, forces 174 → 11 meV/Å;
+the first Adam step overshoots, one transient spike near epoch 660, and the best
+epoch was the last. Red, with the fragment data (below): 81 → 13 meV and
+158 → 26 meV/Å, on a validation set that also holds two pulled-apart complexes;
+it plateaus near 15 meV, so those long-range structures are the hardest part.*
 
 `evaluate_aimnet2_tuned.py` repeats the MACE checks (ωB97X-D from the shared
 cache; only its own IRC needed new DFT, 31 gradients):
@@ -392,7 +400,8 @@ The tuned AIMNet2 stays within 0.01 Å of ωB97X-D and even improves C–Cl, whe
 the tuned MACE stretched it by 0.06 Å. A molecular foundation model starts from
 chemistry like this; MACE-MP-0 starts from crystals.
 
-**But the separated fragments were not fixed.** Because it keeps the charge
+**But training on complexes alone did not fix the separated fragments** (the
+next section does). Because it keeps the charge
 input, the tuned AIMNet2 can be measured against the separated F⁻ + CH₃Cl, at
 its own geometries (kcal/mol):
 
@@ -407,10 +416,43 @@ energies *within* the complex (the barrier, the complex-to-complex energy) but
 not the energy of the complex *relative to the free fragments*: the complexes
 are still 3.5–4.6 kcal/mol too deep, and the TS, right before by a cancellation of
 errors, is now 3.6 kcal/mol too low. The reaction energy (CH₃F + Cl⁻) is still
-6 kcal/mol too exothermic. Fixing that needs the fragments and the long-range
-approach in the data: isolated F⁻, Cl⁻, CH₃Cl, CH₃F, and complexes pulled apart
-to a few ångström. Those are a handful of cheap ωB97X-D calculations, not tried
-here.
+6 kcal/mol too exothermic.
+
+### Adding the free fragments
+
+`fragment_data.py` labels what the first fine-tune lacked: free F⁻ and Cl⁻,
+CH₃Cl and CH₃F at their ωB97X-D minima with two rattled copies each, and the
+two complexes pulled apart along the C–X axis (F⁻ to 3.0–6.5 Å, Cl⁻ to
+3.6–6.5 Å). 17 ωB97X-D calculations, 47 s. `finetune_aimnet2.py --fragments`
+retrains from the original AIMNet2 on all 110 structures (fragments weighted
+3×, per-element energy offsets instead of one shift; 7 minutes), and
+`evaluate_aimnet2_tuned.py --fragments` repeats every check:
+
+| Relative to F⁻ + CH₃Cl (kcal/mol) | F⁻···CH₃Cl | Walden TS | FCH₃···Cl⁻ | CH₃F + Cl⁻ |
+|---|---|---|---|---|
+| CCSD(T)/CBS focal point | −15.6 | −12.2 | −41.6 | −31.9 |
+| ωB97X-D/def2-TZVPD (the target) | −15.0 | −12.0 | −42.1 | −32.9 |
+| AIMNet2 | −21.7 | −12.4 | −46.6 | −38.7 |
+| Fine-tuned AIMNet2, complexes only | −19.1 | −15.8 | −46.2 | −38.0 |
+| **Fine-tuned AIMNet2 + fragments** | **−15.1** | **−11.8** | **−42.2** | **−32.9** |
+
+It now reproduces its target at every point (within 0.2 kcal/mol) and the
+literature within 1 kcal/mol, and it lost nothing elsewhere: barrier
+3.26 kcal/mol, TS mode −448 cm⁻¹, TS at 2.049 / 2.121 Å, 1.5 meV on its own
+IRC, 2.7 meV on the MACE committee's IRC, and the neutral molecules at
+ωB97X-D's bond lengths (CH₃F 1.380, CH₃Cl 1.781, CH₂F₂ 1.354 Å). Off the path
+it is the best of the three fine-tunes: 32 meV on the scan frames, against 44
+(MACE) and 47 meV (complexes only), presumably because the pulled-apart
+structures cover more of the space the scan visits.
+
+![Fine-tuned AIMNet2 + fragments vs ωB97X-D along its own IRC](images/aimnet2_fragments_vs_wb97xd_own_irc_energy.png)
+
+![Fine-tuned AIMNet2 + fragments vs ωB97X-D on the scan frames](images/aimnet2_fragments_vs_wb97xd_scan_energy.png)
+
+The model is `aimnet2_wb97m_d3_0_SN2-F-CH3Cl_wB97XD-def2TZVPD_fragments.pt`
+in `D:\MLIP_Work_Folder\cache\aimnet\finetuned\` (with its model card), loaded
+by the AIMNet2 backend as `aimnet_model`. It is still a specialist for this
+reaction; the neutral molecules above are the only other chemistry checked.
 
 ## Reproduce
 
