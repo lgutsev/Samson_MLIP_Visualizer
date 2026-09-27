@@ -5,14 +5,12 @@ and the package on the path. Paths default to the run documented in the
 README; ``SN2_WORK`` overrides the work folder.
 """
 
-import hashlib
-import json
 import os
 from pathlib import Path
 
-import numpy as np
-from ase.calculators.calculator import Calculator, all_changes
 from ase.io import read
+
+from samson_mlip_visualizer.reference_cache import CachedReference as LibraryCachedReference
 
 WORK = Path(os.environ.get("SN2_WORK", r"D:\MLIP_Work_Folder\sn2_F_CH3Cl"))
 MACE_DIR = Path(r"D:\MLIP_Work_Folder\cache\mace")
@@ -54,60 +52,12 @@ def psi4_reference(charge=-1):
                           threads=8, memory_mb=1900)
 
 
-def geometry_key(numbers, positions, charge):
-    """Identifies a structure to 1e-5 Å (rounding noise in files stays below that)."""
-    rounded = np.round(np.asarray(positions, float), 5) + 0.0  # + 0.0 turns -0.0 into 0.0
-    data = f"{charge}|{list(map(int, numbers))}|".encode() + rounded.tobytes()
-    return hashlib.sha1(data).hexdigest()
-
-
-class CachedReference(Calculator):
-    """ωB97X-D (or any calculator from ``factory``), each structure computed once.
-
-    Results are kept in a JSON file keyed by :func:`geometry_key` and written
-    after every new calculation, so the same frame evaluated for several models,
-    or by an interrupted run started again, costs nothing the second time.
-    """
-
-    implemented_properties = ["energy", "free_energy", "forces"]
+class CachedReference(LibraryCachedReference):
+    """The library's :class:`~samson_mlip_visualizer.reference_cache.CachedReference`,
+    defaulting to ωB97X-D/def2-TZVPD at charge -1 for these scripts."""
 
     def __init__(self, cache_file, factory=psi4_reference, charge=-1, **kwargs):
-        super().__init__(**kwargs)
-        self.cache_file = Path(cache_file)
-        self.factory, self.charge = factory, charge
-        self.cache = json.loads(self.cache_file.read_text()) if self.cache_file.exists() else {}
-        self.computed = 0
-        self._inner = None
-
-    def add(self, numbers, positions, energy, forces):
-        key = geometry_key(numbers, positions, self.charge)
-        self.cache[key] = {"energy_ev": float(energy), "forces": np.asarray(forces).tolist()}
-
-    def save(self):
-        # Merge with the file first: another script may have added entries since.
-        if self.cache_file.exists():
-            self.cache = {**json.loads(self.cache_file.read_text()), **self.cache}
-        temporary = self.cache_file.with_suffix(".tmp")
-        temporary.write_text(json.dumps(self.cache))
-        temporary.replace(self.cache_file)
-
-    def calculate(self, atoms=None, properties=("energy",), system_changes=all_changes):
-        super().calculate(atoms, properties, system_changes)
-        key = geometry_key(self.atoms.numbers, self.atoms.positions, self.charge)
-        if key not in self.cache:
-            if self._inner is None:
-                self._inner = self.factory(self.charge)
-            probe = self.atoms.copy()
-            probe.calc = self._inner
-            self.add(probe.numbers, probe.positions, probe.get_potential_energy(),
-                     probe.get_forces())
-            self.computed += 1
-            self.save()
-        entry = self.cache[key]
-        energy = entry["energy_ev"]
-        self.results = {"energy": energy, "free_energy": energy,
-                        "forces": np.array(entry["forces"])}
-
+        super().__init__(cache_file, factory, charge=charge, **kwargs)
 
 def reference_cache():
     """The shared ωB97X-D cache, seeded with the fine-tune's training labels
