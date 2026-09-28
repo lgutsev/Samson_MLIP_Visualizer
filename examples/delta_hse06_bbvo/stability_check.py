@@ -72,7 +72,8 @@ frames_path, manifest_path = write_selection(WORK / "_stability_frames", frames,
 write_vasp_package(target / "singlepoints", frames_path, manifest_path, kspacing=KSPACING,
                    incar_extra={"pbe_u": {"NCORE": 4, "KPAR": 4},
                                 "hse06": {"NCORE": 4, "KPAR": 4}},
-                   slurm=VaspSlurmSettings(tasks_per_node=64, time="24:00:00",
+                   slurm=VaspSlurmSettings(tasks_per_node=64, modules=("vasp6/6.5.1-cpu",),
+                                           run="srun vasp_std", time="24:00:00",
                                            max_parallel=None))
 
 # the relaxation: rattled cubic cell, symmetry off, ions then cell
@@ -101,17 +102,17 @@ for stage, isif in (("1_ions", 2), ("2_cell", 3)):
 #SBATCH --output=relax_%j.out
 # Written by samson-mlip-visualizer. Replace the placeholders before sbatch.
 set -euo pipefail
-module load <VASP_MODULE>
+module load vasp6/6.5.1-cpu
 cd "$SLURM_SUBMIT_DIR"
 POTCARS="<POTPAW_PBE_DIR>"
 : > POTCAR
 for name in $(cat POTCAR.names); do cat "$POTCARS/$name/POTCAR" >> POTCAR; done
 cp INCAR.1_ions INCAR
-<VASP_COMMAND> > vasp_1_ions.out 2>&1
+srun vasp_std > vasp_1_ions.out 2>&1
 cp OUTCAR OUTCAR.1_ions; cp OSZICAR OSZICAR.1_ions; cp CONTCAR CONTCAR.1_ions
 cp CONTCAR POSCAR
 cp INCAR.2_cell INCAR
-<VASP_COMMAND> > vasp_2_cell.out 2>&1
+srun vasp_std > vasp_2_cell.out 2>&1
 cp OUTCAR OUTCAR.2_cell; cp OSZICAR OSZICAR.2_cell; cp CONTCAR CONTCAR.2_cell
 """, encoding="utf-8", newline="\n")
 fixed = 1000 * (fixed_cell.info["mace_mp0_energy_eV"] - e0) / 4

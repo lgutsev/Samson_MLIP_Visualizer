@@ -31,12 +31,13 @@ from samson_mlip_visualizer.finetune import Selection, write_selection
 from samson_mlip_visualizer.labeling import SlurmSettings, write_label_package
 
 LEVEL = "PBE0 def2-TZVP def2/J RIJCOSX"
-# LONI QB4: ORCA 6.1.1 from the project folder with QB4's OpenMPI; Gaussian from its
+# LONI QB4: ORCA 6.1.1 and OpenMPI 4.1.8 from the project folder; Gaussian from its
 # module; a conda env with mace-torch 0.3.16 for the GPU jobs (see the README).
-ORCA_QB4 = dict(modules=("openmpi/4.1.6/intel-2021.5.0",),
-                setup=("ORCA_DIR=/ddnB/project/ramu/lgutsev/Orca_6_1_1",
-                       'export PATH="$ORCA_DIR:$PATH"',
-                       'export LD_LIBRARY_PATH="$ORCA_DIR/lib:${LD_LIBRARY_PATH:-}"'))
+ORCA_QB4 = dict(modules=(),  # the user's OpenMPI 4.1.8, the one ORCA 6.1.1 is built with
+                setup=("OMPI_DIR=/ddnB/project/ramu/lgutsev/openmpi-4.1.8",
+                       "ORCA_DIR=/ddnB/project/ramu/lgutsev/Orca_6_1_1",
+                       'export PATH="$ORCA_DIR:$OMPI_DIR/bin:$PATH"',
+                       'export LD_LIBRARY_PATH="$ORCA_DIR/lib:$OMPI_DIR/lib:${LD_LIBRARY_PATH:-}"'))
 SMOKE_COPY = r"D:\MLIP_Work_Folder\hpc_smoke_tests\06_orca_ni_porphine"
 which = sys.argv[1:] or ["smoke", "campaign"]
 
