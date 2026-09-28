@@ -101,7 +101,8 @@ specs = [
                  **common),
 ]
 if PACKAGE:
-    slurm = GpuSlurmSettings(time="01:00:00" if SMOKE else "12:00:00", memory_gb=32)
+    slurm = GpuSlurmSettings(partition="gpu2",  # LONI's GPU partition
+                             time="01:00:00" if SMOKE else "12:00:00", memory_gb=32)
     for spec in specs:
         if SMOKE:
             spec = TrainingSpec.from_json({**spec.to_json(), "epochs": 3, "seeds": (1,)})

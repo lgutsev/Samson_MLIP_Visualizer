@@ -61,7 +61,9 @@ def choose(name, frames):
 
 
 # One node per frame. HSE06 on 40 atoms: allow a long wall time; KPAR splits k-points.
-slurm = {name: VaspSlurmSettings(time="12:00:00" if "smoke" in name else "48:00:00"
+# QB4: 64 cores per node.
+slurm = {name: VaspSlurmSettings(tasks_per_node=64,
+                                 time="12:00:00" if "smoke" in name else "48:00:00"
                                  if name == "dilute" else "24:00:00",
                                  max_parallel=None if "smoke" in name else 10)
          for name in sources}

@@ -147,7 +147,8 @@ if args.package:
                  for s in specs if s.name in keep]
     root = args.package
     root.mkdir(parents=True, exist_ok=True)
-    slurm = GpuSlurmSettings(time="02:00:00" if args.smoke else "06:00:00", memory_gb=16)
+    slurm = GpuSlurmSettings(partition="gpu2",  # LONI's GPU partition
+                             time="02:00:00" if args.smoke else "06:00:00", memory_gb=16)
     for spec in specs:
         write_training_package(spec, root / spec.name, slurm=slurm)
     names = [spec.name for spec in specs]

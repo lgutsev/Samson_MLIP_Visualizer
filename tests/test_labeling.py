@@ -267,3 +267,16 @@ def test_orca_energy_only_package_for_dlpno_ccsdt(tmp_path):
     with pytest.raises(ValueError, match="energy"):
         write_label_package(tmp_path / "g", frames_path, manifest_path, code="gaussian",
                             job="energy")
+
+
+def test_several_frames_per_array_task_for_whole_node_clusters(tmp_path):
+    """QB4-style: four 16-core ORCA jobs share one 64-core node."""
+    frames_path, manifest_path = selection(tmp_path, count=3)
+    package = write_label_package(
+        tmp_path / "packed", frames_path, manifest_path, code="orca",
+        slurm=SlurmSettings(cpus=16, memory_gb=50, jobs_per_task=4, max_parallel=None))
+    script = (package / "run_orca.slurm").read_text()
+    assert "#SBATCH --array=0-0" in script  # 3 frames fit one task
+    assert "--cpus-per-task=64" in script and "--mem=200G" in script
+    assert "index=$((SLURM_ARRAY_TASK_ID * 4 + k))" in script and "wait" in script
+    assert "nprocs 16" in (package / "inputs" / "frame_0002.inp").read_text()

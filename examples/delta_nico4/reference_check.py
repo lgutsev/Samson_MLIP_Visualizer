@@ -54,8 +54,10 @@ for name in sys.argv[1:] or ["smoke", "campaign"]:
         sys.exit(f"{target} exists; remove it to write the package again")
     write_label_package(target, frames_path, manifest_path, code="orca", level=LEVEL,
                         job="energy",
-                        slurm=SlurmSettings(cpus=16, memory_gb=64, time="06:00:00",
-                                            max_parallel=None if name == "smoke" else 15))
+                        # QB4: whole 64-core nodes, four 16-core frames each
+                        slurm=SlurmSettings(cpus=16, memory_gb=48, time="06:00:00",
+                                            max_parallel=None if name == "smoke" else 8,
+                                            jobs_per_task=4))
     print(f"{name}: {len(chosen)} frames -> {target}")
     if name == "smoke":
         if shutil.os.path.exists(SMOKE_COPY):

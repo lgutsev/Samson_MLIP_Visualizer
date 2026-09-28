@@ -72,7 +72,8 @@ frames_path, manifest_path = write_selection(WORK / "_stability_frames", frames,
 write_vasp_package(target / "singlepoints", frames_path, manifest_path, kspacing=KSPACING,
                    incar_extra={"pbe_u": {"NCORE": 4, "KPAR": 4},
                                 "hse06": {"NCORE": 4, "KPAR": 4}},
-                   slurm=VaspSlurmSettings(time="24:00:00", max_parallel=None))
+                   slurm=VaspSlurmSettings(tasks_per_node=64, time="24:00:00",
+                                           max_parallel=None))
 
 # the relaxation: rattled cubic cell, symmetry off, ions then cell
 relax = target / "relax"
@@ -95,7 +96,7 @@ for stage, isif in (("1_ions", 2), ("2_cell", 3)):
 #SBATCH --account=<ACCOUNT>
 #SBATCH --partition=<PARTITION>
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=48
+#SBATCH --ntasks-per-node=64
 #SBATCH --time=48:00:00
 #SBATCH --output=relax_%j.out
 # Written by samson-mlip-visualizer. Replace the placeholders before sbatch.

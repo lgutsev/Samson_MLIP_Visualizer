@@ -54,10 +54,11 @@ class SlurmSettings:
     account: str = "<ACCOUNT>"
     partition: str = "<PARTITION>"
     modules: tuple[str, ...] = ("<MODULE>",)
-    cpus: int = 8
-    memory_gb: int = 16
+    cpus: int = 8  # per frame
+    memory_gb: int = 16  # per frame
     time: str = "02:00:00"
     max_parallel: int | None = 20  # array throttle (%N); None for no limit
+    jobs_per_task: int = 1  # frames run side by side in one array task (whole-node clusters)
 
 
 def frame_name(index: int) -> str:
@@ -65,45 +66,68 @@ def frame_name(index: int) -> str:
 
 
 def _script(code: str, count: int, slurm: SlurmSettings, job: str = "force") -> str:
+    """The array script. With ``jobs_per_task`` > 1, each array task runs that many
+    frames side by side (``cpus`` cores and ``memory_gb`` each), for clusters that
+    hand out whole nodes: e.g. four 16-core ORCA jobs on a 64-core node."""
+    jobs = max(1, slurm.jobs_per_task)
+    tasks = -(-count // jobs)
     throttle = f"%{slurm.max_parallel}" if slurm.max_parallel else ""
     lines = [
         "#!/bin/bash",
         f"#SBATCH --job-name=label-{code}",
         f"#SBATCH --account={slurm.account}",
         f"#SBATCH --partition={slurm.partition}",
-        f"#SBATCH --array=0-{count - 1}{throttle}",
+        f"#SBATCH --array=0-{tasks - 1}{throttle}",
         "#SBATCH --nodes=1",
         "#SBATCH --ntasks=1",
-        f"#SBATCH --cpus-per-task={slurm.cpus}",
-        f"#SBATCH --mem={slurm.memory_gb}G",
+        f"#SBATCH --cpus-per-task={slurm.cpus * jobs}",
+        f"#SBATCH --mem={slurm.memory_gb * jobs}G",
         f"#SBATCH --time={slurm.time}",
         "#SBATCH --output=logs/%x_%A_%a.out",
         "# Written by samson-mlip-visualizer. Replace every placeholder in angle brackets",
         "# (see README.md) before sbatch.",
+        *([f"# Each array task runs {jobs} frames at once, {slurm.cpus} cores each."]
+          if jobs > 1 else []),
         "set -euo pipefail",
         *[f"module load {module}" for module in slurm.modules],
         'cd "$SLURM_SUBMIT_DIR"',
-        'frame=$(printf "frame_%04d" "$SLURM_ARRAY_TASK_ID")',
         "mkdir -p outputs",
+        "",
+        "run_frame() {",
+        '  local frame=$1',
     ]
     if code == "gaussian":
         lines += [
-            'export GAUSS_SCRDIR="${TMPDIR:-/tmp}/g16_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}"',
-            'mkdir -p "$GAUSS_SCRDIR"',
-            'g16 < "inputs/$frame.gjf" > "outputs/$frame.log"',
-            'rm -rf "$GAUSS_SCRDIR"',
+            '  local scratch="${TMPDIR:-/tmp}/g16_${SLURM_JOB_ID}_${frame}"',
+            '  mkdir -p "$scratch"',
+            '  GAUSS_SCRDIR="$scratch" g16 < "inputs/$frame.gjf" > "outputs/$frame.log"',
+            '  rm -rf "$scratch"',
         ]
     else:
         lines += [
-            "# ORCA must be called with its full path for parallel runs.",
-            'ORCA_BIN=$(command -v orca)',
-            'work="${TMPDIR:-/tmp}/orca_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}"',
-            'mkdir -p "$work"',
-            'cp "inputs/$frame.inp" "$work/"',
-            '(cd "$work" && "$ORCA_BIN" "$frame.inp" > "$frame.out")',
-            'cp "$work/$frame.out" outputs/',
-            *(['cp "$work/$frame.engrad" outputs/'] if job == "force" else []),
-            'rm -rf "$work"',
+            "  # ORCA must be called with its full path for parallel runs.",
+            '  local work="${TMPDIR:-/tmp}/orca_${SLURM_JOB_ID}_${frame}"',
+            '  mkdir -p "$work"',
+            '  cp "inputs/$frame.inp" "$work/"',
+            '  (cd "$work" && "$ORCA_BIN" "$frame.inp" > "$frame.out")',
+            '  cp "$work/$frame.out" outputs/',
+            *(['  cp "$work/$frame.engrad" outputs/'] if job == "force" else []),
+            '  rm -rf "$work"',
+        ]
+    lines += ["}", ""]
+    if code == "orca":
+        lines.append('ORCA_BIN=$(command -v orca)')
+    if jobs == 1:
+        lines.append('run_frame "$(printf "frame_%04d" "$SLURM_ARRAY_TASK_ID")"')
+    else:
+        lines += [
+            f"for k in $(seq 0 {jobs - 1}); do",
+            f"  index=$((SLURM_ARRAY_TASK_ID * {jobs} + k))",
+            f'  if [ "$index" -lt {count} ]; then',
+            '    run_frame "$(printf "frame_%04d" "$index")" &',
+            "  fi",
+            "done",
+            "wait",
         ]
     return "\n".join(lines) + "\n"
 

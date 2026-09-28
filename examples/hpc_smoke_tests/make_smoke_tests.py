@@ -53,13 +53,16 @@ def main() -> None:
         OUT / "_frames", frames, chosen, source="HCN <-> HNC IRC (MACE-MP-0 small)",
         model="MACE-MP-0 small", notes={"names": list(GEOMETRIES)},
     )
+    # LONI: the 'single' partition takes an 8-core Gaussian job; GPU jobs go to 'gpu2'.
     cpu = SlurmSettings(cpus=8, memory_gb=16, time="00:30:00", max_parallel=None)
+    gaussian_cpu = SlurmSettings(partition="single", cpus=8, memory_gb=16, time="00:30:00",
+                                 max_parallel=None)
     write_label_package(OUT / "01_label_gaussian", frames_path, manifest_path, code="gaussian",
-                        slurm=cpu)
+                        slurm=gaussian_cpu)
     write_label_package(OUT / "02_label_orca", frames_path, manifest_path, code="orca", slurm=cpu)
     reference_psi4(frames)
 
-    gpu = GpuSlurmSettings(time="00:30:00")
+    gpu = GpuSlurmSettings(partition="gpu2", time="00:30:00")
     card = {"reference": "PBE/def2-TZVP (Psi4)", "scope": "HPC smoke test only; not a model"}
     write_training_package(
         TrainingSpec(name="smoke_plain", foundation=str(FOUNDATION), train_file=str(HCN_DATA),

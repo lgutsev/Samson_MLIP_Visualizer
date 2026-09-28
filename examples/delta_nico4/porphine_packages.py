@@ -84,8 +84,11 @@ rattled = [Atoms(minimum.get_chemical_symbols(),
 frames = {"smoke": [plain(minimum), rattled[0]] + md(600, 1, seed=1)}
 if "campaign" in which:
     frames["campaign"] = [plain(minimum)] + rattled + md(300, 70, seed=2) + md(600, 69, seed=3)
-cpu = {"smoke": SlurmSettings(cpus=16, memory_gb=32, time="04:00:00", max_parallel=None),
-       "campaign": SlurmSettings(cpus=16, memory_gb=32, time="04:00:00", max_parallel=20)}
+# QB4 hands out whole 64-core nodes: four 16-core frames per node.
+cpu = {"smoke": SlurmSettings(cpus=16, memory_gb=32, time="04:00:00", max_parallel=None,
+                              jobs_per_task=4),
+       "campaign": SlurmSettings(cpus=16, memory_gb=32, time="04:00:00", max_parallel=10,
+                                 jobs_per_task=4)}
 for name in which:
     chosen = Selection()
     for index in range(len(frames[name])):
