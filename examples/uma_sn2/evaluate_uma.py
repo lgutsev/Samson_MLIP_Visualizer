@@ -13,7 +13,8 @@ when done:
 2. ``same_frame``: against ωB97X-D on frames that are already labeled (the
    fine-tuned MACE IRC and the r(C–F) scan), so no new DFT runs.
 3. ``asymptotes``: the stationary points relative to separated F⁻ + CH₃Cl, each
-   fragment relaxed at its own charge.
+   fragment at its own charge. The free ions come from UMA's isolated-atom table,
+   or, without it, from ``fragment_energies.py`` (ωB97M-V/def2-TZVPD, Psi4).
 4. ``forgetting``: C–F and C–Cl bonds of neutral CH₃F, CH₃Cl, CH₂F₂.
 
 UMA's omol task was trained on ωB97M-V/def2-TZVPD (OMol25), so the closest
@@ -138,14 +139,39 @@ def relaxed_energy(atoms, calc, fmax=0.01):
     return float(atoms.get_potential_energy()), atoms
 
 
+def ion_energies():
+    """F⁻ and Cl⁻ from ``fragment_energies.py``, if it ran: UMA's own isolated-atom
+    table taken from a checkpoint that carries it, else ωB97M-V/def2-TZVPD (Psi4)."""
+    path = WORK / "uma" / "fragments_wb97mv.json"
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text())
+    table, ions = data.get("table", {}), data.get("ions", {})
+    if {"F-", "Cl-"} <= set(table):
+        return {**table, "source": f"UMA's isolated-atom table (from {table['from']})"}
+    return {**ions, "source": data["level"]} if {"F-", "Cl-"} <= set(ions) else None
+
+
 def section_asymptotes(ts_section):
-    """Relative to separated F⁻ + CH₃Cl, kcal/mol, UMA at its own geometries."""
+    """Relative to separated F⁻ + CH₃Cl, kcal/mol, UMA at its own geometries.
+
+    A free F⁻ or Cl⁻ is a single atom, which UMA takes from its isolated-atom table.
+    Without the table the ions come from ``fragment_energies.py`` (ωB97M-V/def2-TZVPD
+    with Psi4, UMA's training level), and ``ion_source`` says so."""
     anion, neutral = uma(-1), uma(0)
     fragments = {}
     for name in ("CH3Cl", "CH3F"):
         fragments[name], _ = relaxed_energy(build(MOLECULES[name]), neutral)
-    for name, symbol in (("F-", "F"), ("Cl-", "Cl")):
-        fragments[name], _ = relaxed_energy(Atoms(symbol), anion)
+    source = "UMA's isolated-atom table"
+    try:
+        for name, symbol in (("F-", "F"), ("Cl-", "Cl")):
+            fragments[name], _ = relaxed_energy(Atoms(symbol), anion)
+    except CalculationFailed as exc:
+        computed = ion_energies()
+        if "atom_refs" not in str(exc) or computed is None:
+            raise
+        fragments["F-"], fragments["Cl-"] = computed["F-"], computed["Cl-"]
+        source = computed["source"]
     ends = ts_section["irc_ends"].values()
     reactant = max(ends, key=lambda e: e["r_CF"])["energy_ev"]
     product = min(ends, key=lambda e: e["r_CF"])["energy_ev"]
@@ -158,6 +184,7 @@ def section_asymptotes(ts_section):
         "product_complex": (product - zero) * KCAL,
         "products": (fragments["CH3F"] + fragments["Cl-"] - zero) * KCAL,
         "fragments_ev": fragments,
+        "ion_source": source,
     }
 
 
@@ -192,9 +219,9 @@ def main():
         except CalculationFailed as exc:
             if "atom_refs" not in str(exc):
                 raise
-            # A free F⁻ or Cl⁻ is a single atom, which UMA takes from its reference table.
-            print(f"asymptotes skipped: put iso_atom_elem_refs.yaml (facebook/UMA, "
-                  f"references/) next to {CHECKPOINT.name} and rerun")
+            print(f"asymptotes skipped: run fragment_energies.py, or put "
+                  f"iso_atom_elem_refs.yaml (facebook/UMA, references/) next to "
+                  f"{CHECKPOINT.name}, and rerun")
     if "forgetting" not in results:
         results["forgetting"] = section_forgetting()
         save()

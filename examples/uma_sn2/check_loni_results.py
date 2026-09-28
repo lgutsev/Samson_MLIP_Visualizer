@@ -107,6 +107,19 @@ def main():
                   f"{row['energy_rmse_meV']:.1f} meV, force RMSE "
                   f"{row['force_rmse_ev_per_A']:.3f} eV/Å")
         relative = results.get("relative_to_reactants_kcal")
+        table = json.loads((WORK / "uma" / "fragments_wb97mv.json").read_text()).get(
+            "table", {}) if (WORK / "uma" / "fragments_wb97mv.json").exists() else {}
+        if not relative and {"F-", "Cl-"} <= set(table):
+            # No references file on the cluster: UMA's table ions from the desktop run.
+            fragments = results["fragments_ev"]
+            energy = {name: point["energy_ev"] for name, point in results["stationary"].items()}
+            zero = fragments["CH3Cl"] + table["F-"]
+            relative = {"reactant_complex": (energy["reactant_complex"] - zero) * KCAL,
+                        "ts": (energy["ts"] - zero) * KCAL,
+                        "product_complex": (energy["product_complex"] - zero) * KCAL,
+                        "products": (fragments["CH3F"] + table["Cl-"] - zero) * KCAL}
+            results["errors"] = [e for e in results.get("errors", []) if not e.startswith(
+                ("F-:", "Cl-:"))] + [f"ions from UMA's table via {table['from']} (desktop)"]
         if relative:
             print("   relative to F⁻ + CH₃Cl (kcal/mol; CCSD(T) −15.6, −12.2, −41.6, −31.9): "
                   + ", ".join(f"{k} {v:.1f}" for k, v in relative.items()))

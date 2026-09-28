@@ -38,12 +38,14 @@ saw none of them.*
 - **Nothing is forgotten.** Neutral CH₃F, CH₃Cl and CH₂F₂ come out within
   0.007 Å of ωB97X-D (C–F 1.387, C–Cl 1.782 Å). By contrast, the fine-tuned MACE
   lengthened C–Cl by 0.06 Å.
-- **Not yet done:**
-  - *Energies relative to separated F⁻ + CH₃Cl.* A free ion is a single atom,
-    which UMA takes from a references file that has not been downloaded yet (see
-    [Setup](#setup)).
-  - *The large model, uma-m-1p1.* It is packaged for LONI as smoke test 12 (see
-    [On LONI](#on-loni-the-large-model)).
+- **The energies relative to the separated reactants are right too.** uma-s-1p2
+  puts the complex, TS, product complex and products at −15.3, −11.8, −41.8 and
+  −32.6 kcal/mol below F⁻ + CH₃Cl. The CCSD(T) values are −15.6, −12.2, −41.6 and
+  −31.9, so every one is within 0.7 kcal/mol. Stock AIMNet2 overbinds the complex
+  by 6 kcal/mol. A free ion is a single atom, whose energy UMA takes from its
+  isolated-atom table ([Free ions](#free-ions-single-atoms)).
+- **Not yet done:** the large model, uma-m-1p1. It is packaged for LONI as smoke
+  test 12 (see [On LONI](#on-loni-the-large-model)).
 
 ## Results
 
@@ -60,13 +62,17 @@ saw none of them.*
 | r(C–F) scan, 15 frames: max \|ΔE\| / RMSE (meV) | 60 / 22 | 30 / 12 | 32 / 11 | — | vs ωB97X-D |
 | r(C–F) scan: force RMSE / worst atom (eV/Å) | 0.055 / 0.37 | 0.033 / 0.25 | 0.035 / 0.26 | — | vs ωB97X-D |
 | CH₃F C–F / CH₃Cl C–Cl, neutral (Å) | 1.387 / 1.782 | 1.387 / 1.781 | 1.380 / 1.781 | 1.384 / 1.793 | 1.380 / 1.781 (ωB97X-D) |
-| Relative to F⁻ + CH₃Cl | needs the references file | same | −15.1 / −11.8 / −32.9 (complex / TS / products) | −21.7 / −12.4 / −38.7 | −15.6 / −12.2 / −31.9 (CCSD(T)) |
+| Relative to F⁻ + CH₃Cl, complex / TS / product complex / products (kcal/mol) | −14.9 / −11.4 / −41.9 / −32.6 | **−15.3 / −11.8 / −41.8 / −32.6** | −15.1 / −11.8 / −42.2 / −32.9 | −21.7 / −12.4 / −46.6 / −38.7 | −15.6 / −12.2 / −41.6 / −31.9 (CCSD(T)); −15.5 / −12.9 / −41.9 / −32.3 (ωB97M-V/def2-TZVPPD) |
 | Cost | none: stock; 54 ms per force call | none | 7 min CPU training + 93 DFT labels | none | — |
 
 The UMA and fine-tuned AIMNet2 geometries are each model's own stationary
 points:
 - **TS:** P-RFO with the exact Hessian, from the fine-tuned AIMNet2 TS.
 - **Complexes:** the ends of the model's own IRC, relaxed.
+
+For the energies relative to F⁻ + CH₃Cl, every fragment is at its own charge,
+with CH₃Cl and CH₃F relaxed with the model. The free F⁻ and Cl⁻ come from UMA's
+isolated-atom table for both UMA columns (see below).
 
 The AIMNet2 columns come from [`../sn2_f_ch3cl`](../sn2_f_ch3cl/README.md); stock
 AIMNet2's same-frame numbers are its errors on the committee's IRC there. The
@@ -108,12 +114,43 @@ than SAMSON's Python, so it runs in its own environment behind a worker process:
    | `uma-s-1p2.pt` | 2.2 GB |
    | `uma-s-1p2p1.pt` | 2.2 GB |
    | `uma-m-1p1.pt` | 10.7 GB |
-3. **For single atoms (a free F⁻),** also download
-   `references/iso_atom_elem_refs.yaml` and put it next to the checkpoints (or in
-   a `references` folder there). The backend finds it there.
+3. **Single atoms** need UMA's isolated-atom table (see
+   [Free ions](#free-ions-single-atoms)).
 4. **Environment.** fairchem-core (2.23) is installed in
    `D:\MLIP_Work_Folder\envs\mlip`, the same environment as aimnet; sella is only
    needed for the LONI script.
+
+### Free ions (single atoms)
+
+A free F⁻ or Cl⁻ is a single atom, with no neighbours for the network to see, so
+fairchem takes its energy from a table of isolated-atom energies. These are
+ωB97M-V/def2-TZVPD values from OMol25, computed with ORCA, and the same for every
+UMA model.
+- **uma-s-1p2** carries the table inside the checkpoint.
+- **uma-s-1p1** doesn't. For it the backend looks for
+  `references/iso_atom_elem_refs.yaml` (from the UMA repository) next to the
+  checkpoint, or in a `references` folder there.
+
+That file isn't needed here. [`fragment_energies.py`](fragment_energies.py) reads
+the two ions from uma-s-1p2's table and checks them on the laptop with Psi4 at the
+same level:
+
+| | UMA's table | Psi4 ωB97M-V/def2-TZVPD | table − Psi4 |
+|---|---|---|---|
+| F⁻ | −2717.6087 eV | −2717.5992 eV | −9.4 meV |
+| Cl⁻ | −12524.3131 eV | −12524.2916 eV | −21.5 meV |
+| CH₃Cl at UMA's geometry, UMA − Psi4 | — | — | −1.5 (s-1p1), −2.3 meV (s-1p2) |
+| CH₃F at UMA's geometry, UMA − Psi4 | — | — | −1.0 (s-1p1), −1.3 meV (s-1p2) |
+
+- **The energy scales match.** UMA's absolute energies agree with Psi4
+  ωB97M-V/def2-TZVPD to 1–2 meV on the neutral molecules.
+- **The bare anions differ between the two codes** by 9 and 22 meV (0.2 and
+  0.5 kcal/mol). I haven't pinned down why; it may be how ORCA and Psi4 treat the
+  diffuse functions of an anion.
+- **The table is used** because it is what UMA itself uses; Psi4 is the
+  cross-check. With the Psi4 ions instead, uma-s-1p1's four energies would be
+  −15.1, −11.6, −42.1 and −32.3 kcal/mol, about 0.2 kcal/mol different.
+- **Cost:** the Psi4 check is six small DFT jobs, 18 minutes on the laptop.
 
 ## Reproducing
 
@@ -128,17 +165,23 @@ python examples/uma_sn2/evaluate_uma.py D:\MLIP_Downloaded_Models\UMA\uma-s-1p2.
 ```
 
 ```bash
+python examples/uma_sn2/fragment_energies.py
+```
+
+```bash
 python examples/uma_sn2/plot_uma.py
 ```
 
 - **Output:** each evaluation writes
   `D:\MLIP_Work_Folder\sn2_F_CH3Cl\uma\<checkpoint>\evaluation.json`, plus its
   IRC and the per-path CSVs and plots.
-- **Resuming:** sections that are done are skipped. The one needing the
-  references file is skipped with a message until the file is there; rerun to
-  fill it in.
+- **Resuming:** sections that are done are skipped. For a checkpoint without
+  the isolated-atom table, the fragment section waits for `fragment_energies.py`
+  (it is skipped with a message until then); rerun to fill it in.
 - **Time:** about 1 minute (s-1p1) and 3 minutes (s-1p2).
-- **DFT:** none is run. The script stops if a frame lacks a cached ωB97X-D label.
+- **DFT:** `evaluate_uma.py` runs none, and stops if a frame lacks a cached
+  ωB97X-D label. `fragment_energies.py` runs the six Psi4 jobs above, once; they
+  are cached.
 
 ## On LONI: the large model
 
@@ -174,6 +217,7 @@ python examples/uma_sn2/check_loni_results.py
 | File | Role |
 |---|---|
 | [`evaluate_uma.py`](evaluate_uma.py) | its TS, frequencies and IRC; errors on the labeled frames; fragments; neutral molecules |
+| [`fragment_energies.py`](fragment_energies.py) | free F⁻ and Cl⁻ from UMA's table, checked with Psi4 ωB97M-V/def2-TZVPD |
 | [`plot_uma.py`](plot_uma.py) | the figure above |
 | [`make_loni_package.py`](make_loni_package.py) | writes smoke test 12 for LONI |
 | [`loni/run_uma_sn2.py`](loni/run_uma_sn2.py) | the standalone cluster script (copied into the package) |

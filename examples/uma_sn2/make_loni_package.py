@@ -99,9 +99,12 @@ refinement with a finite-difference frequency check, and the fragments.
    cluster holding `uma-s-1p1.pt` and `uma-m-1p1.pt` (you already copied UMA
    there). The rest is set for QB4: account `loni_perovsk27`, partition `gpu2`,
    conda from `/home/lgutsev/miniforge3`, and the environment above.
-3. **The fragments need `iso_atom_elem_refs.yaml`** (facebook/UMA, `references/`)
-   in `<UMA_DIR>` or in `<UMA_DIR>/references/`. Without it, F⁻ and Cl⁻ can't be
-   evaluated. The rest still runs, and `results.json` lists the error.
+3. **Optional: `iso_atom_elem_refs.yaml`** (facebook/UMA, `references/`) in
+   `<UMA_DIR>` or `<UMA_DIR>/references/`. uma-m-1p1 may not carry UMA's
+   isolated-atom table, and without it the job can't evaluate a free F⁻ or Cl⁻ and
+   `results.json` lists the error. That doesn't matter: the desktop check fills
+   in those two ions from UMA's table, taken from uma-s-1p2
+   (`examples/uma_sn2/fragment_energies.py`).
 
 Then `sbatch run_uma.slurm`.
 
