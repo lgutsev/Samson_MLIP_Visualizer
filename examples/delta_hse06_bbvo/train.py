@@ -101,7 +101,10 @@ specs = [
                  **common),
 ]
 if PACKAGE:
-    slurm = GpuSlurmSettings(partition="gpu2",  # LONI's GPU partition
+    slurm = GpuSlurmSettings(partition="gpu2", modules=(),  # LONI QB4
+                             activate=("module load conda/24.3.0 && "
+                                       'source "$(conda info --base)/etc/profile.d/conda.sh" && '
+                                       "conda activate /ddnB/project/ramu/lgutsev/envs/mace"),
                              time="01:00:00" if SMOKE else "12:00:00", memory_gb=32)
     for spec in specs:
         if SMOKE:

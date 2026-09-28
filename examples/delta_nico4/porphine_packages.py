@@ -31,6 +31,12 @@ from samson_mlip_visualizer.finetune import Selection, write_selection
 from samson_mlip_visualizer.labeling import SlurmSettings, write_label_package
 
 LEVEL = "PBE0 def2-TZVP def2/J RIJCOSX"
+# LONI QB4: ORCA 6.1.1 from the project folder with QB4's OpenMPI; Gaussian from its
+# module; a conda env with mace-torch 0.3.16 for the GPU jobs (see the README).
+ORCA_QB4 = dict(modules=("openmpi/4.1.6/intel-2021.5.0",),
+                setup=("ORCA_DIR=/ddnB/project/ramu/lgutsev/Orca_6_1_1",
+                       'export PATH="$ORCA_DIR:$PATH"',
+                       'export LD_LIBRARY_PATH="$ORCA_DIR/lib:${LD_LIBRARY_PATH:-}"'))
 SMOKE_COPY = r"D:\MLIP_Work_Folder\hpc_smoke_tests\06_orca_ni_porphine"
 which = sys.argv[1:] or ["smoke", "campaign"]
 
@@ -86,9 +92,9 @@ if "campaign" in which:
     frames["campaign"] = [plain(minimum)] + rattled + md(300, 70, seed=2) + md(600, 69, seed=3)
 # QB4 hands out whole 64-core nodes: four 16-core frames per node.
 cpu = {"smoke": SlurmSettings(cpus=16, memory_gb=32, time="04:00:00", max_parallel=None,
-                              jobs_per_task=4),
+                              jobs_per_task=4, **ORCA_QB4),
        "campaign": SlurmSettings(cpus=16, memory_gb=32, time="04:00:00", max_parallel=10,
-                                 jobs_per_task=4)}
+                                 jobs_per_task=4, **ORCA_QB4)}
 for name in which:
     chosen = Selection()
     for index in range(len(frames[name])):

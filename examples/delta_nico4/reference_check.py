@@ -27,6 +27,12 @@ from samson_mlip_visualizer.finetune import Selection, write_selection
 from samson_mlip_visualizer.labeling import SlurmSettings, write_label_package
 
 LEVEL = "DLPNO-CCSD(T) def2-TZVP def2-TZVP/C TightPNO"
+# LONI QB4: ORCA 6.1.1 from the project folder with QB4's OpenMPI; Gaussian from its
+# module; a conda env with mace-torch 0.3.16 for the GPU jobs (see the README).
+ORCA_QB4 = dict(modules=("openmpi/4.1.6/intel-2021.5.0",),
+                setup=("ORCA_DIR=/ddnB/project/ramu/lgutsev/Orca_6_1_1",
+                       'export PATH="$ORCA_DIR:$PATH"',
+                       'export LD_LIBRARY_PATH="$ORCA_DIR/lib:${LD_LIBRARY_PATH:-}"'))
 SMOKE_COPY = r"D:\MLIP_Work_Folder\hpc_smoke_tests\09_orca_nico4_dlpno"
 frames = read(POOL, ":") + read(TEST_SET, ":")
 scan = sorted([f for f in frames if f.info["group"] == "scan"], key=lambda f: f.info["r_nic"])
@@ -57,7 +63,7 @@ for name in sys.argv[1:] or ["smoke", "campaign"]:
                         # QB4: whole 64-core nodes, four 16-core frames each
                         slurm=SlurmSettings(cpus=16, memory_gb=48, time="06:00:00",
                                             max_parallel=None if name == "smoke" else 8,
-                                            jobs_per_task=4))
+                                            jobs_per_task=4, **ORCA_QB4))
     print(f"{name}: {len(chosen)} frames -> {target}")
     if name == "smoke":
         if shutil.os.path.exists(SMOKE_COPY):

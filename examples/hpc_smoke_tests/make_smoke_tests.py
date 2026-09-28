@@ -32,6 +32,16 @@ OUT = Path(sys.argv[1] if len(sys.argv) > 1 else r"D:\MLIP_Work_Folder\hpc_smoke
 HERE = Path(__file__).parent
 FOUNDATION = foundation_model()
 HCN_DATA = HERE / "hcn_training_87_structures.extxyz"
+# LONI QB4: ORCA 6.1.1 from the project folder with QB4's OpenMPI; Gaussian from its
+# module; a conda env with mace-torch 0.3.16 for the GPU jobs (see the README).
+ORCA_QB4 = dict(modules=("openmpi/4.1.6/intel-2021.5.0",),
+                setup=("ORCA_DIR=/ddnB/project/ramu/lgutsev/Orca_6_1_1",
+                       'export PATH="$ORCA_DIR:$PATH"',
+                       'export LD_LIBRARY_PATH="$ORCA_DIR/lib:${LD_LIBRARY_PATH:-}"'))
+GPU_QB4 = dict(partition="gpu2", modules=(),
+               activate=("module load conda/24.3.0 && "
+                         'source "$(conda info --base)/etc/profile.d/conda.sh" && '
+                         "conda activate /ddnB/project/ramu/lgutsev/envs/mace"))
 
 # HCN, the transition state, and HNC from the MACE-MP-0 IRC (atom order C, N, H).
 GEOMETRIES = {
@@ -54,15 +64,16 @@ def main() -> None:
         model="MACE-MP-0 small", notes={"names": list(GEOMETRIES)},
     )
     # LONI: the 'single' partition takes an 8-core Gaussian job; GPU jobs go to 'gpu2'.
-    cpu = SlurmSettings(cpus=8, memory_gb=16, time="00:30:00", max_parallel=None)
+    cpu = SlurmSettings(partition="single", cpus=8, memory_gb=16, time="00:30:00",
+                        max_parallel=None, **ORCA_QB4)
     gaussian_cpu = SlurmSettings(partition="single", cpus=8, memory_gb=16, time="00:30:00",
-                                 max_parallel=None)
+                                 max_parallel=None, modules=("gaussian/g16-c01",))
     write_label_package(OUT / "01_label_gaussian", frames_path, manifest_path, code="gaussian",
                         slurm=gaussian_cpu)
     write_label_package(OUT / "02_label_orca", frames_path, manifest_path, code="orca", slurm=cpu)
     reference_psi4(frames)
 
-    gpu = GpuSlurmSettings(partition="gpu2", time="00:30:00")
+    gpu = GpuSlurmSettings(time="00:30:00", **GPU_QB4)
     card = {"reference": "PBE/def2-TZVP (Psi4)", "scope": "HPC smoke test only; not a model"}
     write_training_package(
         TrainingSpec(name="smoke_plain", foundation=str(FOUNDATION), train_file=str(HCN_DATA),

@@ -59,6 +59,7 @@ class SlurmSettings:
     time: str = "02:00:00"
     max_parallel: int | None = 20  # array throttle (%N); None for no limit
     jobs_per_task: int = 1  # frames run side by side in one array task (whole-node clusters)
+    setup: tuple[str, ...] = ()  # shell lines after the modules, e.g. a program's PATH
 
 
 def frame_name(index: int) -> str:
@@ -79,8 +80,11 @@ def _script(code: str, count: int, slurm: SlurmSettings, job: str = "force") -> 
         f"#SBATCH --partition={slurm.partition}",
         f"#SBATCH --array=0-{tasks - 1}{throttle}",
         "#SBATCH --nodes=1",
-        "#SBATCH --ntasks=1",
-        f"#SBATCH --cpus-per-task={slurm.cpus * jobs}",
+        # ORCA runs its parallel steps through mpirun, which only starts as many
+        # processes as SLURM allocated tasks; Gaussian runs threads in one task.
+        *([f"#SBATCH --ntasks={slurm.cpus * jobs}", "#SBATCH --cpus-per-task=1"]
+          if code == "orca" else
+          ["#SBATCH --ntasks=1", f"#SBATCH --cpus-per-task={slurm.cpus * jobs}"]),
         f"#SBATCH --mem={slurm.memory_gb * jobs}G",
         f"#SBATCH --time={slurm.time}",
         "#SBATCH --output=logs/%x_%A_%a.out",
@@ -90,6 +94,7 @@ def _script(code: str, count: int, slurm: SlurmSettings, job: str = "force") -> 
           if jobs > 1 else []),
         "set -euo pipefail",
         *[f"module load {module}" for module in slurm.modules],
+        *slurm.setup,
         'cd "$SLURM_SUBMIT_DIR"',
         "mkdir -p outputs",
         "",

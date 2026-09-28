@@ -61,3 +61,39 @@ partition (8 cores), the GPU jobs `gpu2`.
 
 Suggested order: `08` first (it decides which BBVO structures the campaigns
 should sample), then `05`, `07`, `09`, `06`, and the GPU checks `10` and `11`.
+
+## One-time setup on QB4
+
+The packages are set up for LONI QB4 (64 cores per node, whole nodes):
+
+- **Gaussian** (`01`): `module load gaussian/g16-c01`, `single` partition, 8 cores.
+- **ORCA** (`02`, `06`, `09` and the ORCA campaigns): ORCA 6.1.1 from
+  `/ddnB/project/ramu/lgutsev/Orca_6_1_1` (put on `PATH`, its `lib/` on
+  `LD_LIBRARY_PATH`) with `module load openmpi/4.1.6/intel-2021.5.0`. ORCA runs
+  its parallel steps through that OpenMPI's `mpirun`, so the scripts ask for the
+  cores as SLURM tasks (`--ntasks`, one CPU each). Check that your ORCA build
+  matches: the download names the OpenMPI it was built with (e.g.
+  `…_shared_openmpi418`); a 4.1.x build should run with 4.1.6. If it does not,
+  load a matching OpenMPI instead. `06` and `09` run four 16-core frames per node.
+  Their partition is left as `<PARTITION>`: use QB4's whole-node CPU partition.
+- **VASP** (`05`, `07`, `08`): 64 tasks per node. The module and the run command
+  are left as `<VASP_MODULE>` and `<VASP_COMMAND>` (QB4's `vasp6/...` modules are
+  containers; use what your other VASP jobs use).
+- **GPU training** (`03`, `04`, `10`, `11`): the `gpu2` partition and a conda
+  environment with mace-torch, created once on a login node:
+
+  ```bash
+  module load conda/24.3.0
+  conda create -y -p /ddnB/project/ramu/lgutsev/envs/mace python=3.11
+  source "$(conda info --base)/etc/profile.d/conda.sh"
+  conda activate /ddnB/project/ramu/lgutsev/envs/mace
+  pip install torch --index-url https://download.pytorch.org/whl/cu121
+  pip install mace-torch==0.3.16
+  python -c "import torch, mace; print(torch.cuda.is_available())"  # False on a login node is fine
+  ```
+
+  The scripts activate it themselves; pip's PyTorch brings its own CUDA, so no
+  `cuda` module is loaded.
+
+What is left in every script: `<ACCOUNT>`; for `06` and `09` the partition; for
+the VASP packages the module, the command, and `<POTPAW_PBE_DIR>`.
