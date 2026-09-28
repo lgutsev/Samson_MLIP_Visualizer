@@ -81,6 +81,10 @@ def test_package_layout_and_script(tmp_path):
     assert info["placeholders_left"] == ["<ACCOUNT>", "<PARTITION>", "<POTPAW_PBE_DIR>",
                                          "<VASP_COMMAND>", "<VASP_MODULE>"]
     assert "6×6×6" in (pkg / "README.md").read_text(encoding="utf-8")
+    # Unix line endings even when written on Windows: a CRLF POTCAR.names makes the
+    # script look for "O\r/POTCAR", and VASP misreads CRLF INCARs
+    for path in [*frame.iterdir(), pkg / "run_vasp.slurm"]:
+        assert b"\r" not in path.read_bytes(), path.name
 
 
 def test_refuses_what_it_cannot_label(tmp_path):

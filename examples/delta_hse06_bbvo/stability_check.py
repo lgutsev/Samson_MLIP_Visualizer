@@ -21,7 +21,7 @@ import shutil
 import sys
 
 import numpy as np
-from ase.io import read, write
+from ase.io import read
 from ase.optimize import FIRE
 from common import KSPACING, WORK, conventional, mace_mp0
 
@@ -32,6 +32,7 @@ from samson_mlip_visualizer.vasp_labeling import (
     kpoint_mesh,
     potcar_names,
     species_order,
+    write_poscar,
     write_vasp_package,
 )
 
@@ -85,17 +86,18 @@ relax = target / "relax"
 relax.mkdir(parents=True)
 start = conventional()
 start.positions += np.random.default_rng(1).normal(0, 0.05, start.positions.shape)
-write(relax / "POSCAR", start, format="vasp", direct=True, sort=False)
+write_poscar(relax / "POSCAR", start)
 mesh = kpoint_mesh(start, KSPACING)
 (relax / "KPOINTS").write_text(f"Gamma-centered, spacing {KSPACING} 1/A\n0\nGamma\n"
-                               f"{mesh[0]} {mesh[1]} {mesh[2]}\n0 0 0\n")
-(relax / "POTCAR.names").write_text(" ".join(potcar_names(species_order(start))) + "\n")
+                               f"{mesh[0]} {mesh[1]} {mesh[2]}\n0 0 0\n", newline="\n")
+(relax / "POTCAR.names").write_text(" ".join(potcar_names(species_order(start))) + "\n",
+                                    newline="\n")
 for stage, isif in (("1_ions", 2), ("2_cell", 3)):
     text = incar("pbe_u", start, extra={"NSW": 300, "IBRION": 2, "ISIF": isif,
                                         "EDIFFG": -0.01, "NCORE": 4, "KPAR": 4,
                                         "LWAVE": ".FALSE."})
     text = text.replace("single point", f"relaxation, ISIF = {isif}")
-    (relax / f"INCAR.{stage}").write_text(text)
+    (relax / f"INCAR.{stage}").write_text(text, newline="\n")
 (relax / "run_relax.slurm").write_text("""#!/bin/bash
 #SBATCH --job-name=bbvo-stability
 #SBATCH --account=loni_perovsk27

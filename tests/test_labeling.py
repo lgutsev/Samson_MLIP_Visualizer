@@ -152,6 +152,7 @@ def test_orca_package_and_collect_with_offsets(tmp_path):
     assert inp.startswith("! PBE def2-TZVP def2/J EnGrad TightSCF")
     assert "%pal" in inp and "nprocs 8" in inp and "* xyz 0 1" in inp
     assert "$ORCA_BIN" in (package / "run_orca.slurm").read_text()
+    assert b"\r" not in (package / "inputs" / "frame_0001.inp").read_bytes()  # runs on Linux
     frames = read(package / "frames.extxyz", ":")
     (package / "outputs").mkdir()
     for k, frame in enumerate(frames):

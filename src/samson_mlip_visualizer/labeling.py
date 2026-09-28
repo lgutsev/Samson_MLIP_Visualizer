@@ -223,7 +223,9 @@ def write_label_package(
             text = gaussian_input([frame], title=f"{name} for fine-tuning", **options)
         else:
             text, _ = orca_input([frame], stem=name, **options)
-        (directory / "inputs" / f"{name}{_SUFFIX[code]}").write_text(text, encoding="utf-8")
+        # Unix line endings: Gaussian and ORCA run on Linux
+        (directory / "inputs" / f"{name}{_SUFFIX[code]}").write_text(text, encoding="utf-8",
+                                                                   newline="\n")
     shutil.copyfile(frames_path, directory / "frames.extxyz")
     shutil.copyfile(manifest_path, directory / "manifest.json")
     script = _script(code, len(frames), slurm, job)

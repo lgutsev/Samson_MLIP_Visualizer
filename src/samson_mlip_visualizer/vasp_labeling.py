@@ -253,6 +253,18 @@ are the method's alone. {mesh_note}
 """
 
 
+def write_poscar(path: str | Path, atoms: Atoms) -> None:
+    """A POSCAR with Unix line endings: VASP and the job scripts run on Linux, and a
+    CRLF file written on Windows breaks both."""
+    from io import StringIO
+
+    from ase.io import write
+
+    text = StringIO()
+    write(text, atoms, format="vasp", direct=True, sort=False)
+    Path(path).write_text(text.getvalue(), encoding="utf-8", newline="\n")
+
+
 def write_vasp_package(
     directory: str | Path,
     frames_path: str | Path,
@@ -286,23 +298,25 @@ def write_vasp_package(
     directory = Path(directory)
     (directory / "inputs").mkdir(parents=True, exist_ok=True)
     (directory / "logs").mkdir(exist_ok=True)
-    (directory / "logs" / "README.txt").write_text("SLURM writes one log per frame here.\n")
+    (directory / "logs" / "README.txt").write_text("SLURM writes one log per frame here.\n",
+                                                    newline="\n")
     meshes = []
     for index, frame in enumerate(frames):
         folder = directory / "inputs" / frame_name(index)
         folder.mkdir(exist_ok=True)
         ordered = _sorted_by_species(frame)
-        ordered.write(folder / "POSCAR", format="vasp", direct=True, sort=False)
+        write_poscar(folder / "POSCAR", ordered)
         mesh = kpoint_mesh(ordered, kspacing)
         meshes.append(mesh)
         (folder / "KPOINTS").write_text(
             f"Gamma-centered, spacing {kspacing} 1/A\n0\nGamma\n{mesh[0]} {mesh[1]} {mesh[2]}\n"
-            "0 0 0\n")
+            "0 0 0\n", newline="\n")
         (folder / "POTCAR.names").write_text(" ".join(potcar_names(species_order(ordered)))
-                                             + "\n")
+                                             + "\n", newline="\n")
         for level in levels:
             (folder / f"INCAR.{level}").write_text(
-                incar(level, ordered, magmom=magmom, extra=(incar_extra or {}).get(level)))
+                incar(level, ordered, magmom=magmom, extra=(incar_extra or {}).get(level)),
+                newline="\n")
     shutil.copyfile(frames_path, directory / "frames.extxyz")
     shutil.copyfile(manifest_path, directory / "manifest.json")
     script = _script(tuple(levels), len(frames), slurm)
