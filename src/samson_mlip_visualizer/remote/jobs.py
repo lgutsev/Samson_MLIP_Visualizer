@@ -34,8 +34,10 @@ KINDS = (
     "slow_growth", "blue_moon", "metadynamics",
 )
 _MOVES_ATOMS = ("relax", "md", "ts", "irc", "scan", "slow_growth", "blue_moon", "metadynamics")
-# job parameter naming each program backend's method (AIMNet2: which network)
-_METHOD_KEYS = {"xtb": "xtb_method", "psi4": "psi4_method", "aimnet2": "aimnet_model"}
+# job parameter naming each program backend's method (AIMNet2, UMA: which network)
+_METHOD_KEYS = {
+    "xtb": "xtb_method", "psi4": "psi4_method", "aimnet2": "aimnet_model", "uma": "uma_model",
+}
 _MISSING = object()
 
 
@@ -200,6 +202,7 @@ class JobManager:
             charge=_get(params, "charge", int, 0),
             multiplicity=_get(params, "multiplicity", int, 1),
             solvent=_get(params, "solvent", str, None),
+            task=_get(params, "uma_task", str, None) if backend == "uma" else None,
         )
         key = (backend, tuple(paths), device, dtype, tuple(sorted((options or {}).items())))
         if key not in self._calculators:

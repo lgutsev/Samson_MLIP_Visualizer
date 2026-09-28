@@ -35,16 +35,28 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         nargs="+",
         help="Trained model file(s). Several MACE files form an uncertainty committee. "
-        "With --backend xtb, psi4, or aimnet2: the xtb executable or the Psi4 / aimnet "
-        "environment's python, or 'auto' to find it.",
+        "With --backend xtb, psi4, aimnet2, or uma: the xtb executable or the Psi4 / "
+        "aimnet / fairchem environment's python, or 'auto' to find it.",
     )
     parser.add_argument(
-        "--backend", choices=["mace", "deepmd", "xtb", "psi4", "aimnet2"], default="mace"
+        "--backend", choices=["mace", "deepmd", "xtb", "psi4", "aimnet2", "uma"],
+        default="mace",
     )
     parser.add_argument(
         "--aimnet-model",
         default="aimnet2",
         help="AIMNet2 network: registry name (aimnet2 = wB97M-D3) or a .pt file",
+    )
+    parser.add_argument(
+        "--uma-model",
+        default=None,
+        help="UMA checkpoint: a .pt file (e.g. uma-s-1p1.pt) or a fairchem name",
+    )
+    parser.add_argument(
+        "--uma-task",
+        choices=["omol", "omat", "oc20", "odac", "omc"],
+        default="omol",
+        help="UMA task head: omol for molecules and ions (takes --charge and --multiplicity)",
     )
     parser.add_argument(
         "--xtb-method", choices=["gfn2", "gfn1", "gfnff"], default="gfn2", help="xTB method"
@@ -195,13 +207,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--charge",
         type=int,
         default=0,
-        help="Molecular charge (xTB, Psi4, AIMNet2, and --export-qm)",
+        help="Molecular charge (xTB, Psi4, AIMNet2, UMA omol, and --export-qm)",
     )
     qm.add_argument(
         "--multiplicity",
         type=int,
         default=1,
-        help="Spin multiplicity (xTB, Psi4, AIMNet2, and --export-qm)",
+        help="Spin multiplicity (xTB, Psi4, AIMNet2, UMA omol, and --export-qm)",
     )
     path = parser.add_argument_group("reaction paths (--irc, --qst)")
     path.add_argument("--irc-step", type=float, default=0.1, help="IRC arc step (A amu^1/2)")
@@ -407,12 +419,16 @@ INSTALL_HINTS = {
     "xtb": "micromamba create -n xtb -c conda-forge xtb (or set XTB_EXE)",
     "psi4": "micromamba create -n qm -c conda-forge python=3.11 psi4 (or set PSI4_PYTHON)",
     "aimnet2": "pip install aimnet in an environment of its own (or set AIMNET_PYTHON)",
+    "uma": "pip install fairchem-core in an environment of its own (or set FAIRCHEM_PYTHON)",
 }
-METHOD_ARGUMENTS = {"xtb": "xtb_method", "psi4": "psi4_method", "aimnet2": "aimnet_model"}
+METHOD_ARGUMENTS = {
+    "xtb": "xtb_method", "psi4": "psi4_method", "aimnet2": "aimnet_model", "uma": "uma_model",
+}
 
 
 def auto_program(backend: str) -> Path:
-    """The xtb executable or Psi4 / aimnet Python for a model argument of 'auto'."""
+    """The xtb executable or Psi4 / aimnet / fairchem Python for a model argument of
+    'auto'."""
     found = find_program(backend)
     if found is None:
         raise SystemExit(
@@ -422,7 +438,8 @@ def auto_program(backend: str) -> Path:
 
 
 def backend_settings(args, backend: str):
-    """xTB / Psi4 / AIMNet2 options from the command line (``None`` for other MLIPs)."""
+    """xTB / Psi4 / AIMNet2 / UMA options from the command line (``None`` for other
+    MLIPs)."""
     return program_options(
         backend,
         method=getattr(args, METHOD_ARGUMENTS.get(backend, "psi4_method")),
@@ -430,6 +447,7 @@ def backend_settings(args, backend: str):
         charge=args.charge,
         multiplicity=args.multiplicity,
         solvent=args.solvent,
+        task=args.uma_task if backend == "uma" else None,
     )
 
 

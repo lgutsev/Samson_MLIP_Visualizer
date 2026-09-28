@@ -103,6 +103,22 @@ class BridgeServer:
         remove_connection_file(self.connection_path, token=self._token)
 
 
+# program_options keys that job parameters name differently: the method of xTB and
+# Psi4, the network of AIMNet2 and UMA (a job's "model" is the program, not the network).
+_JOB_KEYS = {
+    "xtb": {"method": "xtb_method"},
+    "psi4": {"method": "psi4_method"},
+    "aimnet2": {"model": "aimnet_model"},
+    "uma": {"model": "uma_model", "task": "uma_task"},
+}
+
+
+def _job_options(backend: str, options: dict[str, Any]) -> dict[str, Any]:
+    """A program backend's panel options as job parameters (unset values left out)."""
+    renames = _JOB_KEYS.get(backend, {})
+    return {renames.get(key, key): value for key, value in options.items() if value is not None}
+
+
 def panel_settings() -> dict[str, Any]:
     """Model settings from the open MLIP panel, used when a job omits them."""
     try:
@@ -120,8 +136,7 @@ def panel_settings() -> dict[str, Any]:
         }
         options = window._program_options(settings["backend"])
         if options is not None:
-            settings[f"{settings['backend']}_method"] = options.pop("method")
-            settings.update(options)  # basis (Psi4), charge, multiplicity, solvent (xTB)
+            settings.update(_job_options(settings["backend"], options))
         return settings
     except Exception:  # noqa: BLE001 - no panel, or no model chosen yet
         return {}

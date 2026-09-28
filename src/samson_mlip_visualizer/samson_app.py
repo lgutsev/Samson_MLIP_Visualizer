@@ -33,6 +33,8 @@ _REMEMBERED = (
     "xtb_multiplicity",
     "psi4_method",
     "psi4_basis",
+    "uma_model",
+    "uma_task",
     "bench_reference",
     "bench_points",
     "min_distance",
@@ -170,14 +172,17 @@ def _make_window():
 
             # --- model settings shared by every task -------------------------------
             self.backend = QtWidgets.QComboBox()
-            self.backend.addItems(["MACE", "DeepMD", "xTB", "Psi4", "AIMNet2"])
+            self.backend.addItems(["MACE", "DeepMD", "xTB", "Psi4", "AIMNet2", "UMA"])
             self.backend.setToolTip(
                 "xTB runs the GFN-xTB program (semi-empirical, no training set) as an "
                 "independent cross-check; its 'model file' is the xtb executable. Psi4 runs "
                 "DFT (default PBE, the level MACE-MP-0 was trained on) or other quantum "
                 "chemistry; its 'model file' is the python of the environment with Psi4. "
                 "AIMNet2 is an MLIP that takes the molecular charge (ions, SN2 anions); its "
-                "'model file' is the python of the environment with aimnet."
+                "'model file' is the python of the environment with aimnet. UMA (Meta FAIR) "
+                "takes charge and spin on its omol task, across most of the periodic table; "
+                "its 'model file' is the python of the environment with fairchem, and the "
+                "checkpoint goes in the UMA row."
             )
             self.model_path = QtWidgets.QLineEdit()
             self.model_path.setPlaceholderText(
@@ -228,8 +233,21 @@ def _make_window():
             )
             self.psi4_basis = QtWidgets.QLineEdit("def2-tzvp")
             self.psi4_basis.setToolTip("Psi4 basis set, e.g. def2-svp, def2-tzvp, cc-pvtz.")
+            self.uma_model = QtWidgets.QLineEdit()
+            self.uma_model.setPlaceholderText("uma-s-1p1.pt, or a fairchem name")
+            self.uma_model.setToolTip(
+                "UMA checkpoint: the path of a downloaded .pt (facebook/UMA on Hugging Face), "
+                "or a fairchem name such as uma-s-1p1, downloaded to fairchem's cache."
+            )
+            self.uma_task = QtWidgets.QComboBox()
+            self.uma_task.addItems(["omol", "omat", "oc20", "odac", "omc"])
+            self.uma_task.setToolTip(
+                "UMA task head: omol for molecules and ions (uses the charge and multiplicity), "
+                "omat for inorganic materials, oc20 catalysis, odac MOFs, omc molecular crystals."
+            )
             self._xtb_widgets = (self.xtb_method, self.xtb_solvent)
             self._psi4_widgets = (self.psi4_method, self.psi4_basis)
+            self._uma_widgets = (self.uma_model, self.uma_task)
             self._charge_widgets = (self.xtb_charge, self.xtb_multiplicity)
 
             settings = grid(
@@ -239,6 +257,7 @@ def _make_window():
                     [("MACE device", self.device), ("MACE dtype", self.dtype)],
                     [("xTB / solvent", xtb_row), ("Charge, mult.", charge_row)],
                     [("Psi4 method", self.psi4_method), ("Basis", self.psi4_basis)],
+                    [("UMA checkpoint", self.uma_model), ("UMA task", self.uma_task)],
                     [
                         ("Min. atom distance", self.min_distance),
                         ("Max committee σ", self.max_force_std),
@@ -683,9 +702,11 @@ def _make_window():
                 widget.setEnabled(backend == "xtb")
             for widget in self._psi4_widgets:
                 widget.setEnabled(backend == "psi4")
+            for widget in self._uma_widgets:
+                widget.setEnabled(backend == "uma")
             for widget in self._charge_widgets:
                 widget.setEnabled(backend in PROGRAMS)
-            # For xTB, Psi4, and AIMNet2 the model field holds the program; swap it with
+            # For xTB, Psi4, AIMNet2, and UMA the model field holds the program; swap it with
             # the backend.
             current = self.model_path.text().strip()
             holds_program = bool(current) and any(is_program(p, current) for p in PROGRAMS)
@@ -697,13 +718,14 @@ def _make_window():
                 self.model_path.setText(_default_model_path())
 
         def _program_options(self, backend):
-            """xTB / Psi4 / AIMNet2 options from the panel (``None`` for other MLIPs)."""
+            """xTB / Psi4 / AIMNet2 / UMA options from the panel (``None`` for other MLIPs)."""
             from .calculators import program_options
 
             methods = {
                 "xtb": self.xtb_method.currentText(),
                 "psi4": self.psi4_method.currentText().strip(),
                 "aimnet2": None,  # the default network, ωB97M-D3
+                "uma": self.uma_model.text().strip() or None,
             }
             return program_options(
                 backend,
@@ -712,6 +734,7 @@ def _make_window():
                 charge=self.xtb_charge.value(),
                 multiplicity=self.xtb_multiplicity.value(),
                 solvent=self.xtb_solvent.text().strip() or None,
+                task=self.uma_task.currentText() if backend == "uma" else None,
             )
 
         def _ensemble_changed(self, text):

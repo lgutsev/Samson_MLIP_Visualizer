@@ -585,11 +585,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--model", nargs="+", help="Model file(s); several MACE "
                         "files form a committee whose spread is also reported")
     parser.add_argument("--backend", default="mace",
-                        choices=["mace", "deepmd", "xtb", "psi4", "aimnet2"])
+                        choices=["mace", "deepmd", "xtb", "psi4", "aimnet2", "uma"])
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--dtype", default="float64", choices=["float64", "float32"])
     parser.add_argument("--reference", default="psi4",
-                        choices=["psi4", "xtb", "mace", "deepmd", "aimnet2"])
+                        choices=["psi4", "xtb", "mace", "deepmd", "aimnet2", "uma"])
     parser.add_argument("--reference-model", default="auto",
                         help="Reference model file, xtb executable, or Psi4 python ('auto' finds "
                         "xtb or Psi4)")
@@ -605,6 +605,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--xtb-method", default="gfn2", choices=["gfn2", "gfn1", "gfnff"])
     parser.add_argument("--psi4-method", default="pbe")
     parser.add_argument("--aimnet-model", default="aimnet2")
+    parser.add_argument("--uma-model", default=None, help="UMA checkpoint (.pt) or fairchem name")
+    parser.add_argument("--uma-task", default="omol",
+                        choices=["omol", "omat", "oc20", "odac", "omc"])
     parser.add_argument("--basis", default="def2-tzvp")
     parser.add_argument("--charge", type=int, default=0)
     parser.add_argument("--multiplicity", type=int, default=1)
@@ -697,6 +700,8 @@ def _label(backend: str, args) -> str:
         return f"{args.xtb_method.upper()}-xTB"
     if backend == "aimnet2":
         return "AIMNet2"
+    if backend == "uma":
+        return f"UMA {Path(args.uma_model).stem}" if args.uma_model else "UMA"
     return backend.upper() if backend == "mace" else "DeepMD"
 
 

@@ -38,6 +38,7 @@ class WorkerCalculator(Calculator):
 
     implemented_properties = ["energy", "free_energy", "forces"]
     label_name = "worker"  # for messages, e.g. "Psi4"
+    periodic = False  # whether the worker takes periodic cells (sent in the request)
 
     def __init__(self, python: str | Path, *, timeout: float = 3600.0, **kwargs):
         super().__init__(**kwargs)
@@ -119,7 +120,7 @@ class WorkerCalculator(Calculator):
     def calculate(self, atoms=None, properties=("energy",), system_changes=all_changes):
         super().calculate(atoms, properties, system_changes)
         atoms = self.atoms
-        if atoms.pbc.any():
+        if atoms.pbc.any() and not self.periodic:
             raise CalculationFailed(
                 f"The {self.label_name} backend handles molecules only, not periodic cells"
             )

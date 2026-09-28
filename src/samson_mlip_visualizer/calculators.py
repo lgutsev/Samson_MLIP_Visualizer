@@ -1,9 +1,9 @@
 """Lazy ASE calculator construction for the supported backends.
 
 MLIPs (MACE, DeepMD) load a model file. The quantum-chemistry programs (xTB,
-Psi4) and AIMNet2 run in environments of their own; for them the "model" is the
-program's executable (xtb) or Python (Psi4, AIMNet2), found automatically by
-:func:`find_program`.
+Psi4), AIMNet2 and UMA run in environments of their own; for them the "model" is
+the program's executable (xtb) or Python (Psi4, AIMNet2, UMA), found
+automatically by :func:`find_program`.
 """
 
 from __future__ import annotations
@@ -12,9 +12,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
-Backend = Literal["mace", "deepmd", "xtb", "psi4", "aimnet2"]
+Backend = Literal["mace", "deepmd", "xtb", "psi4", "aimnet2", "uma"]
 # backends that run an external program, not a model file
-PROGRAMS = ("xtb", "psi4", "aimnet2")
+PROGRAMS = ("xtb", "psi4", "aimnet2", "uma")
 
 ModelPaths = str | Path | Sequence[str | Path]
 
@@ -51,7 +51,8 @@ def _resolve_model_paths(model_path: ModelPaths) -> list[Path]:
 
 
 def find_program(backend: str) -> Path | None:
-    """The xtb executable or the Psi4 / aimnet Python, if installed where it is looked for."""
+    """The xtb executable or the Psi4 / aimnet / fairchem Python, if installed where it
+    is looked for."""
     if backend == "xtb":
         from .xtb_backend import find_xtb
 
@@ -64,11 +65,16 @@ def find_program(backend: str) -> Path | None:
         from .aimnet2_backend import find_aimnet
 
         return find_aimnet()
+    if backend == "uma":
+        from .uma_backend import find_fairchem
+
+        return find_fairchem()
     return None
 
 
 def is_program(backend: str, path: str | Path) -> bool:
-    """Whether ``path`` is the program the backend runs (xtb, or a Psi4 / aimnet Python)."""
+    """Whether ``path`` is the program the backend runs (xtb, or a Psi4 / aimnet /
+    fairchem Python)."""
     if backend == "xtb":
         from .xtb_backend import is_xtb_executable
 
@@ -81,6 +87,10 @@ def is_program(backend: str, path: str | Path) -> bool:
         from .aimnet2_backend import has_aimnet
 
         return has_aimnet(path)
+    if backend == "uma":
+        from .uma_backend import has_fairchem
+
+        return has_fairchem(path)
     return False
 
 
@@ -92,10 +102,12 @@ def program_options(
     charge: int = 0,
     multiplicity: int = 1,
     solvent: str | None = None,
+    task: str | None = None,
 ) -> dict[str, Any] | None:
-    """Options for an xTB, Psi4, or AIMNet2 calculator (``None`` for other MLIPs),
-    with defaults GFN2-xTB, PBE/def2-TZVP, and AIMNet2 ωB97M-D3 (for AIMNet2,
-    ``method`` is the model: a registry name or a .pt path). Also what
+    """Options for an xTB, Psi4, AIMNet2, or UMA calculator (``None`` for other
+    MLIPs), with defaults GFN2-xTB, PBE/def2-TZVP, and AIMNet2 ωB97M-D3 (for AIMNet2
+    and UMA, ``method`` is the model: a registry name or a .pt path; UMA has no
+    default checkpoint, and ``task`` is its task head, default ``omol``). Also what
     provenance records as settings."""
     if backend == "xtb":
         return {
@@ -113,6 +125,9 @@ def program_options(
         }
     if backend == "aimnet2":
         return {"model": method or "aimnet2", "charge": charge, "multiplicity": multiplicity}
+    if backend == "uma":
+        return {"model": method or None, "task": task or "omol", "charge": charge,
+                "multiplicity": multiplicity}
     return None
 
 
@@ -149,7 +164,9 @@ def create_calculator(
     (method, basis, charge, multiplicity); for ``backend="aimnet2"`` it is the
     Python of an environment with aimnet and ``options`` are
     :class:`~.aimnet2_backend.AIMNet2Calculator` options (model, charge,
-    multiplicity). Device and dtype apply to MACE only.
+    multiplicity); for ``backend="uma"`` it is the Python of an environment with
+    fairchem and ``options`` are :class:`~.uma_backend.UMACalculator` options
+    (model, task, charge, multiplicity). Device and dtype apply to MACE only.
 
     A MACE model whose card names a ``delta_baseline`` is a Δ-learning
     correction (:mod:`.delta`), not a potential: it is returned wrapped in its
@@ -196,6 +213,20 @@ def create_calculator(
             return AIMNet2Calculator(paths[0], **dict(options or {}))
         except (TypeError, ValueError) as exc:
             raise CalculatorLoadError(f"Invalid AIMNet2 settings: {exc}") from exc
+
+    if backend == "uma":
+        from .uma_backend import UMACalculator, has_fairchem
+
+        if len(paths) > 1 or not has_fairchem(paths[0]):
+            raise CalculatorLoadError(
+                "For the UMA backend, choose the python executable of an environment with "
+                "fairchem (`pip install fairchem-core` in an env of its own); the UMA "
+                "checkpoint (.pt) is the model option."
+            )
+        try:
+            return UMACalculator(paths[0], **dict(options or {}))
+        except (TypeError, ValueError) as exc:
+            raise CalculatorLoadError(f"Invalid UMA settings: {exc}") from exc
 
     try:
         if backend == "mace":
