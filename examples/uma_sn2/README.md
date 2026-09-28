@@ -185,8 +185,18 @@ python examples/uma_sn2/plot_uma.py
 
 ## On LONI: the large model
 
-uma-m-1p1 is a 10.7 GB checkpoint. With the laptop's other work that is too
-much memory, so it is packaged as HPC smoke test 12, for a `gpu2` node:
+uma-m-1p1 is a 10.7 GB checkpoint, and loading it needs more memory than the
+laptop has. It was tried on 2026-09-28 on the 32 GB laptop, with every other
+program closed (about 15 GB available), and twice ran out:
+- **Why so much:** the checkpoint holds two copies of the 1.4-billion-parameter
+  network, 5.6 GB each: the training weights and their EMA average. fairchem
+  reads both, builds the model, and deep-copies it to apply the EMA weights.
+- **Plain loading:** passed 12.5 GB and still climbing when a watchdog stopped it
+  at 1 GB available.
+- **Memory-mapped loading** (`torch.load(mmap=True)`, so the unused copy stays on
+  disk): available memory still fell to 42 MB in seconds.
+
+So it is packaged as HPC smoke test 12, for a `gpu2` node:
 
 ```bash
 python examples/uma_sn2/make_loni_package.py
