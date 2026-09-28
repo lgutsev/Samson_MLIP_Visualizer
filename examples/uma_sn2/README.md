@@ -88,7 +88,7 @@ than SAMSON's Python, so it runs in its own environment behind a worker process:
 
 | Where | How |
 |---|---|
-| CLI | `samson-mlip structure.xyz <env>/python.exe --backend uma --uma-model D:\MLIP_Downloaded_Models\UMA\uma-s-1p2.pt --charge -1` (`--uma-task omol` is the default) |
+| CLI | `samson-mlip structure.xyz <env>/python.exe --backend uma --uma-model D:\MLIP_Foundational_Models\UMA\uma-s-1p2.pt --charge -1` (`--uma-task omol` is the default) |
 | SAMSON panel | Backend **UMA**. The model file is the environment's python (found automatically if `FAIRCHEM_PYTHON` is set). Fill the **UMA checkpoint** and **UMA task** row, and the charge and multiplicity fields. |
 | Bridge / MCP job | `{"backend": "uma", "model": "<env python>", "uma_model": "<checkpoint.pt>", "uma_task": "omol", "charge": -1}` with any job kind, including `blue_moon`, `slow_growth` and `metadynamics` |
 | Python | `UMACalculator(python, model="uma-s-1p2.pt", charge=-1)` from `samson_mlip_visualizer.uma_backend` |
@@ -106,7 +106,7 @@ than SAMSON's Python, so it runs in its own environment behind a worker process:
    licence (done 2026-09-27).
 2. **Checkpoints.** Download them with the `hf` CLI or the site's download
    button. Saving the file page gives a ~110 KB HTML file, not the weights.
-   Here they are in `D:\MLIP_Downloaded_Models\UMA`:
+   Here they are in `D:\MLIP_Foundational_Models\UMA`:
 
    | File | Size |
    |---|---|
@@ -157,11 +157,11 @@ same level:
 With SAMSON's Python, from the repository root:
 
 ```bash
-python examples/uma_sn2/evaluate_uma.py D:\MLIP_Downloaded_Models\UMA\uma-s-1p1.pt
+python examples/uma_sn2/evaluate_uma.py D:\MLIP_Foundational_Models\UMA\uma-s-1p1.pt
 ```
 
 ```bash
-python examples/uma_sn2/evaluate_uma.py D:\MLIP_Downloaded_Models\UMA\uma-s-1p2.pt
+python examples/uma_sn2/evaluate_uma.py D:\MLIP_Foundational_Models\UMA\uma-s-1p2.pt
 ```
 
 ```bash

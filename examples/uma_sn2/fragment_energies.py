@@ -41,7 +41,7 @@ from samson_mlip_visualizer.psi4_backend import Psi4Calculator, find_psi4  # noq
 from samson_mlip_visualizer.uma_backend import UMACalculator  # noqa: E402
 
 UMA_PYTHON = Path(os.environ.get("UMA_PYTHON", r"D:\MLIP_Work_Folder\envs\mlip\python.exe"))
-UMA_DIR = Path(os.environ.get("UMA_DIR", r"D:\MLIP_Downloaded_Models\UMA"))
+UMA_DIR = Path(os.environ.get("UMA_DIR", r"D:\MLIP_Foundational_Models\UMA"))
 CHECKPOINTS = [Path(p) for p in sys.argv[1:]] or [UMA_DIR / "uma-s-1p1.pt",
                                                   UMA_DIR / "uma-s-1p2.pt"]
 OUT = WORK / "uma" / "fragments_wb97mv.json"
