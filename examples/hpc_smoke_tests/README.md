@@ -23,8 +23,8 @@ repository (`examples/hpc_smoke_tests/`). Nothing here has been submitted.
 4. In each folder: `sbatch run_gaussian.slurm`, `sbatch run_orca.slurm`,
    `sbatch run_train.slurm` (twice, in 03 and 04). You can skip any code you
    do not use.
-5. Copy back `outputs/` (01, 02) and `runs/` (03, 04) into the same folders
-   on your desktop, plus `logs/` if a job failed.
+5. Bring the results back: `bash export_results.sh`, then unpack the archive
+   it writes into this folder on the desktop (see below).
 6. On the desktop, in SAMSON's Python, from this folder:
    `python check_smoke_results.py`. It prints PASS / FAIL / NOT RUN per test:
    - 01/02: every output accepted, and the barrier, reaction energy, and
@@ -89,6 +89,31 @@ job lists of its unfinished molecules, with stage 2 after stage 1 as in its
 `--retry-failed`, so a broken setup is not resubmitted over and over; scripts
 that still hold a `<PLACEHOLDER>` (12's `<UMA_DIR>`) show as SETUP. Every
 submission goes into `submissions.log`.
+
+## Bringing results back: `export_results.sh`
+
+On the login node, from this folder:
+
+```bash
+bash export_results.sh             # everything finished since the last export
+bash export_results.sh --dry-run   # list what would go in
+bash export_results.sh --all       # everything finished, again
+```
+
+It packs the finished results (what `submit_smokes.sh` calls done) into one file,
+`exports/results_<date>.tar.gz`, with the logs of every test it takes anything from.
+It leaves out what the desktop never reads: training `checkpoints/` and the
+`*_compiled.model` copy, ORCA's `.gbw`/`.tmp`, and VASP's WAVECAR/CHG. Copy that one file
+into `D:\MLIP_Work_Folder\hpc_smoke_tests` and unpack it there (PowerShell or Git Bash):
+
+```bash
+tar -xzf results_<date>.tar.gz
+```
+
+Everything lands where the checkers look: `check_smoke_results.py`, `collect_labels`,
+`install_models`, `uma_sn2/check_loni_results.py`, and 13's `parse_results.py`. What went
+out is listed in `exports/exported.txt` on the cluster, so the next export takes only
+what is new.
 
 ## Running on QB4
 
