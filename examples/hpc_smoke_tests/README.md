@@ -57,6 +57,16 @@ folders (`D:\MLIP_Work_Folder\delta_hse06_bbvo`, `D:\MLIP_Work_Folder\delta_nico
 Suggested order: `08` first (it decides which BBVO structures the campaigns
 should sample), then `05`, `07`, `09`, `06`, and the GPU checks `10` and `11`.
 
+## Foundation-model check (12)
+
+| Folder | What it checks | Written by | Resources | Pass if |
+|---|---|---|---|---|
+| `12_uma_sn2_large` | Meta's large UMA (uma-m-1p1, a 10.7 GB checkpoint, too big for the laptop) on the F⁻ + CH₃Cl SN2 checks, with uma-s-1p1 as the control | `uma_sn2/make_loni_package.py` | 2 × 1 GPU (`gpu2`), minutes; 64 GB memory | `uma_sn2/check_loni_results.py`: uma-s-1p1 matches the laptop (46 frames within 5 meV, barrier within 0.1 kcal/mol); then read the uma-m-1p1 table |
+
+It needs a `fairchem-core` + `sella` environment (`/project/lgutsev/env/uma`,
+created as in the package README) and `<UMA_DIR>`, the folder with the UMA
+checkpoints on the cluster, filled in `run_uma.slurm`.
+
 ## Running on QB4
 
 Every script is filled in for LONI QB4 (account `loni_perovsk27`, 64 cores per

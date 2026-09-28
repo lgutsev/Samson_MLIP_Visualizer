@@ -155,9 +155,10 @@ starting geometries, and a SLURM array:
 - **task 1: uma-s-1p1**, the control; it must reproduce the laptop;
 - **task 2: uma-m-1p1.**
 
-The package README lists the three placeholders (`<ACCOUNT>`, `<UMA_ENV>`,
-`<UMA_DIR>`, the folder where UMA already sits on the cluster) and how to create
-the environment.
+The script is set for QB4: account `loni_perovsk27`, `gpu2`, and conda from
+`/home/lgutsev/miniforge3`. Two things are left, both in the package README:
+- create the environment `/project/lgutsev/env/uma` (fairchem-core and sella);
+- fill in `<UMA_DIR>`, the folder where UMA already sits on the cluster.
 
 - **Tested:** the same script, run on the laptop CPU with uma-s-1p1, reproduces
   the evaluation above (barrier 3.464 kcal/mol, TS mode −483 cm⁻¹) in 35 s.

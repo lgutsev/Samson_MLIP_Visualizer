@@ -38,7 +38,7 @@ CHECKPOINTS = ["uma-s-1p1.pt", "uma-m-1p1.pt"]  # array task 1, 2
 
 SLURM = """#!/bin/bash
 #SBATCH --job-name=uma-sn2
-#SBATCH --account=<ACCOUNT>
+#SBATCH --account=loni_perovsk27
 #SBATCH --partition=gpu2
 #SBATCH --array=1-{n}
 #SBATCH --nodes=1
@@ -49,12 +49,11 @@ SLURM = """#!/bin/bash
 #SBATCH --time=01:00:00
 #SBATCH --output=logs/%x_%A_%a.out
 # Written by samson-mlip-visualizer (examples/uma_sn2/make_loni_package.py).
-# Replace <ACCOUNT>, <UMA_ENV> and <UMA_DIR> (see README.md) before sbatch.
+# For LONI QB4. Replace <UMA_DIR> (see README.md) before sbatch.
 # Array task 1: uma-s-1p1, the control; task 2: uma-m-1p1.
 set -euo pipefail
-module load conda/24.3.0
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate <UMA_ENV>
+source /home/lgutsev/miniforge3/etc/profile.d/conda.sh
+conda activate /project/lgutsev/env/uma
 cd "$SLURM_SUBMIT_DIR"
 CHECKPOINTS=({checkpoints})
 CHECKPOINT=${{CHECKPOINTS[$((SLURM_ARRAY_TASK_ID - 1))]}}
@@ -82,12 +81,13 @@ refinement with a finite-difference frequency check, and the fragments.
 
 ## Before `sbatch run_uma.slurm`
 
-1. **An environment with fairchem-core, ASE, and sella.** Once, on a login node:
+1. **An environment with fairchem-core, ASE, and sella**, next to the MACE env.
+   Once, on a login node:
 
    ```bash
-   module load conda/24.3.0
-   conda create -p /ddnB/project/ramu/lgutsev/envs/uma python=3.12 -y
-   conda activate /ddnB/project/ramu/lgutsev/envs/uma
+   source /home/lgutsev/miniforge3/etc/profile.d/conda.sh
+   conda create -p /project/lgutsev/env/uma python=3.12 -y
+   conda activate /project/lgutsev/env/uma
    pip install fairchem-core sella
    python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
    ```
@@ -95,11 +95,10 @@ refinement with a finite-difference frequency check, and the fragments.
    On the login node the last line may print `False`; it has to be `True` on a
    `gpu2` node, as the job's log shows. If it isn't, install the CUDA build of
    torch that matches the node's driver.
-2. **Placeholders in `run_uma.slurm`:**
-   - `<ACCOUNT>`: your allocation;
-   - `<UMA_ENV>`: the environment above;
-   - `<UMA_DIR>`: the folder on the cluster holding `uma-s-1p1.pt` and
-     `uma-m-1p1.pt` (you already copied UMA there).
+2. **One placeholder in `run_uma.slurm`:** `<UMA_DIR>`, the folder on the
+   cluster holding `uma-s-1p1.pt` and `uma-m-1p1.pt` (you already copied UMA
+   there). The rest is set for QB4: account `loni_perovsk27`, partition `gpu2`,
+   conda from `/home/lgutsev/miniforge3`, and the environment above.
 3. **The fragments need `iso_atom_elem_refs.yaml`** (facebook/UMA, `references/`)
    in `<UMA_DIR>` or in `<UMA_DIR>/references/`. Without it, F⁻ and Cl⁻ can't be
    evaluated. The rest still runs, and `results.json` lists the error.
