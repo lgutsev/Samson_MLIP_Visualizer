@@ -154,3 +154,54 @@ def test_baseline_card_records_the_method():
     card = delta.xtb_baseline_card("GFN1-xTB", charge=-1)
     assert card == {"program": "xtb", "method": "gfn1", "charge": -1, "multiplicity": 1,
                     "solvent": None}
+
+
+class Periodic(Harmonic):
+    """Harmonic plus a constant stress, for periodic cells."""
+
+    implemented_properties = ["energy", "forces", "stress"]
+
+    def __init__(self, k, stress):
+        super().__init__(k)
+        self.fixed_stress = np.asarray(stress, float)
+
+    def calculate(self, atoms=None, properties=("energy",), system_changes=all_changes):
+        super().calculate(atoms, properties, system_changes)
+        self.results["stress"] = self.fixed_stress
+
+
+def crystal():
+    return Atoms("NaCl", scaled_positions=[[0, 0, 0], [0.5, 0.5, 0.5]], cell=[4, 4, 4],
+                 pbc=True)
+
+
+def test_stress_adds_for_periodic_cells_and_labels_carry_it():
+    base, corr = Periodic(2.0, np.full(6, 0.01)), Periodic(1.0, np.full(6, 0.002))
+    atoms = crystal()
+    atoms.calc = DeltaCalculator(base, corr)
+    np.testing.assert_allclose(atoms.get_stress(), 0.012)
+    frame = crystal()
+    frame.info.update(HSE06_energy=-5.0, HSE06_stress=np.full(6, 0.03))
+    frame.arrays["HSE06_forces"] = np.zeros((2, 3))
+    (label,) = delta_labels([frame], base, energy_key="HSE06_energy",
+                            forces_key="HSE06_forces", stress_key="HSE06_stress")
+    np.testing.assert_allclose(label.info["DELTA_stress"], 0.02)
+    np.testing.assert_allclose(label.info["BASE_stress"], 0.01)
+
+
+def test_a_correction_on_a_mace_baseline_finds_and_checks_it(monkeypatch, tmp_path):
+    fake = _fake_mace(monkeypatch)
+    base = _model(tmp_path, "mace-mp-0-small.model")
+    card = delta.mace_baseline_card(base)
+    assert card["program"] == "mace" and card["model"] == "mace-mp-0-small.model"
+    correction = _model(tmp_path, "hse_delta.model", {"delta_baseline": card})
+    calc = create_calculator("mace", correction, device="cpu")
+    assert isinstance(calc, DeltaCalculator) and isinstance(calc.baseline, fake)
+    assert calc.baseline.kwargs["model_paths"] == str(base)
+    base.write_bytes(b"other weights")  # a different model under the same name
+    with pytest.raises(CalculatorLoadError, match="SHA-256"):
+        create_calculator("mace", correction, device="cpu")
+    base.unlink()
+    monkeypatch.setattr("samson_mlip_visualizer.paths.mace_dir", lambda: tmp_path / "none")
+    with pytest.raises(CalculatorLoadError, match="not found"):
+        create_calculator("mace", correction, device="cpu")

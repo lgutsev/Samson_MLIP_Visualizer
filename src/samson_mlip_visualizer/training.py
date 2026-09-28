@@ -132,7 +132,8 @@ def train_arguments(spec: TrainingSpec, seed: int, workdir: str, *, train_file=N
         f"--valid_fraction={spec.valid_fraction}",
         f"--energy_key={spec.energy_key}",
         f"--forces_key={spec.forces_key}",
-        "--loss=weighted",
+        # "weighted" fits energies and forces only; stress needs its own loss
+        f"--loss={'stress' if spec.stress_weight else 'weighted'}",
         f"--energy_weight={spec.energy_weight}",
         f"--forces_weight={spec.forces_weight}",
         f"--lr={spec.lr}",
@@ -152,7 +153,8 @@ def train_arguments(spec: TrainingSpec, seed: int, workdir: str, *, train_file=N
         "--save_cpu",
     ]
     if spec.stress_weight:
-        arguments += [f"--stress_key={spec.stress_key}", f"--stress_weight={spec.stress_weight}"]
+        arguments += [f"--stress_key={spec.stress_key}", f"--stress_weight={spec.stress_weight}",
+                      "--compute_stress=True"]
     # Without it mace-torch rebuilds the element table from the data (plain: only
     # the training elements; multihead: those plus the replay sample's).
     if spec.keep_foundation_elements:

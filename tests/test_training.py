@@ -154,6 +154,12 @@ def test_scratch_mode_for_a_delta_correction(data, tmp_path):
     assert "--model=MACE" in arguments and "--E0s={1:-0.5000000000,8:2.0000000000}" in arguments
     assert "--r_max=4.0" in arguments and "--hidden_irreps=32x0e+32x1o" in arguments
     assert "--energy_key=DELTA_energy" in arguments
+    assert "--loss=weighted" in arguments and "--compute_stress=True" not in arguments
+    stressed = train_arguments(TrainingSpec.from_json({**scratch.to_json(), "stress_weight": 10}),
+                               1, "w")
+    # mace-torch ignores stress under the "weighted" loss
+    assert "--loss=stress" in stressed and "--compute_stress=True" in stressed
+    assert "--stress_weight=10" in stressed
     assert not any(a.startswith(("--foundation_model", "--multiheads")) for a in arguments)
     assert TrainingSpec.from_json(json.loads(json.dumps(scratch.to_json()))) == scratch
     with pytest.raises(ValueError, match="e0s"):

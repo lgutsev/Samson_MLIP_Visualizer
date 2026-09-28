@@ -1,0 +1,13 @@
+# Outputs of the scripts (with DELTA_DIR unset)
+data/
+runs/
+models/
+dry_run/
+smoke/
+campaign/
+porphine_smoke/
+porphine_campaign/
+_*_frames/
+*.extxyz
+results*.json
+*.log

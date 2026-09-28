@@ -411,6 +411,16 @@ round of 8 bond-stretch labels fixed it. A Δ-model's card names its baseline, a
 
 ![Δ-learning along the HCN path: baseline, residual, sum](examples/delta_xtb_hcn/images/delta_decomposition.png)
 
+Two more Δ-learning examples:
+[`examples/delta_nico4/`](examples/delta_nico4/) (Ni(CO)₄ → Ni(CO)₃ + CO against
+PBE0, with GFN2-xTB, GFN1-xTB, and MACE-MP-0 as baselines, plus ORCA packages
+for Ni porphine on an HPC), and
+[`examples/delta_hse06_bbvo/`](examples/delta_hse06_bbvo/) (Ba₂BiVO₆:
+MACE-MP-0 plus an HSE06 correction, with VASP PBE+U/HSE06 packages from
+`samson_mlip_visualizer.vasp_labeling`). For Ni(CO)₄ the xTB corrections give
+the best forces near equilibrium, but they needed a 7 Å cutoff to fix the
+long-ranged xTB overbinding of the Ni–CO bond.
+
 ### Viewing normal modes
 
 After **Frequencies** (or a converged TS search with the frequency check), the

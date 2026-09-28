@@ -153,7 +153,8 @@ def create_calculator(
 
     A MACE model whose card names a ``delta_baseline`` is a Δ-learning
     correction (:mod:`.delta`), not a potential: it is returned wrapped in its
-    GFN-xTB baseline as a :class:`~.delta.DeltaCalculator`.
+    baseline (GFN-xTB, or a MACE model on the same device) as a
+    :class:`~.delta.DeltaCalculator`.
     """
     paths = _resolve_model_paths(model_path)
 
@@ -214,7 +215,11 @@ def create_calculator(
             from .delta import DeltaCalculator, baseline_calculator
 
             try:
-                return DeltaCalculator(baseline_calculator(baseline), correction)
+                return DeltaCalculator(
+                    baseline_calculator(baseline, correction_path=paths[0], device=device,
+                                        dtype=dtype),
+                    correction,
+                )
             except (FileNotFoundError, TypeError, ValueError) as exc:
                 raise CalculatorLoadError(str(exc)) from exc
         if backend == "deepmd":

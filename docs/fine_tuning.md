@@ -257,8 +257,9 @@ it: normal termination, a converged SCF, the energy consistent between ORCA's
 `collect_report.json` listing every rejected frame and why. The parsers were
 tested against Gaussian 16 and ORCA 5 output written to their documented
 formats, not against real runs, so run one real output through
-`collect_labels` before relying on it. VASP packages (pymatgen `MPStaticSet`)
-come with the first periodic target.
+`collect_labels` before relying on it. VASP packages are in
+`samson_mlip_visualizer.vasp_labeling` (see the
+[fine-tuning guide](fine_tuning_guide.md#vasp-labeling-periodic-frames)).
 
 mace-torch 0.3.16 can keep all foundation elements during fine-tuning
 (`--foundation_model_elements=True`), which avoids the element loss above; the

@@ -8,6 +8,7 @@ from ase.io import read
 
 from samson_mlip_visualizer.finetune import (
     Manifest,
+    Selection,
     committee_spread,
     fit_element_offsets,
     frame_checksum,
@@ -184,3 +185,15 @@ def test_labeled_structure_keys_and_offsets(tmp_path):
     back = read(tmp_path / "labeled.extxyz")
     assert back.info["REF_energy"] == pytest.approx(-3.0) and back.info["code"] == "VASP 6.4"
     assert back.arrays["REF_forces"].shape == (1, 3)
+
+
+def test_manifest_matches_the_stored_frames_of_a_bigger_molecule(tmp_path):
+    """extxyz keeps 8 decimals: with 111 coordinates, some round differently at
+    1e-6 Å once stored, so checksums must come from the stored frames."""
+    rng = np.random.default_rng(1)
+    frames = [Atoms("C37", positions=rng.uniform(0, 10, (37, 3))) for _ in range(5)]
+    chosen = Selection()
+    for index in range(len(frames)):
+        chosen.add(index, "test", None, float("inf"))
+    frames_path, manifest_path = write_selection(tmp_path, frames, chosen, source="test")
+    assert Manifest.load(manifest_path).verify(read(frames_path, ":")) == []

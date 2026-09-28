@@ -171,6 +171,37 @@ correction must be trained where it will be used, and bond breaking needed
 labels of its own:
 [examples/delta_xtb_hcn](../examples/delta_xtb_hcn/README.md).
 
+The baseline can also be a MACE model (`mace_baseline_card(model)`, which
+records the file name and SHA-256): MACE-MP-0 plus a correction trained on
+HSE06 − MACE-MP-0 gives hybrid-functional quality with no DFT at run time.
+Stress is part of the labels and the model for periodic cells. Give it a
+large weight: a residual's stresses are a fraction of a GPa, so at mace-torch's
+usual weights they add about 1 % to the loss and are simply not learned
+(forces do not pin them down either, because pair contributions cancel in a
+near-perfect crystal's forces but add up in its stress). In the BBVO dry run,
+stress weight 10 left the stress error at 0.56 GPa; 10⁴ brought it to 0.02 GPa
+with unchanged forces. `TrainingSpec(stress_weight=...)` switches mace-torch to
+its stress loss (`--loss=stress --compute_stress=True`). Two more worked
+examples: [a metal carbonyl](../examples/delta_nico4/README.md) (Ni(CO)₄,
+PBE0, three baselines, plus an ORCA package for Ni porphine on an HPC) and
+[a double perovskite](../examples/delta_hse06_bbvo/README.md) (Ba₂BiVO₆,
+HSE06 labels from VASP on an HPC).
+
+## VASP labeling (periodic frames)
+
+`samson_mlip_visualizer.vasp_labeling.write_vasp_package` turns
+`frames.extxyz` + `manifest.json` into a VASP package in which every frame is
+computed at several levels (default PBE+U, then HSE06 restarted from its
+WAVECAR), all sharing one Γ-centered KPOINTS, ENCUT, PREC, LREAL, and ISYM, so
+that differences between the levels come from the method alone. POTCARs and U
+follow pymatgen's `MPRelaxSet.yaml`, the settings of MACE-MP-0's training
+data; POTCARs are concatenated on the cluster from `<POTPAW_PBE_DIR>`, never
+copied. `collect_vasp_labels` keeps a frame only when every level finished,
+reached EDIFF, and matches the frame's cell and geometry, and writes
+`<LEVEL>_energy` / `_forces` / `_stress`. The parser has only been tested on
+synthetic data so far, so run the BBVO smoke test (`hpc_smoke_tests/05_vasp_bbvo`)
+before a campaign.
+
 ## Not built yet
 
 - An evaluation report: errors binned by distance from the training data,
@@ -179,4 +210,5 @@ labels of its own:
 - Panel buttons for exporting frames, loading labels, and running the loop.
 - The HCN example rebuilt on the new modules, as an end-to-end regression
   test.
-- VASP labeling packages, for periodic systems.
+- A test of the VASP collector on real vasprun.xml/OUTCAR files (the BBVO
+  smoke test).

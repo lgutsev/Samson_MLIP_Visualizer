@@ -334,14 +334,22 @@ def write_selection(
     model: str = "",
     notes: dict | None = None,
 ) -> tuple[Path, Path]:
-    """``frames.extxyz`` (the selected frames, in order) and ``manifest.json``."""
-    from ase.io import write
+    """``frames.extxyz`` (the selected frames, in order) and ``manifest.json``.
+
+    The checksums are those of the frames as stored: extxyz keeps 8 decimals, so
+    a frame held in memory can round differently (at 1e-6 Å) from the same frame
+    read back, and every consumer reads the file."""
+    from ase.io import read, write
 
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     frames = [candidates[index].copy() for index in selection.indices]
     for frame in frames:
         frame.calc = None
+    frames_path = directory / "frames.extxyz"
+    write(frames_path, frames)
+    if frames:  # ASE cannot read an empty file back
+        frames = read(frames_path, ":")
     entries = [
         FrameEntry(
             index=position,
@@ -357,8 +365,6 @@ def write_selection(
                 selection.nearest_distance, strict=True)
         )
     ]
-    frames_path = directory / "frames.extxyz"
-    write(frames_path, frames)
     manifest_path = Manifest(entries, model=model, notes=dict(notes or {})).save(
         directory / "manifest.json"
     )
