@@ -162,10 +162,12 @@ def _script(levels: tuple[str, ...], count: int, slurm: VaspSlurmSettings) -> st
         "# Written by samson-mlip-visualizer. Replace every placeholder in angle brackets",
         "# (see README.md) before sbatch. One array task per frame; its levels run in order,",
         f"# {' -> '.join(levels)}, each later one starting from the previous WAVECAR.",
-        "set -euo pipefail",
+        # module scripts may read unset variables: -u only after them
+        "set -eo pipefail",
         # a clean environment for the container module, as in the working launchers
         *(["module purge"] if slurm.modules else []),
         *[f"module load {module}" for module in slurm.modules],
+        "set -u",
         *slurm.setup,
         'cd "$SLURM_SUBMIT_DIR"',
         'frame=$(printf "frame_%04d" "$SLURM_ARRAY_TASK_ID")',

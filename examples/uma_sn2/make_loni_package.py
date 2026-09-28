@@ -51,9 +51,12 @@ SLURM = """#!/bin/bash
 # Written by samson-mlip-visualizer (examples/uma_sn2/make_loni_package.py).
 # For LONI QB4. Replace <UMA_DIR> (see README.md) before sbatch.
 # Array task 1: uma-s-1p1, the control; task 2: uma-m-1p1.
-set -euo pipefail
+# conda's activation scripts read unset variables: -u only after them
+set -eo pipefail
+module purge
 source /home/lgutsev/miniforge3/etc/profile.d/conda.sh
 conda activate /project/lgutsev/env/uma
+set -u
 cd "$SLURM_SUBMIT_DIR"
 CHECKPOINTS=({checkpoints})
 CHECKPOINT=${{CHECKPOINTS[$((SLURM_ARRAY_TASK_ID - 1))]}}
@@ -160,6 +163,9 @@ def starts():
 def main():
     (OUT / "data").mkdir(parents=True, exist_ok=True)
     (OUT / "logs").mkdir(exist_ok=True)
+    # SLURM does not create logs/, and an empty folder can get lost in the copy
+    (OUT / "logs" / "README.txt").write_text("SLURM writes one log per array task here.\n",
+                                             newline="\n")
     frames = labeled_frames()
     write(OUT / "data" / "labeled_frames.extxyz", frames)
     write(OUT / "data" / "starts.extxyz", starts())

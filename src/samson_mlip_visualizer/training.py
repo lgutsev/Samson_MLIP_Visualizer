@@ -287,6 +287,9 @@ def _slurm_script(spec: TrainingSpec, train_file: str, foundation: str, slurm) -
         "# (see README.md) before sbatch. One array task per seed.",
         # conda's activation scripts read unset variables: -u only after them
         "set -eo pipefail",
+        # site default modules (QB4 loads the Intel compilers) can shadow the env's
+        # libraries; the working QB4 launchers purge them first
+        "module purge",
         *[f"module load {module}" for module in slurm.modules],
         slurm.activate,
         "set -u",

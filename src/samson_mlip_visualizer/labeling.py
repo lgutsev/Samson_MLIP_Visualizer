@@ -93,8 +93,11 @@ def _script(code: str, count: int, slurm: SlurmSettings, job: str = "force") -> 
         "# (see README.md) before sbatch.",
         *([f"# Each array task runs {jobs} frames at once, {slurm.cpus} cores each."]
           if jobs > 1 else []),
-        "set -euo pipefail",
+        # module scripts may read unset variables: -u only after them, as in the
+        # working QB4 launchers
+        "set -eo pipefail",
         *[f"module load {module}" for module in slurm.modules],
+        "set -u",
         *slurm.setup,
         # Side by side, each ORCA mpirun would bind its ranks to the same first cores.
         *(["export OMPI_MCA_hwloc_base_binding_policy=none"]
@@ -118,9 +121,11 @@ def _script(code: str, count: int, slurm: SlurmSettings, job: str = "force") -> 
             '  local work="${TMPDIR:-/tmp}/orca_${SLURM_JOB_ID}_${frame}"',
             '  mkdir -p "$work"',
             '  cp "inputs/$frame.inp" "$work/"',
-            '  (cd "$work" && "$ORCA_BIN" "$frame.inp" > "$frame.out")',
+            # a failed run still copies its .out back: scratch is gone after the job
+            '  (cd "$work" && "$ORCA_BIN" "$frame.inp" > "$frame.out") \\',
+            '    || echo "$frame: ORCA exited with $?" >&2',
             '  cp "$work/$frame.out" outputs/',
-            *(['  cp "$work/$frame.engrad" outputs/'] if job == "force" else []),
+            *(['  cp "$work/$frame.engrad" outputs/ || true'] if job == "force" else []),
             '  rm -rf "$work"',
         ]
     lines += ["}", ""]
