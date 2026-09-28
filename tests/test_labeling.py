@@ -229,3 +229,41 @@ def test_package_refuses_periodic_or_changed_frames(tmp_path):
     write(frames_path, frames)
     with pytest.raises(ValueError, match="does not match"):
         write_label_package(tmp_path / "c", frames_path, manifest_path, code="orca")
+
+
+def orca_energy_out(atoms, energy):
+    """An ORCA single-point .out: the coordinate block and the final energy."""
+    coordinates = "\n".join(f"  {s:<2} {x:12.6f} {y:12.6f} {z:12.6f}"
+                            for s, (x, y, z) in zip(atoms.get_chemical_symbols(),
+                                                    atoms.positions, strict=True))
+    return (" Program Version 6.0.1 -  RELEASE  -\n"
+            "---------------------------------\nCARTESIAN COORDINATES (ANGSTROEM)\n"
+            f"---------------------------------\n{coordinates}\n\n"
+            f"FINAL SINGLE POINT ENERGY      {energy:.12f}\n"
+            "                             ****ORCA TERMINATED NORMALLY****\n")
+
+
+def test_orca_energy_only_package_for_dlpno_ccsdt(tmp_path):
+    frames_path, manifest_path = selection(tmp_path, count=2)
+    package = write_label_package(tmp_path / "cc", frames_path, manifest_path, code="orca",
+                                  level="DLPNO-CCSD(T) def2-TZVP def2-TZVP/C TightPNO",
+                                  job="energy")
+    inp = (package / "inputs" / "frame_0000.inp").read_text()
+    assert inp.startswith("! DLPNO-CCSD(T) def2-TZVP def2-TZVP/C TightPNO TightSCF")
+    assert "EnGrad" not in inp
+    assert ".engrad" not in (package / "run_orca.slurm").read_text()
+    assert json.loads((package / "package.json").read_text())["job"] == "energy"
+    frames = read(package / "frames.extxyz", ":")
+    (package / "outputs").mkdir()
+    (package / "outputs" / "frame_0000.out").write_text(orca_energy_out(frames[0], -76.3))
+    moved = frames[1].copy()
+    moved.positions[0] += 0.01
+    (package / "outputs" / "frame_0001.out").write_text(orca_energy_out(moved, -76.2))
+    result = collect_labels(package)
+    assert len(result.labeled) == 1 and "geometry differs" in result.rejected[1]
+    labeled = result.labeled[0]
+    assert labeled.info["REF_energy"] == pytest.approx(-76.3 * Hartree)
+    assert "REF_forces" not in labeled.arrays
+    with pytest.raises(ValueError, match="energy"):
+        write_label_package(tmp_path / "g", frames_path, manifest_path, code="gaussian",
+                            job="energy")

@@ -36,3 +36,23 @@ repository (`examples/hpc_smoke_tests/`). Nothing here has been submitted.
 The three geometries are HCN, the transition state, and HNC from the
 MACE-MP-0 IRC (C, N, H order). With PBE, the barrier on these geometries
 should come out near 2.0 eV.
+
+## Δ-learning smoke tests (05–11)
+
+Written by the Δ-learning examples, not by `make_smoke_tests.py`. Each folder
+has its own README with the placeholders to fill in and what to copy back. Run
+each smoke test before its campaign; the campaigns are in the examples' work
+folders (`D:\MLIP_Work_Folder\delta_hse06_bbvo`, `D:\MLIP_Work_Folder\delta_nico4`).
+
+| Folder | What it checks | Written by | Resources | Pass if |
+|---|---|---|---|---|
+| `05_vasp_bbvo` | VASP PBE+U → HSE06 pairs on Ba₂BiVO₆ (primitive cell, a rattled copy, a 40-atom MD frame) | `delta_hse06_bbvo/make_packages.py` | 3 × 1 node, hours | `collect_vasp_labels` accepts all 3; the primitive cell gives HSE06 ≈ −84.21 eV and PBE+U ≈ −66.07 eV |
+| `06_orca_ni_porphine` | ORCA PBE0/def2-TZVP gradients on Ni porphine (37 atoms) | `delta_nico4/porphine_packages.py` | 3 × 16 cores | `collect_labels` accepts all 3; note the time per frame for the 150-frame campaign |
+| `07_vasp_bbvo_doped` | the same pairs on Ba₂BiNbO₆, Ba₂BiTaO₆, and Nb at x = 0.5 (Nb_pv/Ta_pv POTCARs, U on V only) | `delta_hse06_bbvo/make_packages.py` | 3 × 1 node, hours | all 3 accepted |
+| `08_vasp_bbvo_stability` | **is cubic Ba₂BiVO₆ a minimum?** PBE+U/HSE06 single points on cubic vs MACE-MP-0-distorted cells, and a symmetry-free PBE+U relaxation | `delta_hse06_bbvo/stability_check.py` | 3 × 1 node + 1 relaxation | read the energies: distorted below cubic at the DFT level means the cubic cell is a saddle point |
+| `09_orca_nico4_dlpno` | ORCA DLPNO-CCSD(T)/def2-TZVP single points (energy only) on 3 points of the Ni(CO)₄ CO pull | `delta_nico4/reference_check.py` | 3 × 16 cores, 64 GB | `collect_labels` accepts all 3; compare the pull energy with PBE0's 1.10 eV |
+| `10_train_nico4` | GPU training on the cluster: a direct fine-tune and a 7 Å GFN2-xTB correction for Ni(CO)₄, 3 epochs | `delta_nico4/train.py --package … --rmax 7 --smoke` | 2 × 1 GPU, minutes | both write a `.model`; `install_models` accepts them |
+| `11_train_bbvo_stress` | GPU training with stress (`--loss=stress`) on 40-atom cells: the MACE-MP-0 + Δ correction and the direct fine-tune, 3 epochs, on SYNTHETIC dry-run labels | `delta_hse06_bbvo/train.py --dry-run --package … --smoke` | 2 × 1 GPU, minutes | both finish (the direct fine-tune ran out of memory on an 8 GB laptop GPU with three seeds at once) |
+
+Suggested order: `08` first (it decides which BBVO structures the campaigns
+should sample), then `05`, `07`, `09`, `06`, and the GPU checks `10` and `11`.

@@ -8,17 +8,31 @@ the sets are nested):
   mean E_PBE0 − E_MACE-MP-0 over the pool (one composition: relative energies
   are unchanged);
 - ``delta-gfn2_N{N}`` / ``delta-gfn1_N{N}``: a small MACE from scratch on
-  PBE0 − GFN2-xTB / PBE0 − GFN1-xTB;
+  PBE0 − GFN2-xTB / PBE0 − GFN1-xTB (with ``--rmax 7`` also
+  ``delta-gfn*_rmax7_N{N}``, the same with a 7 Å cutoff);
 - ``delta-mace_N{N}``: the same on PBE0 − MACE-MP-0 (an MLIP baseline).
 
 Every model gets the same number of optimizer steps. Models already trained are
-kept. Usage: ``train.py [SEED ...]`` (default 1).
+kept.
+
+Usage::
+
+    train.py [--seeds 1 2 3] [--rmax 7]            # train here (the laptop GPU)
+    train.py --package DIR [--seeds ...] [--rmax 7] [--smoke]
+
+``--package`` writes the same models as HPC training packages instead (one SLURM
+array per model, one task per seed; ``submit_all.sh`` submits them all). The
+residual labels are computed here, so the cluster needs only mace-torch. Copy
+the ``runs/`` folders back and install with ``install_models``; evaluate here,
+where xTB is. ``--smoke`` packages two models on 74 structures for 3 epochs,
+one seed: a check of the cluster before the full set.
 """
 
+import argparse
 import json
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import numpy as np
 from ase.io import read, write
@@ -40,11 +54,24 @@ from samson_mlip_visualizer.delta import (
     mace_baseline_card,
     xtb_baseline_card,
 )
-from samson_mlip_visualizer.training import TrainingSpec, install_models, train_local
+from samson_mlip_visualizer.training import (
+    GpuSlurmSettings,
+    TrainingSpec,
+    install_models,
+    train_local,
+    write_training_package,
+)
 from samson_mlip_visualizer.xtb_backend import find_xtb
 
+parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+parser.add_argument("--seeds", type=int, nargs="+", default=[1])
+parser.add_argument("--rmax", type=float, nargs="*", default=[],
+                    help="extra cutoffs (Å) for the xTB corrections, besides the default 5")
+parser.add_argument("--package", type=Path, help="write HPC training packages here instead")
+parser.add_argument("--smoke", action="store_true", help="with --package: 2 models, 3 epochs")
+args = parser.parse_args()
 SIZES = (10, 20, 40, 74)
-SEEDS = tuple(int(s) for s in sys.argv[1:]) or (1,)
+SEEDS = tuple(args.seeds)
 WORKERS = 6
 
 pool = read(POOL, ":")
@@ -99,14 +126,53 @@ for n in SIZES:
         frames = [labels[method][i] for i in subset]
         delta_file = data / f"delta-{method}_N{n}.extxyz"
         write(delta_file, frames)
-        specs.append(TrainingSpec(
-            name=f"delta-{method}_N{n}", foundation="", train_file=str(delta_file),
-            mode="scratch", e0s=delta_e0s(frames), energy_key="DELTA_energy",
-            forces_key="DELTA_forces", lr=0.01, epochs=epochs(n),
-            card={**card, "trained_on": f"{n} structures",
-                  "target": f"PBE0/def2-TZVP − {method}",
-                  "delta_baseline": baseline_card(method)},
-            **common))
+        cutoffs = [None] + ([r for r in args.rmax] if method != "mace" else [])
+        for r_max in cutoffs:
+            tag = f"_rmax{r_max:g}" if r_max else ""
+            specs.append(TrainingSpec(
+                name=f"delta-{method}{tag}_N{n}", foundation="", train_file=str(delta_file),
+                mode="scratch", e0s=delta_e0s(frames), energy_key="DELTA_energy",
+                forces_key="DELTA_forces", lr=0.01, epochs=epochs(n),
+                architecture={"r_max": r_max} if r_max else {},
+                card={**card, "trained_on": f"{n} structures",
+                      "target": f"PBE0/def2-TZVP − {method}",
+                      "delta_baseline": baseline_card(method)},
+                **common))
+
+if args.package:
+    if args.smoke:
+        keep = {"direct_N74", f"delta-gfn2_rmax{args.rmax[0]:g}_N74" if args.rmax
+                else "delta-gfn2_N74"}
+        specs = [TrainingSpec.from_json({**s.to_json(), "epochs": 3, "seeds": (1,)})
+                 for s in specs if s.name in keep]
+    root = args.package
+    root.mkdir(parents=True, exist_ok=True)
+    slurm = GpuSlurmSettings(time="02:00:00" if args.smoke else "06:00:00", memory_gb=16)
+    for spec in specs:
+        write_training_package(spec, root / spec.name, slurm=slurm)
+    names = [spec.name for spec in specs]
+    (root / "submit_all.sh").write_text("#!/bin/bash\n# Submits every package here.\nset -e\n"
+                                        + "".join(f"(cd {name} && sbatch run_train.slurm)\n"
+                                                  for name in names), newline="\n")
+    (root / "README.md").write_text(
+        f"# Ni(CO)4 learning-curve training: {len(specs)} models, seeds {list(SEEDS)}\n\n"
+        "Written by `examples/delta_nico4/train.py --package`. Each folder is a training\n"
+        "package (see its README); the residual labels are already in its data, so the\n"
+        "cluster needs only mace-torch 0.3.16. Fill in the placeholders in every\n"
+        "`run_train.slurm` (the same four in each), then `bash submit_all.sh`.\n\n"
+        "Afterwards copy every `<model>/runs/` back into the same folders and, on the\n"
+        "desktop, install and evaluate:\n\n"
+        "```python\n"
+        "from samson_mlip_visualizer.training import install_models\n"
+        "for folder in Path(r'<this folder>').iterdir():\n"
+        "    if (folder / 'spec.json').exists():\n"
+        "        install_models(folder, destination=Path(r'<DELTA_DIR>') / 'models')\n"
+        "```\n\n"
+        "then `python evaluate.py` in `examples/delta_nico4` (it needs xtb for the\n"
+        "xTB corrections).\n\n" + "".join(f"- `{name}`\n" for name in names),
+        encoding="utf-8")
+    print(f"{len(specs)} training packages -> {root}")
+    raise SystemExit
 
 
 def run(spec):
@@ -123,5 +189,5 @@ def run(spec):
 start = time.perf_counter()
 with ThreadPoolExecutor(WORKERS) as executor:
     for name, status, seconds in executor.map(run, specs):
-        print(f"{name:<18} {status} {seconds:6.0f} s", flush=True)
+        print(f"{name:<22} {status} {seconds:6.0f} s", flush=True)
 print(f"all trainings: {time.perf_counter() - start:.0f} s wall")

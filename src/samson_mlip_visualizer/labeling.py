@@ -11,6 +11,9 @@ for), and writes ``labeled.extxyz`` for fine-tuning plus a report of what was
 rejected and why.
 
 Codes: Gaussian (``Force``) and ORCA (``EnGrad``), for molecules and clusters.
+ORCA packages can also be energy-only (``job="energy"``), for methods without
+analytic gradients such as DLPNO-CCSD(T): the labels then carry ``REF_energy``
+and no forces.
 Their energies are on another scale than the VASP-trained foundation models:
 pass per-element offsets (:func:`.finetune.fit_element_offsets`) to the
 collector to put ``REF_energy`` on the foundation scale; the raw energy is kept
@@ -61,7 +64,7 @@ def frame_name(index: int) -> str:
     return f"frame_{index:04d}"
 
 
-def _script(code: str, count: int, slurm: SlurmSettings) -> str:
+def _script(code: str, count: int, slurm: SlurmSettings, job: str = "force") -> str:
     throttle = f"%{slurm.max_parallel}" if slurm.max_parallel else ""
     lines = [
         "#!/bin/bash",
@@ -98,15 +101,18 @@ def _script(code: str, count: int, slurm: SlurmSettings) -> str:
             'mkdir -p "$work"',
             'cp "inputs/$frame.inp" "$work/"',
             '(cd "$work" && "$ORCA_BIN" "$frame.inp" > "$frame.out")',
-            'cp "$work/$frame.out" "$work/$frame.engrad" outputs/',
+            'cp "$work/$frame.out" outputs/',
+            *(['cp "$work/$frame.engrad" outputs/'] if job == "force" else []),
             'rm -rf "$work"',
         ]
     return "\n".join(lines) + "\n"
 
 
-def _readme(code: str, count: int, level: str, placeholders: list[str]) -> str:
+def _readme(code: str, count: int, level: str, placeholders: list[str],
+            job: str = "force") -> str:
     back = "`outputs/` (every `frame_NNNN.log`)" if code == "gaussian" else (
-        "`outputs/` (every `frame_NNNN.out` and `frame_NNNN.engrad`)"
+        "`outputs/` (every `frame_NNNN.out` and `frame_NNNN.engrad`)" if job == "force"
+        else "`outputs/` (every `frame_NNNN.out`; energies only, no gradients)"
     )
     todo = (
         "\n".join(f"   - `{name}`" for name in placeholders)
@@ -150,12 +156,16 @@ def write_label_package(
     charge: int = 0,
     multiplicity: int = 1,
     slurm: SlurmSettings | None = None,
+    job: str = "force",
 ) -> Path:
-    """A labeling package for ``code`` ('gaussian' or 'orca') in ``directory``."""
+    """A labeling package for ``code`` ('gaussian' or 'orca') in ``directory``.
+    ``job="energy"`` (ORCA only) writes single points without gradients."""
     from ase.io import read
 
     if code not in CODES:
         raise ValueError(f"code must be one of {', '.join(CODES)}")
+    if job not in ("force", "energy") or (job == "energy" and code != "orca"):
+        raise ValueError("job must be 'force', or 'energy' with ORCA")
     slurm = slurm or SlurmSettings()
     frames = read(frames_path, ":")
     manifest = Manifest.load(manifest_path)
@@ -171,7 +181,7 @@ def write_label_package(
     (directory / "logs" / "README.txt").write_text("SLURM writes one log per frame here.\n")
     level = level or DEFAULT_LEVEL[code]
     options = {
-        "job": "force",
+        "job": job,
         "level": level,
         "charge": charge,
         "multiplicity": multiplicity,
@@ -187,13 +197,14 @@ def write_label_package(
         (directory / "inputs" / f"{name}{_SUFFIX[code]}").write_text(text, encoding="utf-8")
     shutil.copyfile(frames_path, directory / "frames.extxyz")
     shutil.copyfile(manifest_path, directory / "manifest.json")
-    script = _script(code, len(frames), slurm)
+    script = _script(code, len(frames), slurm, job)
     (directory / f"run_{code}.slurm").write_text(script, encoding="utf-8", newline="\n")
     placeholders = sorted(set(PLACEHOLDER.findall(script)))
-    (directory / "README.md").write_text(_readme(code, len(frames), level, placeholders),
-                                         encoding="utf-8")
+    (directory / "README.md").write_text(
+        _readme(code, len(frames), level, placeholders, job), encoding="utf-8")
     (directory / PACKAGE_FILE).write_text(json.dumps({
         "code": code,
+        "job": job,
         "level": level,
         "charge": charge,
         "multiplicity": multiplicity,
@@ -275,6 +286,34 @@ def parse_orca(out_text: str, engrad_text: str) -> dict:
     }
 
 
+def parse_orca_energy(out_text: str) -> dict:
+    """Energy (Hartree), geometry (Å), and version from an ORCA single point's
+    ``.out`` (no gradient): the last FINAL SINGLE POINT ENERGY, which for a
+    correlated method such as DLPNO-CCSD(T) is the correlated total energy."""
+    if "ORCA TERMINATED NORMALLY" not in out_text:
+        raise OutputError("no 'ORCA TERMINATED NORMALLY' line (the job failed or did not finish)")
+    if "SCF NOT CONVERGED" in out_text:
+        raise OutputError("SCF not converged")
+    final = re.findall(r"FINAL SINGLE POINT ENERGY\s+(-?\d+\.\d+)", out_text)
+    if not final:
+        raise OutputError("no 'FINAL SINGLE POINT ENERGY'")
+    blocks = out_text.split("CARTESIAN COORDINATES (ANGSTROEM)")
+    if len(blocks) < 2:
+        raise OutputError("no 'CARTESIAN COORDINATES (ANGSTROEM)' block")
+    positions = []
+    for line in blocks[-1].splitlines()[2:]:
+        parts = line.split()
+        if len(parts) != 4:
+            break
+        positions.append([float(value) for value in parts[1:4]])
+    version = re.search(r"Program Version (\S+)", out_text)
+    return {
+        "energy_hartree": float(final[-1]),
+        "positions_angstrom": np.array(positions),
+        "version": f"ORCA {version.group(1)}" if version else "ORCA",
+    }
+
+
 # --- collecting ---------------------------------------------------------------------
 
 
@@ -294,7 +333,12 @@ class CollectResult:
         }
 
 
-def _parse(code: str, outputs: Path, name: str) -> dict:
+def _parse(code: str, outputs: Path, name: str, job: str = "force") -> dict:
+    if job == "energy":
+        out = outputs / f"{name}.out"
+        if not out.is_file():
+            raise OutputError("missing .out")
+        return parse_orca_energy(out.read_text(encoding="utf-8", errors="replace"))
     if code == "gaussian":
         log = outputs / f"{name}.log"
         if not log.is_file():
@@ -332,7 +376,7 @@ def collect_labels(
             continue
         frame = frames[index]
         try:
-            parsed = _parse(code, directory / "outputs", name)
+            parsed = _parse(code, directory / "outputs", name, package.get("job", "force"))
             if parsed["positions_angstrom"].shape != frame.positions.shape:
                 raise OutputError("the output has a different number of atoms")
             shift = np.abs(parsed["positions_angstrom"] - frame.positions).max()
@@ -341,10 +385,11 @@ def collect_labels(
         except OutputError as exc:
             result.rejected[index] = str(exc)
             continue
+        forces = parsed.get("forces_hartree_per_bohr")
         result.labeled.append(labeled_structure(
             frame,
             parsed["energy_hartree"] * Hartree,
-            parsed["forces_hartree_per_bohr"] * Hartree / Bohr,
+            None if forces is None else forces * Hartree / Bohr,
             offsets=offsets,
             tag=entry.reason,
             meta={

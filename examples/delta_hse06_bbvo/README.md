@@ -21,6 +21,7 @@ The example is split between the laptop and LONI:
 |---|---|---|
 | `make_frames.py` | laptop, 4 min | 58 frames from MACE-MP-0: strained primitive cells, 40-atom MD at 300/600/900 K, Nb- and Ta-substituted cells |
 | `doping.py` | laptop, 8 min | the V-site series Ba₂Bi(V₁₋ₓMₓ)O₆, M = Nb, Ta, x = 0.25–1: relaxed cells, lattice, bonds, mixing energies, and 73 frames to label |
+| `snb_screen.py` | laptop, 12 min (GPU) | ShakeNBreak bond distortions around one Nb or Ta (doped supercell, 60 atoms), a pristine control, MACE-MP-0 relaxations, and 9 PBE+U single points (`snb/`); needs a separate `defects` environment |
 | `make_packages.py` | laptop | four VASP packages: `smoke/` (3 frames), `campaign/` (58), `doped_smoke/` (3), `doped_campaign/` (73) |
 | run the packages | **LONI** | PBE+U then HSE06 on every frame, same k-mesh, cutoff, and precision |
 | `collect_vasp_labels` | laptop | checks every run and writes `labeled.extxyz` |
@@ -28,6 +29,15 @@ The example is split between the laptop and LONI:
 
 `fake_labels.py` and `--dry-run` run the laptop half on synthetic labels, to
 check the pipeline before any LONI hours are spent.
+
+## Structures for coauthors
+
+[`poscars/`](poscars/README.md) has every structure of the example as a
+VASP POSCAR, one folder each: the PBE+U cell (primitive and 40-atom), the Nb/Ta
+series, the two MACE-MP-0 distortions of the cubic cell, and the 80-atom
+dilute cells, with where each comes from. [`frames/`](frames/) has the exact
+frame sets the LONI packages were written from. `export_structures.py`
+regenerates both.
 
 ## The baseline, checked
 
@@ -170,6 +180,82 @@ campaigns together. `evaluate.py` then reports the errors per held-out
 composition and the mixing energies from the HSE06 and PBE+U labels against
 each model on the same relaxed cells, which is the same table at hybrid level.
 
+## Symmetry breaking around one dopant (doped + ShakeNBreak)
+
+`snb_screen.py` asks the local version of the stability question. It uses
+[doped](https://github.com/SMTG-Bham/doped) and
+[ShakeNBreak](https://github.com/SMTG-Bham/ShakeNBreak). doped picks the
+supercell (60 atoms, the smallest near-cubic cell with 10.4 Å between periodic
+images of the dopant) and guesses the charge states. ShakeNBreak stretches or
+compresses the bonds to the 2 or 6 nearest O by ±10–40 % and rattles the rest,
+tailing off away from the site. MACE-MP-0 relaxes each start at the host
+lattice, and the same starts (same seeds, same atom order) around a V of the
+undoped cell give the control. Two points to know:
+
+- **ShakeNBreak's own rule does nothing here.** It distorts as many neighbours
+  as the defect has extra or missing electrons. Nb⁵⁺ and Ta⁵⁺ on V⁵⁺ have none,
+  so it would only rattle. The script sets the neighbour counts explicitly. doped
+  guesses q = 0, −1, −2, −3 (and −4 for Ta). Only q = 0 runs, because MACE-MP-0
+  has no charge.
+- **Strong compressions find holes in MACE-MP-0.** Ta with all six O pushed in
+  by 30 or 40 % collapsed to Ta–O 0.01–0.8 Å, at −10⁷ eV. Any relaxation with two
+  atoms closer than 1.5 Å, or that did not converge, is rejected. Two of the 54
+  were rejected, both Ta.
+
+Energies relative to the unperturbed relaxation of the same cell (meV per
+60-atom cell, 6 formula units), 18 starts each:
+
+| On the site | Lowest ΔE | Range over starts | M–O at the lowest (Å) | Lowest − lowest of the control |
+|---|---|---|---|---|
+| V (pristine control) | −914 | −832 to −914 | 1.79–2.12 | — |
+| Nb | −697 | −640 to −697 | 1.97–2.06 | **+218** |
+| Ta | −242 | −188 to −242 | 1.98–2.02 | **+672** |
+
+- **Every start falls into the host's distortion, a rattle included.** The
+  control gains about 150 meV per formula unit, as in `stability_check.py`.
+  The starts differ by up to 80 meV, a rugged landscape of related minima
+  rather than one new structure. No bond pattern around the dopant stands out.
+- **The dopant does not distort. It suppresses the host's distortion.** The
+  V–O bonds at the control site split to 1.79–2.12 Å (the V moves off-center),
+  while Nb–O stays within 1.97–2.06 Å and Ta–O within 1.98–2.02 Å. The doped
+  cells gain less than the pristine one, by 218 meV (Nb) and 672 meV (Ta). That
+  is about 1.5 and 4.5 formula units' worth of the host's gain, so Ta holds
+  more of the cell near cubic than just its own octahedron.
+- **That fits a V-driven instability.** Off-centering of d⁰ cations (a
+  second-order Jahn–Teller effect) is strongest for V⁵⁺ and weaker for Nb⁵⁺ and
+  Ta⁵⁺. The order V > Nb > Ta here matches. It stays a MACE-MP-0 result until
+  the DFT checks come back.
+
+For the dilute cells, if the distortion is real, substituting V costs more
+than `dilute.py` reports against the cubic host. In this cell the extra cost
+is +218 meV (Nb) and +672 meV (Ta) per dopant, and the Ta suppression reaches
+past the dopant's own octahedron, so the number depends on cell size (only
+60 atoms was run). The substitution energies and the doped series should wait
+for the `stability_check.py` result.
+
+For DFT, `snb/` (in `DELTA_DIR`) holds PBE+U single points on 9 structures. For
+Nb, Ta, and the control, it takes the unperturbed relaxation and the 2 lowest
+distinct distorted minima. If PBE+U gives the same ordering, relax those in
+VASP (the ShakeNBreak recipe); if not, the distortion is MACE-MP-0's.
+
+![ShakeNBreak starts around Nb, Ta, and V](images/bbvo_snb.png)
+
+doped and ShakeNBreak are not dependencies of samson-mlip-visualizer, and they
+add about 55 packages (pymatgen ≥ 2025.10, phonopy, hiphive, dscribe, numba,
+mp-api). Keep them in a separate environment, with a CUDA torch for the RTX
+5070 (cu128):
+
+```bash
+micromamba create -n defects -c conda-forge python=3.12 pip
+micromamba run -n defects python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+micromamba run -n defects python -m pip install mace-torch==0.3.16 doped==3.2.1 shakenbreak==3.4.4
+PYTHONPATH=../../src micromamba run -n defects python snb_screen.py      # --quick: 18 starts, 5 min
+```
+
+On this laptop, pip's download of the 3 GB torch wheel failed twice on a
+Windows file lock (`WinError 32`, pip's temp file). Downloading the wheel with
+`curl -C -` and installing from the file worked.
+
 ## The VASP packages
 
 `samson_mlip_visualizer.vasp_labeling` writes the packages. It gives each frame
@@ -202,6 +288,14 @@ Fill in `<ACCOUNT>`, `<PARTITION>`, `<VASP_MODULE>`, `<VASP_COMMAND>` (e.g.
 `srun vasp_std`) and `<POTPAW_PBE_DIR>` in `run_vasp.slurm`, then `sbatch` it.
 Copy `outputs/` back and run
 `collect_vasp_labels(r"D:\MLIP_Work_Folder\delta_hse06_bbvo\smoke")`.
+
+### Training on LONI
+
+`train.py --package DIR` writes the two trainings (the correction and the direct
+fine-tune) as GPU packages instead of training on the laptop, whose 8 GB GPU
+could not fit three 40-atom fine-tunes with stress at once. The residual labels
+are computed here first. The smoke test, `hpc_smoke_tests/11_train_bbvo_stress`
+(`--dry-run --smoke`), trains both for 3 epochs on the synthetic labels.
 
 ### Campaign
 

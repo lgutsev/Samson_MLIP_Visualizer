@@ -112,6 +112,24 @@ copy back `outputs/`, and run `collect_labels` on the folder. Given the
 Ni(CO)₄ result, train the xTB corrections for porphine with a cutoff of at
 least 7 Å.
 
+## Next steps on LONI
+
+Two things are too heavy for the laptop and are packaged for LONI (see
+`examples/hpc_smoke_tests/README.md`):
+
+- **Is PBE0 good enough?** `reference_check.py` writes ORCA DLPNO-CCSD(T)/def2-TZVP
+  single points (energy only) on frames that already have PBE0 labels. The
+  smoke test is 3 points of the CO pull
+  (`hpc_smoke_tests/09_orca_nico4_dlpno`); the campaign is the whole pull plus the
+  held-out 650 K frames (30). If PBE0 is off by more than ~0.1 eV, a second
+  correction (CCSD(T) − PBE0) on those points is next.
+- **Error bars and both cutoffs for every size.** `train.py --package DIR
+  --seeds 1 2 3 --rmax 7` writes the 24 models of the learning curves
+  (72 trainings) as GPU packages; the residual labels are computed here, so the
+  cluster needs only mace-torch. Smoke test: `hpc_smoke_tests/10_train_nico4`
+  (`--smoke`: 2 models, 3 epochs). Copy `runs/` back, `install_models`, and run
+  `evaluate.py` here (it needs xtb).
+
 ## Reproduce
 
 In SAMSON's Python, with xtb and Psi4 in their own environments:
@@ -122,7 +140,9 @@ python make_data.py          # 96 PBE0 labels (~30 min)
 python train.py              # 16 models
 python evaluate.py           # results.json and the figures
 python cutoff_test.py        # the 7 Å xTB corrections
-python porphine_packages.py  # the LONI packages
+python porphine_packages.py  # the LONI packages for Ni porphine
+python reference_check.py    # DLPNO-CCSD(T) packages
+python train.py --package D:/MLIP_Work_Folder/delta_nico4/loni_learning_curves --seeds 1 2 3 --rmax 7
 ```
 
 `DELTA_DIR` sets where data, models, and results go; the run above used

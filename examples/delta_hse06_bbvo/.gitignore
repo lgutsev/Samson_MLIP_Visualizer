@@ -11,3 +11,7 @@ _*_frames/
 *.extxyz
 results*.json
 *.log
+
+# ...but keep the structures for coauthors
+!frames/
+!frames/*.extxyz

@@ -30,12 +30,12 @@ from pathlib import Path
 
 from ase import Atoms
 
-JOBS = ("ts", "qst2", "qst3", "irc", "opt", "force")
+JOBS = ("ts", "qst2", "qst3", "irc", "opt", "force", "energy")
 DEFAULT_LEVEL = {
     "gaussian": "B3LYP/6-31G(d) EmpiricalDispersion=GD3BJ",
     "orca": "B3LYP D3BJ def2-SVP",
 }
-_STRUCTURES = {"ts": 1, "opt": 1, "irc": 1, "qst2": 2, "qst3": 3, "force": 1}
+_STRUCTURES = {"ts": 1, "opt": 1, "irc": 1, "qst2": 2, "qst3": 3, "force": 1, "energy": 1}
 _GAUSSIAN_ROUTE = {
     "ts": "Opt=(TS,CalcFC,NoEigenTest) Freq",
     "qst2": "Opt=QST2 Freq",
@@ -43,6 +43,7 @@ _GAUSSIAN_ROUTE = {
     "irc": "IRC=(CalcFC,MaxPoints=30)",
     "opt": "Opt Freq",
     "force": "Force NoSymm SCF=Tight",
+    "energy": "SP NoSymm SCF=Tight",
 }
 _QST_TITLES = ("Reactant", "Product", "Transition-state guess")
 
@@ -122,6 +123,7 @@ def orca_input(
         "irc": "IRC",
         "opt": "Opt Freq",
         "force": "EnGrad TightSCF",
+        "energy": "TightSCF",  # a single point, e.g. DLPNO-CCSD(T), which has no gradients
     }[job]
     lines = [f"! {level or DEFAULT_LEVEL['orca']} {keywords}"]
     if nproc:

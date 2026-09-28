@@ -14,6 +14,13 @@ returned outputs), or ``dry_run/labeled.extxyz`` with ``--dry-run``
 
 Three seeds each. ``--quick`` trains for a tenth of the steps (a pipeline check).
 
+``--package DIR`` writes the two trainings as HPC packages instead (one SLURM
+array each, one task per seed, GPU): the residual labels are computed here, so
+the cluster needs only mace-torch. ``--smoke`` makes them 3 epochs and 1 seed, a
+check that stress training and the 40-atom fine-tune fit the cluster's GPU. Copy
+the ``runs/`` folders back and install them into ``<run>/models`` with
+``install_models``; then run ``evaluate.py`` here.
+
 Stress weights: the Δ stresses are small (a few meV/Å³, a fraction of a GPa), so
 with mace-torch's usual stress weight they add ~1 % to the loss and are not
 learned at all; forces barely constrain them, since pair contributions cancel in
@@ -24,6 +31,7 @@ time: three MACE-MP-0 fine-tunes with stress on 40 atoms do not fit in 8 GB.
 """
 
 import sys
+from pathlib import Path
 
 from ase.io import write
 from common import (
@@ -40,9 +48,17 @@ from common import (
 
 from samson_mlip_visualizer.delta import delta_e0s, delta_labels, mace_baseline_card
 from samson_mlip_visualizer.finetune import fit_element_offsets
-from samson_mlip_visualizer.training import TrainingSpec, install_models, train_local
+from samson_mlip_visualizer.training import (
+    GpuSlurmSettings,
+    TrainingSpec,
+    install_models,
+    train_local,
+    write_training_package,
+)
 
 DRY = "--dry-run" in sys.argv
+PACKAGE = Path(sys.argv[sys.argv.index("--package") + 1]) if "--package" in sys.argv else None
+SMOKE = "--smoke" in sys.argv
 STEPS = STEPS_PER_MODEL // (10 if "--quick" in sys.argv else 1)
 run = run_dir(DRY)
 labeled = labels(DRY)
@@ -84,6 +100,26 @@ specs = [
                  stress_weight=1e3, card={**card, "energy_offsets_eV": offsets.offsets},
                  **common),
 ]
+if PACKAGE:
+    slurm = GpuSlurmSettings(time="01:00:00" if SMOKE else "12:00:00", memory_gb=32)
+    for spec in specs:
+        if SMOKE:
+            spec = TrainingSpec.from_json({**spec.to_json(), "epochs": 3, "seeds": (1,)})
+        write_training_package(spec, PACKAGE / spec.name, slurm=slurm)
+    (PACKAGE / "submit_all.sh").write_text(
+        "#!/bin/bash\nset -e\n" + "".join(f"(cd {spec.name} && sbatch run_train.slurm)\n"
+                                           for spec in specs), newline="\n")
+    (PACKAGE / "README.md").write_text(
+        f"# Ba2BiVO6 HSE06 training: {', '.join(s.name for s in specs)}\n\n"
+        + ("Smoke test on SYNTHETIC dry-run labels, 3 epochs, 1 seed: checks that "
+           "mace-torch trains with stress on the cluster GPU (the direct 40-atom "
+           "fine-tune did not fit three at a time in 8 GB).\n\n" if SMOKE else "")
+        + "Fill in the placeholders in each `run_train.slurm`, then `bash submit_all.sh`. "
+        "Copy each `<model>/runs/` back and install it into the run's `models/` folder "
+        "with `install_models`, then run `evaluate.py` on the desktop.\n",
+        encoding="utf-8")
+    print(f"{len(specs)} training packages -> {PACKAGE}")
+    raise SystemExit
 for spec in specs:
     runs = train_local(spec, run / "runs" / spec.name, parallel=spec.mode == "scratch")
     print(f"{spec.name}: " + ", ".join(f"seed {r.seed} {'ok' if r.ok else 'FAILED'} "

@@ -386,6 +386,7 @@ def labeled_structure(
     ``REF_energy`` is on the foundation model's scale when ``offsets`` are given
     (and equal to the reference energy otherwise); ``REF_energy_raw`` keeps the
     code's own number. ``stress`` is 6 Voigt components or a 3×3 matrix, eV/Å³.
+    ``forces`` may be ``None`` for an energy-only label (no ``REF_forces``).
     """
     labeled = Atoms(
         atoms.get_chemical_symbols(), positions=atoms.positions, cell=atoms.cell, pbc=atoms.pbc
@@ -403,5 +404,6 @@ def labeled_structure(
         labeled.info["tag"] = tag
     for key, value in (meta or {}).items():
         labeled.info[key] = value
-    labeled.arrays["REF_forces"] = np.asarray(forces, float).reshape(len(atoms), 3)
+    if forces is not None:
+        labeled.arrays["REF_forces"] = np.asarray(forces, float).reshape(len(atoms), 3)
     return labeled
