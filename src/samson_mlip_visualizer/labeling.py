@@ -85,7 +85,8 @@ def _script(code: str, count: int, slurm: SlurmSettings, job: str = "force") -> 
         *([f"#SBATCH --ntasks={slurm.cpus * jobs}", "#SBATCH --cpus-per-task=1"]
           if code == "orca" else
           ["#SBATCH --ntasks=1", f"#SBATCH --cpus-per-task={slurm.cpus * jobs}"]),
-        f"#SBATCH --mem={slurm.memory_gb * jobs}G",
+        # a packed task fills the node: take all of its memory, whatever the node has
+        "#SBATCH --mem=0" if jobs > 1 else f"#SBATCH --mem={slurm.memory_gb * jobs}G",
         f"#SBATCH --time={slurm.time}",
         "#SBATCH --output=logs/%x_%A_%a.out",
         "# Written by samson-mlip-visualizer. Replace every placeholder in angle brackets",
@@ -95,6 +96,9 @@ def _script(code: str, count: int, slurm: SlurmSettings, job: str = "force") -> 
         "set -euo pipefail",
         *[f"module load {module}" for module in slurm.modules],
         *slurm.setup,
+        # Side by side, each ORCA mpirun would bind its ranks to the same first cores.
+        *(["export OMPI_MCA_hwloc_base_binding_policy=none"]
+          if code == "orca" and jobs > 1 else []),
         'cd "$SLURM_SUBMIT_DIR"',
         "mkdir -p outputs",
         "",

@@ -108,6 +108,7 @@ for stage, isif in (("1_ions", 2), ("2_cell", 3)):
 #SBATCH --output=relax_%j.out
 # Written by samson-mlip-visualizer. Replace the placeholders before sbatch.
 set -euo pipefail
+module purge
 module load vasp6/6.5.1-cpu
 export SINGULARITYENV_OMP_NUM_THREADS=1
 cd "$SLURM_SUBMIT_DIR"

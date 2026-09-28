@@ -79,7 +79,10 @@ already run there:
   is built with) from `/ddnB/project/ramu/lgutsev/` (`Orca_6_1_1`,
   `openmpi-4.1.8/bin` and `/lib`). ORCA runs its parallel steps through that
   `mpirun`, so the scripts ask for the cores as SLURM tasks (`--ntasks`, one CPU
-  each). `02` is the first check that this OpenMPI still works.
+  each). `02` is the first check that this OpenMPI still works. A packed node
+  takes all its memory (`--mem=0`) and turns off OpenMPI's core binding
+  (`OMPI_MCA_hwloc_base_binding_policy=none`), since otherwise every mpirun pins
+  its ranks to the same first 16 cores.
 - **VASP** (`05`, `07`, `08`, `workq`, 64 tasks per node): `vasp6/6.5.1-cpu` (6.6.1
   needs a new license key) with `export SINGULARITYENV_OMP_NUM_THREADS=1` and
   `srun vasp_std`, as in InterfaceForge's `runvasp.sh`.

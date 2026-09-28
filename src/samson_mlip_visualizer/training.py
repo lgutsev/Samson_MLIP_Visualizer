@@ -285,9 +285,11 @@ def _slurm_script(spec: TrainingSpec, train_file: str, foundation: str, slurm) -
         "#SBATCH --output=logs/%x_%A_%a.out",
         "# Written by samson-mlip-visualizer. Replace every placeholder in angle brackets",
         "# (see README.md) before sbatch. One array task per seed.",
-        "set -euo pipefail",
+        # conda's activation scripts read unset variables: -u only after them
+        "set -eo pipefail",
         *[f"module load {module}" for module in slurm.modules],
         slurm.activate,
+        "set -u",
         'cd "$SLURM_SUBMIT_DIR"',
         "SEED=$SLURM_ARRAY_TASK_ID",
         'mkdir -p "runs/seed${SEED}"',

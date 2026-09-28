@@ -163,6 +163,8 @@ def _script(levels: tuple[str, ...], count: int, slurm: VaspSlurmSettings) -> st
         "# (see README.md) before sbatch. One array task per frame; its levels run in order,",
         f"# {' -> '.join(levels)}, each later one starting from the previous WAVECAR.",
         "set -euo pipefail",
+        # a clean environment for the container module, as in the working launchers
+        *(["module purge"] if slurm.modules else []),
         *[f"module load {module}" for module in slurm.modules],
         *slurm.setup,
         'cd "$SLURM_SUBMIT_DIR"',

@@ -281,7 +281,9 @@ def test_several_frames_per_array_task_for_whole_node_clusters(tmp_path):
     script = (package / "run_orca.slurm").read_text()
     assert "#SBATCH --array=0-0" in script  # 3 frames fit one task
     # mpirun needs the cores as SLURM tasks
-    assert "--ntasks=64" in script and "--cpus-per-task=1" in script and "--mem=200G" in script
+    # all of the node's memory, and no pinning of the 4 mpiruns onto the same cores
+    assert "--ntasks=64" in script and "--cpus-per-task=1" in script and "--mem=0" in script
+    assert "export OMPI_MCA_hwloc_base_binding_policy=none" in script
     assert "index=$((SLURM_ARRAY_TASK_ID * 4 + k))" in script and "wait" in script
     assert "nprocs 16" in (package / "inputs" / "frame_0002.inp").read_text()
     assert script.index("module load openmpi/4.1.6") < script.index('export PATH="/opt/orca')
