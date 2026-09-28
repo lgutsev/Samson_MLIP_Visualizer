@@ -83,9 +83,10 @@ they come.*
   baseline's error, not just the range of the chemistry.**
 - **MACE-MP-0 is a poor baseline here, yet MACE-MP-0 + Δ does well.** Its
   errors are short-ranged, because MACE-MP-0 itself has a 6 Å cutoff.
-- Two models are missing from the curves: `delta-gfn2_N20` and
-  `delta-mace_N10` ran out of GPU memory while another job shared the card.
-  Rerun `train.py`; it trains only what is missing.
+- **With very few labels, only the fine-tuned foundation model gets the bond
+  breaking.** At 10 labels every correction misses the pull energy by 0.8–1.4 eV
+  (fine-tuning: 0.06 eV), and GFN2-xTB + Δ still misses by 0.7 eV at 20. The
+  MACE-MP-0 correction is within 0.05 eV from 20 labels on.
 
 What this means for a new transition-metal system: to run MD near a minimum,
 GFN-xTB + Δ gives the best forces from the fewest labels. For bond breaking,
