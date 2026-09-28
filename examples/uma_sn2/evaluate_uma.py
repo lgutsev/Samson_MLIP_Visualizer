@@ -47,7 +47,7 @@ from samson_mlip_visualizer.uma_backend import UMACalculator  # noqa: E402
 from samson_mlip_visualizer.vibrations import harmonic_frequencies  # noqa: E402
 
 UMA_PYTHON = Path(os.environ.get("UMA_PYTHON", r"D:\MLIP_Work_Folder\envs\mlip\python.exe"))
-UMA_DIR = Path(os.environ.get("UMA_DIR", r"D:\MLIP_Downloaded_Models"))
+UMA_DIR = Path(os.environ.get("UMA_DIR", r"D:\MLIP_Downloaded_Models\UMA"))
 CHECKPOINT = Path(sys.argv[1]) if len(sys.argv) > 1 else UMA_DIR / "uma-s-1p1.pt"
 NAME = f"UMA {CHECKPOINT.stem}"
 OUT = WORK / "uma" / CHECKPOINT.stem
