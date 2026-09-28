@@ -90,6 +90,7 @@ def main() -> None:
     )
     shutil.rmtree(OUT / "_frames")
     shutil.copyfile(HERE / "check_smoke_results.py", OUT / "check_smoke_results.py")
+    shutil.copyfile(HERE / "submit_smokes.sh", OUT / "submit_smokes.sh")
     shutil.copyfile(HERE / "README.md", OUT / "README.md")
     print(f"Wrote the smoke tests to {OUT}")
 

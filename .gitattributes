@@ -1,0 +1,3 @@
+# shell scripts run on the cluster: never CRLF
+*.sh text eol=lf
+*.slurm text eol=lf

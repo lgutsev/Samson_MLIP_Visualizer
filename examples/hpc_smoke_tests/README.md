@@ -19,7 +19,7 @@ repository (`examples/hpc_smoke_tests/`). Nothing here has been submitted.
    a Python environment with `mace-torch==0.3.16` (each folder's README lists
    what is left).
 3. For 04, on a **login node**: `bash download_mp_replay.sh` (≈595 MB into
-   `~/.cache/mace`; compute nodes often have no internet).
+   `/project/lgutsev/cache/mace`, not the 10 GB home; compute nodes often have no internet).
 4. In each folder: `sbatch run_gaussian.slurm`, `sbatch run_orca.slurm`,
    `sbatch run_train.slurm` (twice, in 03 and 04). You can skip any code you
    do not use.
@@ -66,6 +66,29 @@ should sample), then `05`, `07`, `09`, `06`, and the GPU checks `10` and `11`.
 It needs a `fairchem-core` + `sella` environment (`/project/lgutsev/env/uma`,
 created as in the package README) and `<UMA_DIR>`, the folder with the UMA
 checkpoints on the cluster, filled in `run_uma.slurm`.
+
+## Submitting everything: `submit_smokes.sh`
+
+On a LONI login node, from this folder (no environment needed, only bash and SLURM):
+
+```bash
+bash submit_smokes.sh --dry-run       # one status line per test, submits nothing
+bash submit_smokes.sh                 # sbatch every test that is not done
+bash submit_smokes.sh 05 07           # only the folders starting with 05 or 07
+bash submit_smokes.sh --retry-failed  # also resubmit what ran but did not finish
+```
+
+It reads "done" from the files each job writes (normal termination in the
+Gaussian/ORCA outputs, complete `vasprun.xml` for every VASP level, a `.model`
+in `runs/seed<N>/`, UMA's `results.json`, every step of every job in 13) and
+skips any test with a job still in the queue, matched by the folder it was
+submitted from (the job names repeat: 02, 06 and 09 are all `label-orca`).
+Array packages get only their missing tasks (`--array=1,2`); 13 gets
+job lists of its unfinished molecules, with stage 2 after stage 1 as in its
+`submit.sh`. Tests that ran but did not finish show as FAILED and wait for
+`--retry-failed`, so a broken setup is not resubmitted over and over; scripts
+that still hold a `<PLACEHOLDER>` (12's `<UMA_DIR>`) show as SETUP. Every
+submission goes into `submissions.log`.
 
 ## Running on QB4
 
