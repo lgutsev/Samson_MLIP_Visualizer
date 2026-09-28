@@ -72,7 +72,9 @@ class UMACalculator(WorkerCalculator):
     ``model`` is a checkpoint path or fairchem name; ``task`` a UMA task head;
     ``charge`` and ``multiplicity`` are the molecule's (``omol`` only);
     ``device`` is ``cpu`` or ``cuda`` (the worker's torch decides whether CUDA
-    works). Periodic cells are passed on for the materials tasks.
+    works). Periodic cells are passed on for the materials tasks. Single atoms (a
+    free F⁻) need the isolated-atom references: ``atom_refs``, or
+    ``iso_atom_elem_refs.yaml`` beside the checkpoint or in ``references`` beside it.
     """
 
     label_name = "UMA"
@@ -87,10 +89,14 @@ class UMACalculator(WorkerCalculator):
         charge: int = 0,
         multiplicity: int = 1,
         device: str = "cpu",
+        atom_refs: str | Path | None = None,
         timeout: float = 900.0,
         **kwargs,
     ):
         super().__init__(python, timeout=timeout, **kwargs)
+        if atom_refs is not None and not Path(atom_refs).expanduser().is_file():
+            raise ValueError(f"UMA atom references file does not exist: {atom_refs}")
+        self.atom_refs = str(Path(atom_refs).expanduser()) if atom_refs is not None else None
         model = (model or "").strip()
         if not model:
             raise ValueError(
@@ -120,6 +126,7 @@ class UMACalculator(WorkerCalculator):
         periodic = bool(np.any(atoms.pbc))
         return {
             "model": self.model,
+            "atom_refs": self.atom_refs,
             "task": self.task,
             "device": self.device,
             "charge": self.charge,

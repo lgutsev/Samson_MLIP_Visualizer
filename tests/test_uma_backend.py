@@ -99,6 +99,8 @@ def test_worker_errors_and_bad_settings(fake_worker, tmp_path):
         UMACalculator(python, model="uma-s-1p1", task="omolecule")
     with pytest.raises(ValueError, match="apply to the omol task"):
         UMACalculator(python, model="uma-s-1p1", task="omat", charge=-1)
+    with pytest.raises(ValueError, match="atom references file does not exist"):
+        UMACalculator(python, model="uma-s-1p1", atom_refs=tmp_path / "refs.yaml")
 
 
 def test_fairchem_environment_detection(tmp_path, monkeypatch):

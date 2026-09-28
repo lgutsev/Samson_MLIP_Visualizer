@@ -4,8 +4,9 @@ This file runs in the Python that has ``fairchem-core`` (its own environment), n
 in SAMSON's, so it imports nothing from this package: only the standard library,
 NumPy, ASE, and fairchem. Protocol as in :mod:`.worker_process`.
 
-Request: ``{"model" (.pt path or fairchem name), "task", "device", "charge",
-"multiplicity", "numbers", "positions" (Å), "cell" (or null), "pbc"}``.
+Request: ``{"model" (.pt path or fairchem name), "atom_refs" (a references .yaml,
+or null to look beside the checkpoint), "task", "device", "charge", "multiplicity",
+"numbers", "positions" (Å), "cell" (or null), "pbc"}``.
 Reply: ``{"energy" (eV), "forces" (eV/Å)}`` or ``{"error"}``.
 """
 
@@ -15,6 +16,23 @@ import sys
 
 PREFIX = "@@SAMSON "
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")  # torch.compile needs a C++ compiler
+
+
+def _atom_refs(checkpoint, explicit):
+    """Isolated-atom reference energies for a local checkpoint: ``explicit``, or
+    ``iso_atom_elem_refs.yaml`` beside it or in a ``references`` folder beside it (the
+    layout of the facebook/UMA repository). Without them single atoms (F⁻, Cl⁻) fail."""
+    from pathlib import Path
+
+    folder = Path(checkpoint).parent
+    candidates = [Path(explicit)] if explicit else [
+        folder / "iso_atom_elem_refs.yaml", folder / "references" / "iso_atom_elem_refs.yaml"]
+    for path in candidates:
+        if path.is_file():
+            from omegaconf import OmegaConf
+
+            return OmegaConf.load(path)
+    return None
 
 
 def main() -> None:
@@ -37,26 +55,29 @@ def main() -> None:
     reply({"ready": True, "version": version("fairchem-core")})
 
     units = {}  # (model, device) -> predict unit; loading the checkpoint is the slow part
-    calculators = {}  # (model, device, task) -> FAIRChemCalculator
+    calculators = {}  # (model, device, atom_refs, task) -> FAIRChemCalculator
     for line in sys.stdin:
         if not line.strip():
             continue
         try:
             request = json.loads(line)
-            unit_key = (request["model"], request.get("device", "cpu"))
+            unit_key = (request["model"], request.get("device", "cpu"),
+                        request.get("atom_refs"))
             if unit_key not in units:
-                model, device = unit_key
+                model, device, refs = unit_key
                 if model.lower().endswith(".pt"):
-                    units[unit_key] = pretrained_mlip.load_predict_unit(model, device=device)
+                    units[unit_key] = pretrained_mlip.load_predict_unit(
+                        model, device=device, atom_refs=_atom_refs(model, refs))
                 else:
                     units[unit_key] = pretrained_mlip.get_predict_unit(model, device=device)
-            key = (*unit_key, request.get("task", "omol"))
+            task = request.get("task", "omol")
+            key = (*unit_key, task)
             if key not in calculators:
-                calculators[key] = FAIRChemCalculator(units[unit_key], task_name=key[2])
+                calculators[key] = FAIRChemCalculator(units[unit_key], task_name=task)
             cell = request.get("cell")
             atoms = Atoms(numbers=request["numbers"], positions=request["positions"],
                           cell=cell, pbc=request.get("pbc", False) if cell else False)
-            if key[2] == "omol":
+            if task == "omol":
                 atoms.info.update(charge=int(request.get("charge", 0)),
                                   spin=int(request.get("multiplicity", 1)))
             atoms.calc = calculators[key]
