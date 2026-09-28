@@ -9,6 +9,7 @@ from ase.io import write
 
 from samson_mlip_visualizer import training
 from samson_mlip_visualizer.training import (
+    GpuSlurmSettings,
     TrainingSpec,
     final_errors,
     install_models,
@@ -130,6 +131,19 @@ def test_training_package_for_the_hpc(data, tmp_path):
     assert installed.name == "water_test_seed2.model"
     assert "replay 'mp'" in json.loads(installed.with_suffix(".model.json").read_text())[
         "fine_tuning"]
+
+
+def test_package_keeps_caches_out_of_a_small_home(data, tmp_path):
+    package = write_training_package(
+        spec(data, mode="multihead", replay="mp"), tmp_path / "package",
+        slurm=GpuSlurmSettings(cache_dir="/project/me/cache"))
+    script = (package / "run_train.slurm").read_text()
+    # after set -u, before training: mace-torch reads the replay set from there
+    assert script.index("set -u") < script.index('export XDG_CACHE_HOME="/project/me/cache"') \
+        < script.index("mace_run_train")
+    download = (package / "download_mp_replay.sh").read_text()
+    assert 'cache="/project/me/cache/mace"' in download and "HOME" not in download
+    assert "/project/me/cache/mace" in (package / "README.md").read_text()
 
 
 def test_package_with_an_own_replay_file(data, tmp_path):

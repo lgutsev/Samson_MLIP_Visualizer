@@ -293,6 +293,7 @@ def _slurm_script(spec: TrainingSpec, train_file: str, foundation: str, slurm) -
         *[f"module load {module}" for module in slurm.modules],
         slurm.activate,
         "set -u",
+        *([_cache_exports(slurm.cache_dir)] if slurm.cache_dir else []),
         'cd "$SLURM_SUBMIT_DIR"',
         "SEED=$SLURM_ARRAY_TASK_ID",
         'mkdir -p "runs/seed${SEED}"',
@@ -312,6 +313,14 @@ class GpuSlurmSettings:
     cpus: int = 8
     memory_gb: int = 32
     time: str = "04:00:00"
+    # where mace-torch (the MP replay set), torch, Triton, CUDA, and matplotlib keep
+    # their caches, instead of ~/.cache: for clusters with a small home quota
+    cache_dir: str | None = None
+
+
+def _cache_exports(cache_dir: str) -> str:
+    return (f'export XDG_CACHE_HOME="{cache_dir}" TRITON_CACHE_DIR="{cache_dir}/triton" '
+            f'CUDA_CACHE_PATH="{cache_dir}/nv" MPLCONFIGDIR="{cache_dir}/matplotlib"')
 
 
 def write_training_package(spec: TrainingSpec, directory: str | Path, *,
@@ -347,7 +356,9 @@ def write_training_package(spec: TrainingSpec, directory: str | Path, *,
             "# Run on a LOGIN node (compute nodes often have no internet): puts the",
             "# Materials Project replay set where mace-torch looks for it.",
             "set -euo pipefail",
-            'cache="${XDG_CACHE_HOME:-$HOME/.cache}/mace"',
+            # the same folder the training script gives mace-torch
+            f'cache="{slurm.cache_dir}/mace"' if slurm.cache_dir
+            else 'cache="${XDG_CACHE_HOME:-$HOME/.cache}/mace"',
             'mkdir -p "$cache"',
             f'target="$cache/{MP_REPLAY_CACHE_NAME}"',
             'if [ -s "$target" ]; then echo "already there: $target"; exit 0; fi',
@@ -365,8 +376,9 @@ def write_training_package(spec: TrainingSpec, directory: str | Path, *,
     }, indent=1), encoding="utf-8")
     todo = "\n".join(f"   - `{name}`" for name in placeholders) or "   - (none left)"
     replay_step = (
-        "\n0. On a login node, run `bash download_mp_replay.sh` once (~595 MB; mace-torch\n"
-        "   would otherwise try to download it on the compute node).\n"
+        "\n0. On a login node, run `bash download_mp_replay.sh` once (~595 MB into\n"
+        f"   `{slurm.cache_dir or '~/.cache'}/mace`; mace-torch would otherwise try to\n"
+        "   download it on the compute node).\n"
         if spec.replay == "mp" else ""
     )
     (directory / "README.md").write_text(f"""# Fine-tuning package: {spec.name}

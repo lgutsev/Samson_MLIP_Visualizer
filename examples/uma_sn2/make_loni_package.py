@@ -62,6 +62,8 @@ CHECKPOINTS=({checkpoints})
 CHECKPOINT=${{CHECKPOINTS[$((SLURM_ARRAY_TASK_ID - 1))]}}
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export TORCHDYNAMO_DISABLE=1
+# caches in /project, not ~/.cache: the home quota is 10 GB
+export XDG_CACHE_HOME=/project/lgutsev/cache
 nvidia-smi --query-gpu=name,memory.total --format=csv
 python run_uma_sn2.py "<UMA_DIR>/$CHECKPOINT" "outputs/${{CHECKPOINT%.pt}}" --device cuda
 """
@@ -89,6 +91,8 @@ refinement with a finite-difference frequency check, and the fragments.
 
    ```bash
    source /home/lgutsev/miniforge3/etc/profile.d/conda.sh
+   # package caches in /project: torch alone would put ~2 GB into the 10 GB home
+   export CONDA_PKGS_DIRS=/project/lgutsev/cache/conda_pkgs PIP_CACHE_DIR=/project/lgutsev/cache/pip
    conda create -p /project/lgutsev/env/uma python=3.12 -y
    conda activate /project/lgutsev/env/uma
    pip install fairchem-core sella

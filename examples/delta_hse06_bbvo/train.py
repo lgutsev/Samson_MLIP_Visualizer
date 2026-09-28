@@ -104,6 +104,7 @@ if PACKAGE:
     slurm = GpuSlurmSettings(account="loni_perovsk27", partition="gpu2", modules=(),  # QB4
                              activate=("source /home/lgutsev/miniforge3/etc/profile.d/conda.sh && "
                                        "conda activate /project/lgutsev/env/mace_env"),
+                             cache_dir="/project/lgutsev/cache",  # home is 10 GB
                              time="01:00:00" if SMOKE else "12:00:00", memory_gb=32)
     for spec in specs:
         if SMOKE:

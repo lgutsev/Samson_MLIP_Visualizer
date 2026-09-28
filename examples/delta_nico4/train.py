@@ -150,6 +150,7 @@ if args.package:
     slurm = GpuSlurmSettings(account="loni_perovsk27", partition="gpu2", modules=(),  # QB4
                              activate=("source /home/lgutsev/miniforge3/etc/profile.d/conda.sh && "
                                        "conda activate /project/lgutsev/env/mace_env"),
+                             cache_dir="/project/lgutsev/cache",  # home is 10 GB
                              time="02:00:00" if args.smoke else "06:00:00", memory_gb=16)
     for spec in specs:
         write_training_package(spec, root / spec.name, slurm=slurm)

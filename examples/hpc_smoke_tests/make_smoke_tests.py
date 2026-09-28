@@ -41,7 +41,8 @@ ORCA_QB4 = dict(modules=(),  # the user's OpenMPI 4.1.8, the one ORCA 6.1.1 is b
                        'export LD_LIBRARY_PATH="$ORCA_DIR/lib:$OMPI_DIR/lib:${LD_LIBRARY_PATH:-}"'))
 GPU_QB4 = dict(account="loni_perovsk27", partition="gpu2", modules=(),
                activate=("source /home/lgutsev/miniforge3/etc/profile.d/conda.sh && "
-                         "conda activate /project/lgutsev/env/mace_env"))
+                         "conda activate /project/lgutsev/env/mace_env"),
+               cache_dir="/project/lgutsev/cache")  # not ~/.cache: home is 10 GB
 
 # HCN, the transition state, and HNC from the MACE-MP-0 IRC (atom order C, N, H).
 GEOMETRIES = {
