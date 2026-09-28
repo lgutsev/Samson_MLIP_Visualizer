@@ -54,46 +54,37 @@ folders (`D:\MLIP_Work_Folder\delta_hse06_bbvo`, `D:\MLIP_Work_Folder\delta_nico
 | `10_train_nico4` | GPU training on the cluster: a direct fine-tune and a 7 Å GFN2-xTB correction for Ni(CO)₄, 3 epochs | `delta_nico4/train.py --package … --rmax 7 --smoke` | 2 × 1 GPU (`gpu2`), minutes | both write a `.model`; `install_models` accepts them |
 | `11_train_bbvo_stress` | GPU training with stress (`--loss=stress`) on 40-atom cells: the MACE-MP-0 + Δ correction and the direct fine-tune, 3 epochs, on SYNTHETIC dry-run labels | `delta_hse06_bbvo/train.py --dry-run --package … --smoke` | 2 × 1 GPU (`gpu2`), minutes | both finish (the direct fine-tune ran out of memory on an 8 GB laptop GPU with three seeds at once) |
 
-Settings are for LONI QB4: 64 cores per node, whole nodes, so the ORCA
-packages run four 16-core frames per node (`SlurmSettings(jobs_per_task=4)`) and
-the VASP scripts ask for 64 tasks per node. The Gaussian test uses the `single`
-partition (8 cores), the GPU jobs `gpu2`.
-
 Suggested order: `08` first (it decides which BBVO structures the campaigns
 should sample), then `05`, `07`, `09`, `06`, and the GPU checks `10` and `11`.
 
-## One-time setup on QB4
+## Running on QB4
 
-The packages are set up for LONI QB4 (64 cores per node, whole nodes):
+Every script is filled in for LONI QB4 (account `loni_perovsk27`, 64 cores per
+node, whole nodes). The settings are taken from the InterfaceForge launchers that
+already run there:
 
-- **Gaussian** (`01`): `module load gaussian/g16-c01`, `single` partition, 8 cores.
-- **ORCA** (`02`, `06`, `09` and the ORCA campaigns): ORCA 6.1.1 and OpenMPI 4.1.8
-  (the version ORCA 6.1.1 is built with) from `/ddnB/project/ramu/lgutsev/`
-  (`Orca_6_1_1`, `openmpi-4.1.8/bin` and `/lib` on `PATH` and
-  `LD_LIBRARY_PATH`). ORCA runs its parallel steps through that `mpirun`, so the
-  scripts ask for the cores as SLURM tasks (`--ntasks`, one CPU each). `02` is
-  the first check that this OpenMPI still works. `06` and `09` run four
-  16-core frames per node.
-  Their partition is left as `<PARTITION>`: use QB4's whole-node CPU partition.
-- **VASP** (`05`, `07`, `08`): `module load vasp6/6.5.1-cpu` (6.6.1 needs a new
-  license key), run with `srun vasp_std`, 64 tasks per node. If the module's
-  container wants `mpirun -np $SLURM_NTASKS vasp_std` instead, change that one
-  line in `run_vasp.slurm` (and `relax/run_relax.slurm` in `08`).
-- **GPU training** (`03`, `04`, `10`, `11`): the `gpu2` partition and a conda
-  environment with mace-torch, created once on a login node:
-
-  ```bash
-  module load conda/24.3.0
-  conda create -y -p /ddnB/project/ramu/lgutsev/env/mace python=3.11
-  source "$(conda info --base)/etc/profile.d/conda.sh"
-  conda activate /ddnB/project/ramu/lgutsev/env/mace
-  pip install torch --index-url https://download.pytorch.org/whl/cu121
-  pip install mace-torch==0.3.16
-  python -c "import torch, mace; print(torch.cuda.is_available())"  # False on a login node is fine
-  ```
-
-  The scripts activate it themselves; pip's PyTorch brings its own CUDA, so no
-  `cuda` module is loaded.
-
-What is left in every script: `<ACCOUNT>`; for `06` and `09` the partition; for
-the VASP packages `<POTPAW_PBE_DIR>`.
+- **Gaussian** (`01`): `gaussian/g16-c01`, `single` partition, 8 cores.
+- **ORCA** (`02` on `single`; `06`, `09` and the ORCA campaigns on `workq`, four
+  16-core frames per node): ORCA 6.1.1 and OpenMPI 4.1.8 (the version ORCA 6.1.1
+  is built with) from `/ddnB/project/ramu/lgutsev/` (`Orca_6_1_1`,
+  `openmpi-4.1.8/bin` and `/lib`). ORCA runs its parallel steps through that
+  `mpirun`, so the scripts ask for the cores as SLURM tasks (`--ntasks`, one CPU
+  each). `02` is the first check that this OpenMPI still works.
+- **VASP** (`05`, `07`, `08`, `workq`, 64 tasks per node): `vasp6/6.5.1-cpu` (6.6.1
+  needs a new license key) with `export SINGULARITYENV_OMP_NUM_THREADS=1` and
+  `srun vasp_std`, as in InterfaceForge's `runvasp.sh`.
+- **POTCARs**: by default concatenated from `/home/lgutsev/pot/potpaw_PBE` by the
+  names in each frame's `POTCAR.names`, the Materials Project choices (Ba_sv, V_pv,
+  Bi, O, Nb_pv, Ta_pv) that MACE-MP-0 was trained with. The alternative is the
+  site generator `/home/lgutsev/bin/POTCAR_gen`
+  (`VaspSlurmSettings(potcar_command=...)`), which runs in each frame's folder.
+  InterfaceForge's table picks V_sv, Bi_d, and Nb_sv there, and with
+  `potcar_strict` (the default) a frame whose POTCARs differ from
+  `POTCAR.names` stops before VASP starts. Either way `outputs/<frame>/POTCAR.used`
+  records what each run used, and the collector reports it.
+- **GPU training** (`03`, `04`, `10`, `11`, `gpu2`): the existing conda env
+  `/project/lgutsev/env/mace_env` (activated with
+  `source /home/lgutsev/miniforge3/etc/profile.d/conda.sh`). The training
+  arguments are written for mace-torch 0.3.16; with another version, check that
+  `mace_run_train --help` still knows `--foundation_model_elements`, `--E0s`, and
+  `--loss=stress`.

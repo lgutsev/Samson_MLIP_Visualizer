@@ -29,7 +29,8 @@ from samson_mlip_visualizer.labeling import SlurmSettings, write_label_package
 LEVEL = "DLPNO-CCSD(T) def2-TZVP def2-TZVP/C TightPNO"
 # LONI QB4: ORCA 6.1.1 and OpenMPI 4.1.8 from the project folder; Gaussian from its
 # module; a conda env with mace-torch 0.3.16 for the GPU jobs (see the README).
-ORCA_QB4 = dict(modules=(),  # the user's OpenMPI 4.1.8, the one ORCA 6.1.1 is built with
+# the user's OpenMPI 4.1.8, the one ORCA 6.1.1 is built with
+ORCA_QB4 = dict(account="loni_perovsk27", partition="workq", modules=(),
                 setup=("OMPI_DIR=/ddnB/project/ramu/lgutsev/openmpi-4.1.8",
                        "ORCA_DIR=/ddnB/project/ramu/lgutsev/Orca_6_1_1",
                        'export PATH="$ORCA_DIR:$OMPI_DIR/bin:$PATH"',

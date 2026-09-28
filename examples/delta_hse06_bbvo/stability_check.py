@@ -72,7 +72,11 @@ frames_path, manifest_path = write_selection(WORK / "_stability_frames", frames,
 write_vasp_package(target / "singlepoints", frames_path, manifest_path, kspacing=KSPACING,
                    incar_extra={"pbe_u": {"NCORE": 4, "KPAR": 4},
                                 "hse06": {"NCORE": 4, "KPAR": 4}},
-                   slurm=VaspSlurmSettings(tasks_per_node=64, modules=("vasp6/6.5.1-cpu",),
+                   slurm=VaspSlurmSettings(account="loni_perovsk27", partition="workq",
+                                           potcar_dir="/home/lgutsev/pot/potpaw_PBE",
+                                           tasks_per_node=64,
+                                           modules=("vasp6/6.5.1-cpu",),
+                                           setup=("export SINGULARITYENV_OMP_NUM_THREADS=1",),
                                            run="srun vasp_std", time="24:00:00",
                                            max_parallel=None))
 
@@ -94,8 +98,8 @@ for stage, isif in (("1_ions", 2), ("2_cell", 3)):
     (relax / f"INCAR.{stage}").write_text(text)
 (relax / "run_relax.slurm").write_text("""#!/bin/bash
 #SBATCH --job-name=bbvo-stability
-#SBATCH --account=<ACCOUNT>
-#SBATCH --partition=<PARTITION>
+#SBATCH --account=loni_perovsk27
+#SBATCH --partition=workq
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=64
 #SBATCH --time=48:00:00
@@ -103,8 +107,9 @@ for stage, isif in (("1_ions", 2), ("2_cell", 3)):
 # Written by samson-mlip-visualizer. Replace the placeholders before sbatch.
 set -euo pipefail
 module load vasp6/6.5.1-cpu
+export SINGULARITYENV_OMP_NUM_THREADS=1
 cd "$SLURM_SUBMIT_DIR"
-POTCARS="<POTPAW_PBE_DIR>"
+POTCARS="/home/lgutsev/pot/potpaw_PBE"
 : > POTCAR
 for name in $(cat POTCAR.names); do cat "$POTCARS/$name/POTCAR" >> POTCAR; done
 cp INCAR.1_ions INCAR

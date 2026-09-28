@@ -147,10 +147,9 @@ if args.package:
                  for s in specs if s.name in keep]
     root = args.package
     root.mkdir(parents=True, exist_ok=True)
-    slurm = GpuSlurmSettings(partition="gpu2", modules=(),  # LONI QB4
-                             activate=("module load conda/24.3.0 && "
-                                       'source "$(conda info --base)/etc/profile.d/conda.sh" && '
-                                       "conda activate /ddnB/project/ramu/lgutsev/env/mace"),
+    slurm = GpuSlurmSettings(account="loni_perovsk27", partition="gpu2", modules=(),  # QB4
+                             activate=("source /home/lgutsev/miniforge3/etc/profile.d/conda.sh && "
+                                       "conda activate /project/lgutsev/env/mace_env"),
                              time="02:00:00" if args.smoke else "06:00:00", memory_gb=16)
     for spec in specs:
         write_training_package(spec, root / spec.name, slurm=slurm)

@@ -137,6 +137,14 @@ class VaspSlurmSettings:
     tasks_per_node: int = 48
     time: str = "08:00:00"
     max_parallel: int | None = 10
+    setup: tuple[str, ...] = ()  # shell lines after the modules (e.g. a container's env)
+    # POTCARs: concatenated from ``potcar_dir`` by the names in POTCAR.names (the
+    # Materials Project choices), or, with ``potcar_command``, made by that command in
+    # the run folder (e.g. a site's POTCAR_gen). Either way the POTCARs used are
+    # recorded; with ``potcar_command`` and ``potcar_strict`` a run whose POTCARs
+    # differ from POTCAR.names stops instead of computing.
+    potcar_command: str | None = None  # e.g. /home/<user>/bin/POTCAR_gen
+    potcar_strict: bool = True
 
 
 def _script(levels: tuple[str, ...], count: int, slurm: VaspSlurmSettings) -> str:
@@ -156,18 +164,41 @@ def _script(levels: tuple[str, ...], count: int, slurm: VaspSlurmSettings) -> st
         f"# {' -> '.join(levels)}, each later one starting from the previous WAVECAR.",
         "set -euo pipefail",
         *[f"module load {module}" for module in slurm.modules],
+        *slurm.setup,
         'cd "$SLURM_SUBMIT_DIR"',
-        f'POTCARS="{slurm.potcar_dir}"',
         'frame=$(printf "frame_%04d" "$SLURM_ARRAY_TASK_ID")',
         'work="runs/$frame"',
         'mkdir -p "$work" "outputs/$frame"',
         'potcar="$work/POTCAR"',
-        ': > "$potcar"',
-        'for name in $(cat "inputs/$frame/POTCAR.names"); do',
-        '  cat "$POTCARS/$name/POTCAR" >> "$potcar"',
-        "done",
-        "previous=",
     ]
+    if slurm.potcar_command:
+        lines += [
+            f"# POTCAR from {slurm.potcar_command}, run in the frame's folder with its POSCAR",
+            'cp "inputs/$frame/POSCAR" "$work/POSCAR"',
+            f'(cd "$work" && {slurm.potcar_command})',
+        ]
+    else:
+        lines += [
+            f'POTCARS="{slurm.potcar_dir}"',
+            ': > "$potcar"',
+            'for name in $(cat "inputs/$frame/POTCAR.names"); do',
+            '  cat "$POTCARS/$name/POTCAR" >> "$potcar"',
+            "done",
+        ]
+    lines += [
+        "# the POTCARs actually used, one per species (TITEL lines)",
+        'grep "TITEL" "$potcar" | awk \'{print $4}\' > "outputs/$frame/POTCAR.used"',
+    ]
+    if slurm.potcar_command and slurm.potcar_strict:
+        lines += [
+            'if [ "$(tr -s \' \\n\' \' \' < "outputs/$frame/POTCAR.used" | xargs)" != \\',
+            '     "$(xargs < "inputs/$frame/POTCAR.names")" ]; then',
+            '  echo "POTCARs differ from POTCAR.names: $(xargs < "outputs/$frame/POTCAR.used")'
+            ' vs $(xargs < "inputs/$frame/POTCAR.names"); stopping" >&2',
+            "  exit 1",
+            "fi",
+        ]
+    lines += ["previous="]
     for level in levels:
         lines += [
             f'mkdir -p "$work/{level}"',
@@ -361,7 +392,9 @@ class VaspCollectResult:
     levels: tuple[str, ...] = ()
 
     def report(self) -> dict:
+        used = sorted({frame.info["potcars"] for frame in self.labeled if "potcars" in frame.info})
         return {"levels": list(self.levels), "labeled": len(self.labeled),
+                "potcars_used": used,
                 "rejected": {frame_name(i): reasons for i, reasons in self.rejected.items()}}
 
 
@@ -421,6 +454,9 @@ def collect_vasp_labels(directory: str | Path, *, write: bool = True) -> VaspCol
         labeled.info.update(code=next(iter(parsed.values()))["version"], frame=index,
                             source=entry.source, tag=entry.reason,
                             checksum=frame_checksum(frame))
+        used = directory / "outputs" / frame_name(index) / "POTCAR.used"
+        if used.is_file():  # written by the run script: which POTCARs this frame used
+            labeled.info["potcars"] = " ".join(used.read_text().split())
         result.labeled.append(labeled)
     if write:
         if result.labeled:

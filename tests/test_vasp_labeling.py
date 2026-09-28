@@ -148,3 +148,24 @@ def test_parse_reports_why_a_run_is_unusable(tmp_path):
     (tmp_path / "OUTCAR").write_text(OUTCAR_OK)
     with pytest.raises(OutputError, match="could not be read"):
         vasp_labeling.parse_vasp_run(tmp_path)
+
+
+def test_a_site_potcar_generator_is_run_checked_and_recorded(tmp_path, monkeypatch):
+    frames = [bbvo()]
+    pkg = package(tmp_path, frames, slurm=vasp_labeling.VaspSlurmSettings(
+        potcar_command="/home/me/bin/POTCAR_gen",
+        setup=("export SINGULARITYENV_OMP_NUM_THREADS=1",)))
+    script = (pkg / "run_vasp.slurm").read_text()
+    assert '(cd "$work" && /home/me/bin/POTCAR_gen)' in script
+    assert "POTCAR.used" in script and "POTCARs differ from POTCAR.names" in script
+    assert "export SINGULARITYENV_OMP_NUM_THREADS=1" in script
+    assert "$POTCARS/$name/POTCAR" not in script
+    assert "<POTPAW_PBE_DIR>" not in json.loads((pkg / "package.json").read_text())[
+        "placeholders_left"]
+    fake_outputs(pkg, frames)
+    (pkg / "outputs" / "frame_0000" / "POTCAR.used").write_text("Ba_sv\nV_pv\nBi\nO\n")
+    monkeypatch.setattr(vasp_labeling, "_read_vasprun", fake_read(frames))
+    result = collect_vasp_labels(pkg)
+    assert result.labeled[0].info["potcars"] == "Ba_sv V_pv Bi O"
+    assert json.loads((pkg / "collect_report.json").read_text())["potcars_used"] == [
+        "Ba_sv V_pv Bi O"]

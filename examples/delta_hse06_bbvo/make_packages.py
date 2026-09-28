@@ -62,7 +62,10 @@ def choose(name, frames):
 
 # One node per frame. HSE06 on 40 atoms: allow a long wall time; KPAR splits k-points.
 # QB4: 64 cores per node.
-slurm = {name: VaspSlurmSettings(tasks_per_node=64, modules=("vasp6/6.5.1-cpu",),
+slurm = {name: VaspSlurmSettings(account="loni_perovsk27", partition="workq",
+                                 potcar_dir="/home/lgutsev/pot/potpaw_PBE", tasks_per_node=64,
+                                 modules=("vasp6/6.5.1-cpu",),
+                                 setup=("export SINGULARITYENV_OMP_NUM_THREADS=1",),
                                  run="srun vasp_std",
                                  time="12:00:00" if "smoke" in name else "48:00:00"
                                  if name == "dilute" else "24:00:00",

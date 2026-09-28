@@ -39,10 +39,9 @@ ORCA_QB4 = dict(modules=(),  # the user's OpenMPI 4.1.8, the one ORCA 6.1.1 is b
                        "ORCA_DIR=/ddnB/project/ramu/lgutsev/Orca_6_1_1",
                        'export PATH="$ORCA_DIR:$OMPI_DIR/bin:$PATH"',
                        'export LD_LIBRARY_PATH="$ORCA_DIR/lib:$OMPI_DIR/lib:${LD_LIBRARY_PATH:-}"'))
-GPU_QB4 = dict(partition="gpu2", modules=(),
-               activate=("module load conda/24.3.0 && "
-                         'source "$(conda info --base)/etc/profile.d/conda.sh" && '
-                         "conda activate /ddnB/project/ramu/lgutsev/env/mace"))
+GPU_QB4 = dict(account="loni_perovsk27", partition="gpu2", modules=(),
+               activate=("source /home/lgutsev/miniforge3/etc/profile.d/conda.sh && "
+                         "conda activate /project/lgutsev/env/mace_env"))
 
 # HCN, the transition state, and HNC from the MACE-MP-0 IRC (atom order C, N, H).
 GEOMETRIES = {
@@ -65,10 +64,11 @@ def main() -> None:
         model="MACE-MP-0 small", notes={"names": list(GEOMETRIES)},
     )
     # LONI: the 'single' partition takes an 8-core Gaussian job; GPU jobs go to 'gpu2'.
-    cpu = SlurmSettings(partition="single", cpus=8, memory_gb=16, time="00:30:00",
-                        max_parallel=None, **ORCA_QB4)
-    gaussian_cpu = SlurmSettings(partition="single", cpus=8, memory_gb=16, time="00:30:00",
-                                 max_parallel=None, modules=("gaussian/g16-c01",))
+    cpu = SlurmSettings(account="loni_perovsk27", partition="single", cpus=8, memory_gb=16,
+                        time="00:30:00", max_parallel=None, **ORCA_QB4)
+    gaussian_cpu = SlurmSettings(account="loni_perovsk27", partition="single", cpus=8,
+                                 memory_gb=16, time="00:30:00", max_parallel=None,
+                                 modules=("gaussian/g16-c01",))
     write_label_package(OUT / "01_label_gaussian", frames_path, manifest_path, code="gaussian",
                         slurm=gaussian_cpu)
     write_label_package(OUT / "02_label_orca", frames_path, manifest_path, code="orca", slurm=cpu)
