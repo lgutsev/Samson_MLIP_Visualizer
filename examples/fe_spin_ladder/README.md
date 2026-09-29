@@ -23,23 +23,28 @@ This example asks, with no new DFT labels:
 
 ## Conclusions
 
-*Work in progress (2026-09-29): the foundation-model benchmark and the SAMSON
-step 1 are done; the Psi4 functional check (2 of 8 spin gaps so far), the
-spin-embedded MACE (epoch 42 of 60) and the DFT check of the reaction energies
-are still running.*
+*Work in progress (2026-09-29): the Psi4 functional check (2 of 8 spin gaps so
+far) and the DFT check of the N₂ reaction energies are still running.*
 
 - **No foundation model reproduces the UBPW91 spin ladders.** UMA's Fe₂XY gaps are
   uncorrelated with UBPW91 (r ≈ 0), its MAE is twice that of predicting zero,
   and on Fe16 it is off by 12–14 eV. The spin-blind models give zero by
   construction.
-- **Part of the disagreement is the functional, part is UMA.** On the two gaps
+- **A small MACE with a total-spin embedding, trained on ~14,000 of these frames
+  on the laptop GPU, does learn them.** On held-out chains: spin-gap MAE 0.25 eV
+  (UMA 0.91), r = 0.82, the right sign 86 % of the time, the right chain ground
+  state 26 of 31 times (UMA 13), forces 0.08 eV/Å (UMA 1.05). It needed the
+  embedding keys set by hand: without them mace-torch trains spin-blind silently
+  (below).
+- **Part of UMA's disagreement is the functional, part is UMA.** On the two gaps
   checked so far, Psi4 BPW91 reproduces the Gaussian labels within 0.2 eV and
   ωB97M-V shifts the gap by 0.6–0.7 eV; UMA matches ωB97M-V once (within
   0.08 eV) and misses it by 1 eV with the wrong sign once.
-- **On Fe₂O₄, N₂ is a spectator**: in SAMSON with UMA, turning N₂ into two
-  nitrosyls has no concerted path below 12 eV, and the first step (N₂ adding to
-  a terminal Fe=O to give bound N₂O) has a 2.53 eV barrier and ends 0.91 eV
-  uphill.
+- **On Fe₂O₄, N₂ is a spectator** (UMA, in SAMSON): turning it into two nitrosyls
+  has no concerted path below 12 eV, and the first step (N₂ adding to a terminal
+  Fe=O to give bound N₂O) has a 2.53 eV barrier and ends 0.91 eV uphill. The
+  trained MACE is no help there: its frames are relaxations near minima, and at
+  UMA's TS it puts the saddle below the intermediate.
 
 ## The data and the tests
 
@@ -109,14 +114,32 @@ wander by up to 1 mEh (meta-GGA + VV10 on these open-shell Fe clusters).
 
 (eV; E(M − 2) − E(M) at the same geometry.) Six more are running.
 
-## A spin-embedded MACE trained here (running)
+## A spin-embedded MACE trained here
 
-`train_fe2_spin.py`: MACE 64x0e+64x1o, r_max 5 Å, with categorical total-spin
-and total-charge graph embeddings (ClusterMLIP's recipe), from scratch on the
-Fe₂XY frames in the dataset's grouped split (14,452 train, 1,978 valid, 1,343
-test frames; whole source structures per split), float64, on the laptop GPU.
-At epoch 42 of 60 the validation errors are 68 meV/atom and 130 meV/Å. Its
-spin gaps on the 73 held-out hand-offs go into `analyze.py` when it finishes.
+`train_fe2_spin.py`: MACE 64x0e+64x1o, r_max 5 Å, two interactions, with
+categorical total-spin and total-charge graph embeddings (ClusterMLIP's recipe,
+plus the `key` fields), from scratch on the Fe₂XY frames in the dataset's
+grouped split (14,452 train, 1,978 valid, 1,343 test frames; whole source
+structures per split; UBPW91 force RMS ≤ 5 eV/Å), float64, E0s from a
+composition fit. 60 epochs, 2.3 h on the laptop GPU (sharing the CPU with Psi4);
+the best validation epoch (35) was kept. MACE's own test table: 83 meV/atom,
+77 meV/Å.
+
+On the held-out chains (44 source structures it never saw; UMA and the others
+on the same frames):
+
+| | Gap MAE (eV) | Gap r | Right sign | Chain ground state | Relaxation MAE (meV) | Force RMSE (eV/Å) |
+|---|---|---|---|---|---|---|
+| **Fe₂ spin-MACE (trained here)** | **0.25** | **0.82** | **86 %** | **26 / 31** | **66** | **0.083** |
+| UMA-s-1p2 | 0.91 | 0.11 | 51 % | 13 / 31 | 349 | 1.05 |
+| UMA-s-1p1 | 0.84 | −0.10 | 41 % | 10 / 31 | 355 | 1.09 |
+| MACE-MPA-0 (spin-blind) | 0.44 | — | — | 9 / 31 | 395 | 1.00 |
+| MACE-MP-0 small (spin-blind) | 0.44 | — | — | 7 / 31 | 447 | 1.16 |
+
+The remaining 0.25 eV is still large next to the gaps themselves (median |gap|
+0.37 eV on these chains, 0.29 eV over all Fe₂XY), and this is one seed on data collected with ClusterMLIP's old code
+(its step 3 re-collects it). But the embedding works: the same run without the
+`key` fields (spin-blind by accident) stalled at 230 meV/atom and 262 meV/Å.
 
 ## N₂ on Fe₂O₄ in SAMSON
 
@@ -147,6 +170,11 @@ ends; SAMSON's importer reordered their atoms, see below):
    The scan jumped branch at one point, but the IRC confirms both ends.
    `n2_step1.py` rebuilds the intermediate from the TS and checks it against the
    IRC end.
+
+The trained spin-MACE gives +1.40 eV for the full reaction at the UBPW91
+geometries (UBPW91 +0.60; its reactant chain is in the test split, the product's
+in validation), and at UMA's step-1 geometries it puts the TS at +0.25 eV, below
+the intermediate (+0.62): it has no frames like a TS to learn from.
 
 So UMA says N₂ stays N₂ on this cluster. The DFT check of the reaction energy,
 the barrier and the intermediate (BPW91 and ωB97M-V) is running; the

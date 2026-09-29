@@ -309,6 +309,30 @@
     },
     "force_rmse_eV_per_A": 1.1598073475157142
    }
+  },
+  "fe2-spin-mace": {
+   "Fe2_test": {
+    "vertical_gap": {
+     "n": 73,
+     "mae_meV": 253.00496273011458,
+     "rmse_meV": 320.77141448736205,
+     "bias_meV": -59.72062456696645,
+     "sign_agreement": 0.863013698630137,
+     "pearson_r": 0.8194157738858521
+    },
+    "relaxation": {
+     "n": 108,
+     "mae_meV": 65.77151085568606,
+     "rmse_meV": 134.28065117639412,
+     "bias_meV": 64.74848971952775
+    },
+    "chain_ground_state": {
+     "correct": 26,
+     "chains": 31,
+     "fraction": 0.8387096774193549
+    },
+    "force_rmse_eV_per_A": 0.08262991726946232
+   }
   }
  }
 }
