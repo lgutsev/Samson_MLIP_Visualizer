@@ -25,6 +25,8 @@ The example is split between the laptop and LONI:
 | `make_packages.py` | laptop | four VASP packages: `smoke/` (3 frames), `campaign/` (58), `doped_smoke/` (3), `doped_campaign/` (73) |
 | run the packages | **LONI** | PBE+U then HSE06 on every frame, same k-mesh, cutoff, and precision |
 | `collect_vasp_labels` | laptop | checks every run and writes `labeled.extxyz` |
+| `vasp_results.py` | laptop, 1 min | the first real labels (smoke tests 05, 08) against MACE-MP-0, and the stability ladder |
+| `stability_followup.py` | laptop | the next LONI job: PBE+U relaxation from the MACE-MP-0 distortion, then HSE06 |
 | `train.py`, `evaluate.py`, `figures.py` | laptop | the Δ-model, a direct HSE06 fine-tune for comparison, the tests, and the figure |
 
 `fake_labels.py` and `--dry-run` run the laptop half on synthetic labels, to
@@ -42,10 +44,49 @@ regenerates both.
 ## The baseline, checked
 
 At the PBE+U geometry of the primitive cell, MACE-MP-0 gives −66.084 eV per
-10-atom cell against VASP PBE+U's −66.071 eV (13 meV per cell). It relaxes the
+10-atom cell against the earlier VASP PBE+U run's −66.071 eV (13 meV per cell). It relaxes the
 cubic cell to 8.502 Å against PBE+U's 8.487 Å (+0.17 %). The residual forces at
-the PBE+U minimum are up to 0.19 eV/Å. For this material, MACE-MP-0 is a close
-stand-in for PBE+U.
+the PBE+U minimum are up to 0.19 eV/Å. Near the cubic structure, MACE-MP-0 is a
+close stand-in for PBE+U; away from it, it is not (next section).
+
+## The first real labels (LONI, 2026-09-29)
+
+Smoke tests 05 and 08 came back with PBE+U and HSE06 on six frames, all converged
+and accepted by `collect_vasp_labels`. `vasp_results.py` compares them with
+MACE-MP-0 (→ [`vasp_results.json`](vasp_results.json)):
+
+| Frame | Atoms | MACE-MP-0 − PBE+U (meV/atom) | Force RMSE vs PBE+U (eV/Å) | Stress RMSE (GPa) | HSE06 − PBE+U forces (eV/Å) |
+|---|---|---|---|---|---|
+| primitive cell, PBE+U geometry | 10 | −9.0 | 0.054 | 0.48 | 0.23 |
+| primitive cell, rattled | 10 | −12.0 | 0.123 | 0.58 | 0.27 |
+| 300 K MD frame | 40 | −26.9 | 0.202 | 0.13 | 0.47 |
+| cubic 40-atom cell | 40 | −8.1 | 0.052 | 0.50 | 0.23 |
+| ions relaxed by MACE-MP-0 | 40 | −21.8 | 0.151 | 0.22 | 0.47 |
+| fully relaxed by MACE-MP-0 | 40 | −24.1 | 0.096 | 0.22 | 0.52 |
+
+- **MACE-MP-0's error is not a constant.** It ranges from −8 meV/atom (cubic) to
+  −27 meV/atom (distorted or hot), so it favours distortions that PBE+U does not
+  (below). A Δ-model has to learn that part too, not only the functional.
+- **HSE06 − PBE+U is large where it matters**: 0.23–0.52 eV/Å in the forces, and
+  its energy varies by 47 meV/atom across the six frames. (The constant part, about
+  −1.8 eV/atom, is only a different energy zero.)
+- **The primitive-cell energies do not match the earlier runs** to the few meV
+  predicted: PBE+U −65.994 eV against −66.071 (+77 meV per cell), HSE06
+  −83.907 eV against −84.208 (+0.30 eV per cell). The earlier runs used PRECFOCK =
+  Fast (HSE06) and a 7×7×7 mesh with LREAL = Auto (PBE+U), but their INCARs and
+  POTCARs are not on this machine, so the cause is still open. It does not affect
+  anything inside this campaign (every frame has identical settings), but do not
+  mix absolute energies from the two setups. One cheap test on LONI would settle it:
+  the primitive cell again with PRECFOCK = Fast (3 h) and with 7×7×7 + LREAL = Auto
+  (2 min).
+- **Cost on one 64-core QB4 node**: PBE+U under 2 min per frame; HSE06 3.3 h on
+  the 10-atom cell and 9.1–14.8 h on 40 atoms. The pristine campaign (16 primitive,
+  42 40-atom frames) is therefore about 430–670 node-hours and the doped one (73
+  40-atom frames) about 660–1,080; `make_packages.py`
+  now asks for 36 h per 40-atom frame (the doped smoke test's 12 h killed all
+  three of its HSE06 runs) and the 72 h maximum for the 80-atom cells. PRECFOCK =
+  Fast would roughly halve the HSE06 cost, but must be chosen before the campaign,
+  not after.
 
 ## Dry run: the laptop half, on synthetic labels
 
@@ -104,7 +145,42 @@ Three MACE-MP-0 fine-tunes with stress on 40-atom cells do not fit in 8 GB of
 GPU memory side by side, so `train.py` trains the direct fine-tune's seeds one
 at a time.
 
-## Is cubic Ba₂BiVO₆ a minimum? (MACE-MP-0 says no)
+## Is cubic Ba₂BiVO₆ a minimum? No: a saddle point at PBE+U and HSE06
+
+![Energies of the cubic cell and its distortions at three levels](images/bbvo_stability_dft.png)
+
+LONI smoke test 08 answered the question below (`vasp_results.py`), in meV per
+formula unit relative to the cubic 40-atom cell, all at identical settings:
+
+| Structure | PBE+U | HSE06 | MACE-MP-0 |
+|---|---|---|---|
+| ions relaxed by MACE-MP-0, cubic cell | −7 | −219 | −144 |
+| PBE+U relaxation from a 0.05 Å rattle (no symmetry, no MACE-MP-0) | **−88** | — | −190 |
+| fully relaxed by MACE-MP-0 | **−448** | **−916** | −608 |
+
+- **The instability is real.** Both DFT levels put the MACE-MP-0 structure far
+  below cubic, and PBE+U's own symmetry-free relaxation also leaves the cubic cell:
+  it stops in a strained cell (9.07 × 8.34 × 8.44 Å, angles within 1.2° of 90°,
+  volume +4.4 %) 88 meV/f.u. down.
+- **HSE06 makes it stronger**: −916 against −448 meV/f.u. for the same structure.
+  The cubic structure's band gap and effective masses belong to a saddle point at
+  both levels.
+- **PBE+U's own relaxation found a shallower minimum** than MACE-MP-0's structure,
+  360 meV/f.u. higher. `stability_followup.py` writes the next LONI job: PBE+U
+  relaxation from the MACE-MP-0 structure (ions, then the cell twice), then HSE06
+  at the result, to get the distortion energy at a DFT geometry.
+- **MACE-MP-0 is right about the direction and wrong about the size.** At fixed
+  cell it overshoots PBE+U twentyfold (−144 against −7) and lands near HSE06;
+  with the cell free it is between the two.
+- **For the Δ-model**: the campaign frames are all cubic-derived (strained cells,
+  MD from cubic, dopants in cubic cells). They should also sample the distorted
+  structures, or the corrected model will be trained where the material is not.
+  That changes `make_frames.py` and the campaign size, so it is a decision to take
+  before the campaign runs.
+
+What follows is the question as it stood before LONI.
+
+### Before LONI: MACE-MP-0 says no
 
 Found while testing dilute dopants. Every relaxation above starts from the cubic
 (Fm-3m) cell, where every force is zero by symmetry, so it stays cubic. From a
@@ -130,10 +206,10 @@ a saddle point.
 - **a PBE+U relaxation** from the cubic cell rattled by 0.05 Å, with ISYM = 0
   (ions, then cell and ions). It does not depend on MACE-MP-0 at all.
 
-Until that comes back, everything below that relaxes a structure (the doping
-series and the dilute cells) describes the cubic structure, not necessarily the
-ground state. The Δ-learning pipeline itself does not depend on the answer, but
-if the distortion is real, the training frames must include it.
+The answer (above) is that the distortion is real, so everything below that
+relaxes a structure (the doping series and the dilute cells) describes the cubic
+saddle point, not the ground state. The Δ-learning pipeline itself does not
+depend on the answer, but the training frames must include the distortion.
 
 ## V-site substitution: Nb and Ta
 
@@ -278,11 +354,12 @@ the cluster (POTCARs are licensed, so none are copied):
 ### Smoke test (`D:\MLIP_Work_Folder\hpc_smoke_tests\05_vasp_bbvo`)
 
 Three frames: the PBE+U primitive cell itself, a rattled primitive cell, and
-one 40-atom MD frame. On the first, the numbers should land near the earlier
+one 40-atom MD frame. On the first, the numbers were expected near the earlier
 runs of this cell on the same 5×5×5 mesh: HSE06 −84.208 eV (that run used
 PRECFOCK = Fast) and PBE+U −66.071 eV (that run used a 7×7×7 mesh and
-LREAL = Auto, so a few meV apart). The 40-atom frame measures what the campaign
-will cost per frame.
+LREAL = Auto). They came out 0.30 eV and 77 meV higher, more than expected; see
+[The first real labels](#the-first-real-labels-loni-2026-09-29). The 40-atom
+frame took 9.1 h of HSE06 on one node.
 
 Fill in `<ACCOUNT>`, `<PARTITION>`, `<VASP_MODULE>`, `<VASP_COMMAND>` (e.g.
 `srun vasp_std`) and `<POTPAW_PBE_DIR>` in `run_vasp.slurm`, then `sbatch` it.
