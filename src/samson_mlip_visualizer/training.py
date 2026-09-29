@@ -280,7 +280,7 @@ def _slurm_script(spec: TrainingSpec, train_file: str, foundation: str, slurm) -
         "#SBATCH --ntasks=1",
         f"#SBATCH --cpus-per-task={slurm.cpus}",
         f"#SBATCH --gres={slurm.gres}",
-        f"#SBATCH --mem={slurm.memory_gb}G",
+        # no --mem: QB4's sbatch filter rejects it; memory comes with the cores
         f"#SBATCH --time={slurm.time}",
         "#SBATCH --output=logs/%x_%A_%a.out",
         "# Written by samson-mlip-visualizer. Replace every placeholder in angle brackets",
