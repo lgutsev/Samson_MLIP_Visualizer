@@ -145,7 +145,11 @@ Three MACE-MP-0 fine-tunes with stress on 40-atom cells do not fit in 8 GB of
 GPU memory side by side, so `train.py` trains the direct fine-tune's seeds one
 at a time.
 
-## Is cubic Ba₂BiVO₆ a minimum? No: a saddle point at PBE+U and HSE06
+## Is cubic Ba₂BiVO₆ a minimum? Not along PBE+U's own relaxation path
+
+**Update (2026-09-30):**
+- The 0.05 Å rattle result is strong evidence *motivating* a stability test. It is not a proof of negative curvature at the cubic point, and "saddle point" needs the unstable-mode count that phonons give. The HSE06 numbers below are single points at MACE-MP-0 geometries, taken at a lattice where HSE06 has −5.3 GPa of stress. They show that lower-energy configurations exist, not a local instability at HSE06.
+- Package 18 (phonons + a cubic → R3 path scan) and package 19 (consistent polymorph shortlist) test this. See [Structural candidates](#structural-candidates-beyond-the-perovskite-packages-18-and-19).
 
 ![Energies of the cubic cell and its distortions at three levels](images/bbvo_stability_dft.png)
 
@@ -162,9 +166,9 @@ formula unit relative to the cubic 40-atom cell, all at identical settings:
   below cubic, and PBE+U's own symmetry-free relaxation also leaves the cubic cell:
   it stops in a strained cell (9.07 × 8.34 × 8.44 Å, angles within 1.2° of 90°,
   volume +4.4 %) 88 meV/f.u. down.
-- **HSE06 makes it stronger**: −916 against −448 meV/f.u. for the same structure.
-  The cubic structure's band gap and effective masses belong to a saddle point at
-  both levels.
+- **HSE06 puts the same remote structure lower still**: −916 against −448 meV/f.u.
+  (single points at the PBE+U lattice). The cubic structure's band gap and effective
+  masses belong to a structure that is not the lowest found at either level.
 - **PBE+U's own relaxation found a shallower minimum** than MACE-MP-0's structure,
   360 meV/f.u. higher. `stability_followup.py` writes the next LONI job: PBE+U
   relaxation from the MACE-MP-0 structure (ions, then the cell twice), then HSE06
@@ -210,6 +214,37 @@ The answer (above) is that the distortion is real, so everything below that
 relaxes a structure (the doping series and the dilute cells) describes the cubic
 saddle point, not the ground state. The Δ-learning pipeline itself does not
 depend on the answer, but the training frames must include the distortion.
+
+## Structural candidates beyond the perovskite (packages 18 and 19)
+
+**Candidate set.** Every Ba₂BiVO₆ entry in OQMD (13), Materials Project (2) and Alexandria (1) was compared with the PBE+U and MACE-MP-0 structures above (the BBVO audit repository, `13_STRUCTURAL_SHORTLIST.md`):
+- The perovskite polymorphs lie 0.13–0.26 eV/atom above the database hulls.
+- OQMD entry 1344250 is lower still: **Cmc2₁ Ba₂[BiO₂][VO₄], isolated VO₄ tetrahedra, not a perovskite**, 0.0155 eV/atom above the OQMD hull, OQMD gap 2.98 eV.
+- The 08 fixed-cell product symmetrises to R3 and matches OQMD entry 1286152.
+- The MACE-MP-0 VO₄ structure is a different arrangement.
+
+The structures and their provenance are in [`polymorphs/`](polymorphs/README.md).
+
+**Packages (written; nothing submitted):**
+
+| Package | Generator | Content |
+|---|---|---|
+| `hpc_smoke_tests/18_vasp_bbvo_phonons` | `phonon_package.py` | 57 PBE+U single points: finite-displacement phonons of the cubic cell (40 atoms: Γ, X; 4×4×4 check; 80 atoms: adds L; a × 0.99/0.98/1.01) and a 9-point linear path from cubic to the 08 R3 minimum |
+| `hpc_smoke_tests/19_vasp_bbvo_polymorphs` | `polymorph_package.py` | 14 frames: the shortlist (incl. Cmc2₁) and Nb/Ta x = 0.25/0.5/1 with an x = 0 control. Each frame runs relax (ISIF 3) → relax → static (the comparison energy) → 0.05 Å rattle + ISIF 2 relax, all at one consistent PBE+U setting (0.25 Å⁻¹) |
+
+Both use the dispatcher's `run_vasp.slurm` layout. Chained levels come from `loni_chain.py` (plain bash plus `rattle.awk`, no Python on the cluster). They are numbered 18 and 19 because 14–17 are routed to other packages; each README proposes a route for the desk.
+
+**Analysis.**
+- `phonon_analyze.py PACKAGE` checks every run (via `parse_vasp_run`, plus a minimum-image geometry match). It reports frequencies at Γ/X/L with irreps and species weights, the dispersion, the strain series and E(λ) on the path. `--scan DIR` writes a frozen-mode scan for the soft modes.
+- `polymorph_analyze.py PACKAGE` refuses unconverged relaxations. It reports energies per f.u. within each composition, the rattle drop, space group, V coordination, a spin-aware mesh gap, and the 10- vs 40-atom k-sampling cross-check.
+
+**MACE-MP-0 preview (not DFT).** `phonon_analyze.py --mace` on package 18:
+- Γ: a T1u polar mode at −5.8i THz and a T1g rotation at −2.8i THz;
+- X: unstable modes to −5.5i THz;
+- compression to 0.98 a weakens them;
+- the path falls from λ = 0.
+
+MACE-MP-0 overstates this distortion (−113 vs −48.6 meV/f.u. at the 08 geometry), so the preview only shows what to look for.
 
 ## V-site substitution: Nb and Ta
 
