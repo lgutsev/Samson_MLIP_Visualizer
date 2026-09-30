@@ -90,7 +90,7 @@ for lam in LAMBDAS:
 sets["path08"] = dict(supercell="sc40", lattice_scale=1.0, atoms=len(start), frames=[first, len(frames) - 1], kmesh=list(used),
                       endpoints=["cubic 8.487 A", "08 CONTCAR.1_ions (-48.6 meV/f.u.)"], lambdas=LAMBDAS)
 print(f"path08: {len(LAMBDAS)} images")
-write_script(args.out, len(frames), {"pbe_u": "poscar"}, name="bbvo-phonons", time="04:00:00", throttle=20)
+write_script(args.out, len(frames), {"pbe_u": "poscar"}, name="bbvo-phonons", time="04:00:00", throttle=8)
 write_manifest(args.out, frames, {"package": "18_vasp_bbvo_phonons", "sets": sets, "incar_extra": TAGS,
                                   "generator": "examples/delta_hse06_bbvo/phonon_package.py"})
 rows = "\n".join(f"| `{k}` | {v['atoms']} atoms, a × {v['lattice_scale']} | frames {v['frames'][0]}–{v['frames'][1]} | "

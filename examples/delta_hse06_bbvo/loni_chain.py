@@ -86,6 +86,11 @@ def write_script(root, count, chain, *, name, time, throttle=None, cfg=LONI):
 # Written by samson-mlip-visualizer (examples/delta_hse06_bbvo/loni_chain.py). Nothing was submitted.
 # One array task per frame; levels in order: {' -> '.join(levels)}.
 set -eo pipefail
+# The container module writes its wrappers (~/.local/bin/modules/<module>/vasp_std) on the compute
+# node when it loads. Packages 05/07/08 ran 3 tasks; batch04 started 14-34 at once and every rank
+# failed with "execve(): .../vasp_std: Exec format error", as if one task ran a wrapper another was
+# rewriting. Stagger the loads, then check the wrapper is a complete script before srun uses it.
+sleep $(( (SLURM_ARRAY_TASK_ID % 8) * 20 ))
 module purge
 module load {cfg['module']}
 set -u
@@ -94,6 +99,15 @@ cd "$SLURM_SUBMIT_DIR"
 frame=$(printf "frame_%04d" "$SLURM_ARRAY_TASK_ID")
 work="runs/$frame"
 mkdir -p "$work" "outputs/$frame"
+vasp=$(command -v vasp_std || true)
+case "$vasp" in
+  "") echo "no vasp_std after module load {cfg['module']}" >&2; exit 2 ;;
+  "$HOME"/bin/*) echo "vasp_std resolves to $vasp, not the module; check PATH" >&2; exit 2 ;;
+esac
+wrapper_ok() {{ [ -s "$vasp" ] && [ -x "$vasp" ] && [ "$(head -c 2 "$vasp")" = "#!" ]; }}
+for try in 1 2 3 4 5 6 7 8 9 10 11 12; do wrapper_ok && break; echo "vasp_std wrapper not ready (try $try)" >&2; sleep 15; done
+{{ echo "vasp_std: $vasp"; ls -l --time-style=full-iso "$vasp"; head -n 3 "$vasp"; echo "LOADEDMODULES: ${{LOADEDMODULES:-}}"; date; hostname; }} > "outputs/$frame/vasp_binary.txt" 2>&1
+wrapper_ok || {{ echo "vasp_std at $vasp is not a complete script after 3 min; see outputs/$frame/vasp_binary.txt" >&2; exit 2; }}
 POTCARS="{cfg['potcars']}"
 : > "$work/POTCAR"
 for name in $(cat "inputs/$frame/POTCAR.names"); do cat "$POTCARS/$name/POTCAR" >> "$work/POTCAR"; done
@@ -119,7 +133,8 @@ previous=
             else:
                 _, sigma, seed = how
                 lines += [f'  awk -v sigma={sigma} -v seed={seed} -f rattle.awk {src} > "$work/{level}/POSCAR"']
-        lines += [f'  (cd "$work/{level}" && {cfg["run"]} > vasp.out 2>&1) || true',
+        lines += ['  wrapper_ok || { sleep 30; wrapper_ok || { echo "vasp_std wrapper broken before srun" >&2; exit 2; }; }',
+                  f'  (cd "$work/{level}" && {cfg["run"]} > vasp.out 2>&1) || true',
                   "  for f in vasprun.xml OUTCAR OSZICAR CONTCAR vasp.out POSCAR; do",
                   f'    if [ -f "$work/{level}/$f" ]; then cp "$work/{level}/$f" "outputs/$frame/{level}/"; fi',
                   "  done",

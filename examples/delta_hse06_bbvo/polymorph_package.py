@@ -81,7 +81,7 @@ for c in cands:
                    **({"symmetrized_to": c["symmetrized_to"]} if "symmetrized_to" in c else {})})
     print(f"frame {len(frames) - 1}: {c['name']} {atoms.get_chemical_formula()} ({len(atoms)} atoms) mesh {mesh} ISYM {isym}")
 
-write_script(args.out, len(frames), CHAIN, name="bbvo-polymorphs", time="24:00:00")
+write_script(args.out, len(frames), CHAIN, name="bbvo-polymorphs", time="24:00:00", throttle=4)
 write_manifest(args.out, frames, {"package": "19_vasp_bbvo_polymorphs", "kspacing": SPACING, "chain": {k: str(v) for k, v in CHAIN.items()},
                                   "relax": RELAX, "static": STATIC, "rattle": RATTLE, "blocked": blocked,
                                   "generator": "examples/delta_hse06_bbvo/polymorph_package.py",
