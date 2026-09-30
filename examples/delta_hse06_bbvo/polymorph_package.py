@@ -1,5 +1,5 @@
 """Ba₂BiVO₆ polymorph shortlist and Nb/Ta stabilization tests at one consistent PBE+U level.
-For LONI; nothing is submitted.  -> polymorphs_run/ (also hpc_smoke_tests/19_vasp_bbvo_polymorphs)
+For LONI; nothing is submitted.  -> polymorphs_run/ (also loni_smoke_tests/batch04_2026-09-30/19_vasp_bbvo_polymorphs)
 
 Distortions of the cubic perovskite need not exhaust the relevant structures: OQMD lists a 20-atom
 Cmc2₁ Ba₂BiVO₆ (entry 1344250) about 16 meV/atom above its hull, against ~140 meV/atom for the
@@ -50,7 +50,7 @@ CHAIN = {"1_relax": "poscar", "2_relax": "contcar", "3_static": "contcar", "4_ra
 p = argparse.ArgumentParser()
 p.add_argument("--candidates", type=Path, default=HERE / "polymorphs" / "candidates.json")
 p.add_argument("--out", type=Path, default=WORK / "polymorphs_run")
-p.add_argument("--copy", type=Path, default=Path(r"D:\MLIP_Work_Folder\hpc_smoke_tests\19_vasp_bbvo_polymorphs"))
+p.add_argument("--copy", type=Path, default=Path(r"C:\Users\lguts\OneDrive\Desktop\Test_Code\loni_smoke_tests\batch04_2026-09-30\19_vasp_bbvo_polymorphs"))
 args = p.parse_args()
 for d in (args.out, args.copy):
     if d and d.exists():

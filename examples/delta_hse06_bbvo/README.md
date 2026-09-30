@@ -229,10 +229,10 @@ The structures and their provenance are in [`polymorphs/`](polymorphs/README.md)
 
 | Package | Generator | Content |
 |---|---|---|
-| `hpc_smoke_tests/18_vasp_bbvo_phonons` | `phonon_package.py` | 57 PBE+U single points: finite-displacement phonons of the cubic cell (40 atoms: Γ, X; 4×4×4 check; 80 atoms: adds L; a × 0.99/0.98/1.01) and a 9-point linear path from cubic to the 08 R3 minimum |
-| `hpc_smoke_tests/19_vasp_bbvo_polymorphs` | `polymorph_package.py` | 14 frames: the shortlist (incl. Cmc2₁) and Nb/Ta x = 0.25/0.5/1 with an x = 0 control. Each frame runs relax (ISIF 3) → relax → static (the comparison energy) → 0.05 Å rattle + ISIF 2 relax, all at one consistent PBE+U setting (0.25 Å⁻¹) |
+| `loni_smoke_tests/batch04_2026-09-30/18_vasp_bbvo_phonons` | `phonon_package.py` | 57 PBE+U single points: finite-displacement phonons of the cubic cell (40 atoms: Γ, X; 4×4×4 check; 80 atoms: adds L; a × 0.99/0.98/1.01) and a 9-point linear path from cubic to the 08 R3 minimum |
+| `loni_smoke_tests/batch04_2026-09-30/19_vasp_bbvo_polymorphs` | `polymorph_package.py` | 14 frames: the shortlist (incl. Cmc2₁) and Nb/Ta x = 0.25/0.5/1 with an x = 0 control. Each frame runs relax (ISIF 3) → relax → static (the comparison energy) → 0.05 Å rattle + ISIF 2 relax, all at one consistent PBE+U setting (0.25 Å⁻¹) |
 
-Both use the dispatcher's `run_vasp.slurm` layout. Chained levels come from `loni_chain.py` (plain bash plus `rattle.awk`, no Python on the cluster). They are numbered 18 and 19 because 14–17 are routed to other packages; each README proposes a route for the desk.
+Both use the dispatcher's `run_vasp.slurm` layout. Chained levels come from `loni_chain.py` (plain bash plus `rattle.awk`, no Python on the cluster). They are numbered 18 and 19 because 14–17 are routed to other packages. They sit in the desk's batch 04, with routes 18 and 19 in `dispatch/routes.json`.
 
 **Analysis.**
 - `phonon_analyze.py PACKAGE` checks every run (via `parse_vasp_run`, plus a minimum-image geometry match). It reports frequencies at Γ/X/L with irreps and species weights, the dispersion, the strain series and E(λ) on the path. `--scan DIR` writes a frozen-mode scan for the soft modes.

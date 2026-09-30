@@ -1,5 +1,5 @@
 """PBE+U phonons of cubic Ba₂BiVO₆ for LONI. Nothing is submitted.
--> phonons/ (also hpc_smoke_tests/18_vasp_bbvo_phonons, dispatcher ``run_vasp.slurm`` layout)
+-> phonons/ (also loni_smoke_tests/batch04_2026-09-30/18_vasp_bbvo_phonons, dispatcher ``run_vasp.slurm`` layout)
 
 Smoke test 08: a symmetry-free PBE+U relaxation from a 0.05 Å rattle lowered the
 cubic 40-atom cell by 48.6 meV/f.u. at fixed volume (coherent V and Bi
@@ -49,7 +49,7 @@ TAGS = {"EDIFF": "1E-8", "ADDGRID": ".FALSE.", "NCORE": 4, "KPAR": 4, "LWAVE": "
 
 p = argparse.ArgumentParser()
 p.add_argument("--out", type=Path, default=WORK / "phonons")
-p.add_argument("--copy", type=Path, default=Path(r"D:\MLIP_Work_Folder\hpc_smoke_tests\18_vasp_bbvo_phonons"))
+p.add_argument("--copy", type=Path, default=Path(r"C:\Users\lguts\OneDrive\Desktop\Test_Code\loni_smoke_tests\batch04_2026-09-30\18_vasp_bbvo_phonons"))
 args = p.parse_args()
 for d in (args.out, args.copy):
     if d and d.exists():
