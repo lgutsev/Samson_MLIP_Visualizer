@@ -18,3 +18,9 @@ This direction does not validate an unsupported efficiency claim, waive missing 
 
 ### Precedence and dispatch
 This dated project direction supersedes earlier audit prose, stopping rules and assignments wherever they make harmonic phonon stability or successful stabilization a prerequisite for continuing BBVO. Preserve numerical findings and provenance; revise their interpretation. Prepared diagnostic packages may remain useful, but do not create a new mandatory stabilization gate, cancel unrelated jobs, or launch an expanded campaign from this instruction alone. Carry this direction into smoke-dispatch handoffs.
+
+## Dopant objective hierarchy — explicit PI clarification, 2026-09-30
+
+The **primary purpose of Nb/Ta substitution is improved CBM dispersion**, assessed with electronic-structure calculations (band character, dispersion/curvature and appropriate effective-mass tensors at consistently treated geometries). Preserve useful gap and band-alignment properties and report tradeoffs. An MLIP can supply geometries and structural sampling but does not predict CBM dispersion. A lighter band mass alone does not establish a measured mobility or exclude localization.
+
+Suppression of imaginary phonon modes is a **secondary, optional objective**. Rank and advance dopants primarily by CBM/electronic-property improvement, not by removal of a rattle drop or soft mode. Retain promising CBM candidates even when imaginary modes remain. A dopant that stabilizes a structure but does not improve the CBM has not met the primary objective. Defer an unproductive stabilization search without dropping the electronic screening. Dispatch handoffs must preserve this ordering and must not gate dopant electronic calculations on a stable harmonic spectrum.
