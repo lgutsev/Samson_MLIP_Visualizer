@@ -151,6 +151,8 @@ if args.package:
                              activate=("source /home/lgutsev/miniforge3/etc/profile.d/conda.sh && "
                                        "conda activate /project/lgutsev/env/mace_env"),
                              cache_dir="/project/lgutsev/cache",  # home is 10 GB
+                             # the one master copy of MACE-MP-0 small on LONI
+                             foundation_dir="/ddnB/project/ramu/lgutsev/MLIP_PROJECT_STORAGE/MLIP_Foundational_Models/mace",
                              time="02:00:00" if args.smoke else "06:00:00", memory_gb=16)
     for spec in specs:
         write_training_package(spec, root / spec.name, slurm=slurm)

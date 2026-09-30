@@ -29,7 +29,9 @@ from samson_mlip_visualizer.vasp_labeling import (
     write_poscar,
 )
 
-LONI = dict(account="loni_perovsk27", partition="workq", module="vasp6/6.5.1-cpu",
+# New packages run VASP 6.6.1 (personal license; smoke 20: bit-identical to 6.5.1 on 08's cubic
+# frame). Label sets that started on 6.5.1 (05/07/08 and their campaigns) stay on 6.5.1.
+LONI = dict(account="loni_perovsk27", partition="workq", module="vasp6/6.6.1-cpu",
             potcars="/home/lgutsev/pot/potpaw_PBE", run="srun vasp_std")
 
 # Cartesian Gaussian rattle of a VASP5 CONTCAR/POSCAR in direct coordinates (awk; Box-Muller)

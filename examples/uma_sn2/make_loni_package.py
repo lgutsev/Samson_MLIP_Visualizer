@@ -45,7 +45,6 @@ SLURM = """#!/bin/bash
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
-#SBATCH --mem=64G
 #SBATCH --time=01:00:00
 #SBATCH --output=logs/%x_%A_%a.out
 # Written by samson-mlip-visualizer (examples/uma_sn2/make_loni_package.py).
@@ -80,8 +79,8 @@ been submitted.
 | 1 | `uma-s-1p1.pt` | control: must reproduce the laptop run |
 | 2 | `uma-m-1p1.pt` | the large model |
 
-Each task takes a few minutes on one GPU (`gpu2`, 64 GB memory for the large
-checkpoint): energies and forces on 46 frames, two relaxations, a Sella TS
+Each task takes a few minutes on one GPU (`gpu2`; no `--mem`, QB4 rejects it:
+memory comes with the cores): energies and forces on 46 frames, two relaxations, a Sella TS
 refinement with a finite-difference frequency check, and the fragments.
 
 ## Before `sbatch run_uma.slurm`

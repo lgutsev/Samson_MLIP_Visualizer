@@ -4,12 +4,18 @@ Run in SAMSON's Python (where samson-mlip-visualizer and mace-torch are
 installed), from the smoke-test folder, after copying back each package's
 outputs/ (labeling) or runs/ (training):
 
-    python check_smoke_results.py
+    python check_smoke_results.py              # all four
+    python check_smoke_results.py 02 04        # only the tests starting with 02 or 04
+    python check_smoke_results.py --no-write   # install nothing, write no smoke_results.json
 
-It prints PASS / FAIL / NOT RUN per test and writes smoke_results.json.
+It prints PASS / FAIL / NOT RUN per test and writes smoke_results.json. The
+training checks install the models into installed_models/ (with --no-write: into
+a temporary folder instead).
 """
 
 import json
+import sys
+import tempfile
 import warnings
 from pathlib import Path
 
@@ -21,6 +27,8 @@ HERE = Path(__file__).resolve().parent
 # and basis: relative energies agree to a few meV, forces to ~0.01 eV/Å.
 ENERGY_TOLERANCE, FORCE_TOLERANCE = 0.02, 0.05
 results = {}
+NO_WRITE = "--no-write" in sys.argv
+SELECTED = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
 
 
 def record(name, status, **detail):
@@ -76,7 +84,8 @@ def check_training(name, expect_heads):
     package = HERE / name
     if not (package / "runs").is_dir():
         return record(name, "NOT RUN", reason="no runs/ copied back")
-    installed = install_models(package, destination=HERE / "installed_models")
+    destination = Path(tempfile.mkdtemp()) if NO_WRITE else HERE / "installed_models"
+    installed = install_models(package, destination=destination)
     if not installed:
         return record(name, "FAIL", reason="no .model file in runs/seed*/")
     calc = create_calculator("mace", str(installed[0]), device="cpu")
@@ -98,9 +107,15 @@ def check_training(name, expect_heads):
            errors=card.get("training_errors_meV"), model=str(installed[0]))
 
 
-check_labeling("01_label_gaussian")
-check_labeling("02_label_orca")
-check_training("03_train_plain", expect_heads=1)
-check_training("04_train_multihead_mp", expect_heads=2)
-(HERE / "smoke_results.json").write_text(json.dumps(results, indent=1, default=str))
-print(f"\nwrote {HERE / 'smoke_results.json'}")
+CHECKS = {
+    "01_label_gaussian": check_labeling,
+    "02_label_orca": check_labeling,
+    "03_train_plain": lambda name: check_training(name, expect_heads=1),
+    "04_train_multihead_mp": lambda name: check_training(name, expect_heads=2),
+}
+for test, check in CHECKS.items():
+    if not SELECTED or any(test.startswith(prefix) for prefix in SELECTED):
+        check(test)
+if not NO_WRITE:
+    (HERE / "smoke_results.json").write_text(json.dumps(results, indent=1, default=str))
+    print(f"\nwrote {HERE / 'smoke_results.json'}")

@@ -238,16 +238,24 @@ def train_local(spec: TrainingSpec, directory: str | Path, *, parallel: bool = T
 
 
 def final_errors(log_text: str) -> dict[str, dict[str, float]]:
-    """The error table mace_run_train prints at the end: {set: {E, F}} in meV."""
+    """The error table mace_run_train prints at the end: {set: {E, F}} in meV, plus
+    the stress RMSE (meV/Å³) when the table has a stress column."""
     errors = {}
+    stress_column = None
     for line in log_text.splitlines():
         parts = [part.strip() for part in line.strip().strip("|").split("|")]
+        if parts[0] == "config_type":
+            stress_column = next((i for i, name in enumerate(parts)
+                                  if name.startswith("RMSE Stress")), None)
         if len(parts) >= 3 and parts[0].startswith(("train", "valid", "test")):
             try:
-                errors[parts[0]] = {"rmse_e_mev_per_atom": float(parts[1]),
-                                    "rmse_f_mev_per_A": float(parts[2])}
+                row = {"rmse_e_mev_per_atom": float(parts[1]),
+                       "rmse_f_mev_per_A": float(parts[2])}
+                if stress_column is not None and stress_column < len(parts):
+                    row["rmse_stress_mev_per_A3"] = float(parts[stress_column])
             except ValueError:
                 continue
+            errors[parts[0]] = row
     return errors
 
 
@@ -260,8 +268,9 @@ def _slurm_script(spec: TrainingSpec, train_file: str, foundation: str, slurm) -
     seeds = ",".join(str(seed) for seed in spec.seeds)
 
     def up(path: str) -> str:
-        return path if path in ("mp", "small", "medium", "large") or Path(path).is_absolute() \
-            else f"../../{path}"
+        # a leading "/" is absolute on the cluster, even when written on Windows
+        return path if path in ("mp", "small", "medium", "large") or path.startswith("/") \
+            or Path(path).is_absolute() else f"../../{path}"
 
     run_spec = TrainingSpec.from_json({**spec.to_json(), "replay": up(spec.replay)}) \
         if spec.replay else spec
@@ -316,6 +325,9 @@ class GpuSlurmSettings:
     # where mace-torch (the MP replay set), torch, Triton, CUDA, and matplotlib keep
     # their caches, instead of ~/.cache: for clusters with a small home quota
     cache_dir: str | None = None
+    # a cluster folder that already holds the foundation checkpoint under the same
+    # file name (one master copy): the package points there instead of bundling it
+    foundation_dir: str | None = None
 
 
 def _cache_exports(cache_dir: str) -> str:
@@ -339,7 +351,9 @@ def write_training_package(spec: TrainingSpec, directory: str | Path, *,
     train_name = "data/train.extxyz"  # fixed: ASE guesses formats from file names
     shutil.copyfile(spec.train_file, directory / train_name)
     foundation = spec.foundation
-    if copy_foundation and Path(spec.foundation).is_file():
+    if slurm.foundation_dir and Path(spec.foundation).is_file():
+        foundation = f"{slurm.foundation_dir.rstrip('/')}/{Path(spec.foundation).name}"
+    elif copy_foundation and Path(spec.foundation).is_file():
         (directory / "foundation").mkdir(exist_ok=True)
         foundation = f"foundation/{Path(spec.foundation).name}"
         shutil.copyfile(spec.foundation, directory / foundation)
