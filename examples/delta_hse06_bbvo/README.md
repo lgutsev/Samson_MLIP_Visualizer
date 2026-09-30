@@ -1,5 +1,9 @@
 # HSE06 quality from MACE-MP-0: Δ-learning for Ba₂BiVO₆
 
+## Project priorities — PI direction, 2026-09-30
+
+Read [AGENTS.md](AGENTS.md) before planning or dispatching BBVO work. **Dopants primarily target improved CBM dispersion; phonon stabilization is secondary and optional.** Rank substitutions using DFT electronic properties (dispersion, mass tensors, band character and gap tradeoffs), not removal of imaginary modes. The MLIP supplies structures and paths, not electronic bands. Residual soft modes do not disqualify a useful dopant or block BBVO. Pursue stabilization only through accessible, modest-cost opportunities; defer it if those do not emerge. Keep model-accuracy gates separate from material-stability questions. This direction supersedes earlier stabilization-first wording below.
+
 Hybrid functionals fix a lot of what PBE(+U) gets wrong in oxides, but at 10–100×
 the cost, which rules out MD and large cells. The idea here is to keep an MLIP
 at run time and learn only the difference:
@@ -162,7 +166,7 @@ formula unit relative to the cubic 40-atom cell, all at identical settings:
 | PBE+U relaxation from a 0.05 Å rattle (no symmetry, no MACE-MP-0) | **−88** | — | −190 |
 | fully relaxed by MACE-MP-0 | **−448** | **−916** | −608 |
 
-- **The instability is real.** Both DFT levels put the MACE-MP-0 structure far
+- **Lower-energy distortions are established.** Both DFT levels put the MACE-MP-0 structure far
   below cubic, and PBE+U's own symmetry-free relaxation also leaves the cubic cell:
   it stops in a strained cell (9.07 × 8.34 × 8.44 Å, angles within 1.2° of 90°,
   volume +4.4 %) 88 meV/f.u. down.
@@ -210,9 +214,9 @@ a saddle point.
 - **a PBE+U relaxation** from the cubic cell rattled by 0.05 Å, with ISYM = 0
   (ions, then cell and ions). It does not depend on MACE-MP-0 at all.
 
-The answer (above) is that the distortion is real, so everything below that
-relaxes a structure (the doping series and the dilute cells) describes the cubic
-saddle point, not the ground state. The Δ-learning pipeline itself does not
+The answer (above) is that the distortion is real, so the doping series and dilute cells below are cubic-derived screening results,
+not an established ground-state description. This does not disqualify their CBM-screening
+purpose or make harmonic stabilization a prerequisite. The Δ-learning pipeline itself does not
 depend on the answer, but the training frames must include the distortion.
 
 ## Structural candidates beyond the perovskite (packages 18 and 19)
