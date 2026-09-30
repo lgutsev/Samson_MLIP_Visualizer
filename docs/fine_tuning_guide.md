@@ -151,11 +151,27 @@ the fit says so.
 - plain and multihead fine-tuning on a GPU node.
 
 Run them on the cluster, copy the results back, and run
-`check_smoke_results.py`, which prints PASS or FAIL per test. Both training
-tests pass when run locally exactly as SLURM would run them (28 s and 184 s).
-The labeling collectors have so far been tested only on outputs written to the
-Gaussian 16 and ORCA 5 formats, so the smoke tests are also their first check
-against real output.
+`check_smoke_results.py`, which prints PASS or FAIL per test.
+
+All four pass on LONI QB4 (September 2026; details in
+`examples/hpc_smoke_tests/README.md`):
+- **Gaussian** (G16 C.01, `single` partition): the barrier (1.9949 eV) and
+  HNC − HCN (0.6629 eV) match Psi4 PBE/def2-TZVP within 0.1 meV, forces within
+  0.001 eV/Å; the collector reads the real logs.
+- **ORCA** (6.1.1 with OpenMPI 4.1.6): the same numbers within 0.7 meV and
+  0.004 eV/Å, about 10 s per frame on 8 cores. The larger ORCA jobs of the
+  Δ-learning examples (Ni porphine PBE0 gradients, Ni(CO)₄ DLPNO-CCSD(T)) also
+  collect cleanly.
+- **Plain fine-tuning** on a `gpu2` GPU: the model keeps all 89 foundation
+  elements and evaluates HCN and water.
+- **Multihead fine-tuning with the Materials Project replay**: both heads
+  (`pt_head`, `Default`) present, 89 elements.
+
+The Ni(CO)₄ training packages reproduce the laptop's validation losses to eight
+digits on the same data, so a cluster run and a desktop run of one spec are
+interchangeable. The packages point to one master copy of the foundation model on
+the cluster (`GpuSlurmSettings(foundation_dir=...)`) rather than bundling it, and
+no script asks for `--mem` (QB4 rejects it).
 
 ## Δ-learning instead of fine-tuning
 

@@ -413,10 +413,28 @@ could not fit three 40-atom fine-tunes with stress at once. The residual labels
 are computed here first. The smoke test, `hpc_smoke_tests/11_train_bbvo_stress`
 (`--dry-run --smoke`), trains both for 3 epochs on the synthetic labels.
 
+It passed on `gpu2` (2026-09-30): both finish with the stress loss active
+(stress weight 1000 for the direct fine-tune, 10000 for the correction; 109 of 109
+configurations carry stress), about 42 s per job, 1.2–1.8 s per epoch after a 6 s
+first one; `install_models` accepts both and they return stress on a periodic
+frame. The model cards now keep the stress RMSE of the final error table. GPU
+memory was not logged, so whether three seeds fit one GPU is still open.
+
 ### Campaign
 
-All 58 frames. HSE06 on a 40-atom cell takes node-hours, so run the smoke test
-first and adjust nodes, KPAR, and wall time from its timing. After collecting,
+All 58 frames. The smoke tests settled the cost (HSE06 9.1–14.8 h per 40-atom
+frame on one node, so `make_packages.py` asks for 36 h), the VASP build (new
+packages run 6.6.1, bit-identical to 6.5.1 in smoke test 20; this campaign stays
+on 6.5.1, like the 05/07/08 labels it joins) and the labels (05's three frames
+accepted). Two decisions are still to take before it runs:
+
+- **Which structures it samples.** 08 showed that cubic Ba₂BiVO₆ is not the
+  lowest structure at either DFT level; the frames are all cubic-derived. Packages
+  18 (phonons) and 19 (polymorph shortlist, on LONI now) say what else it should
+  sample.
+- **PRECFOCK.** Fast would roughly halve the HSE06 cost and is what the earlier
+  reference used; Normal is what 05/08 used. Mixing them within one label set is
+  not an option. After collecting,
 copy `campaign/labeled.extxyz` next to this example's data (the default
 `DELTA_DIR` is `D:\MLIP_Work_Folder\delta_hse06_bbvo`) and run `train.py` and
 `evaluate.py`.

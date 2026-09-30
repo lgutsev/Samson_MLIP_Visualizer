@@ -23,9 +23,6 @@ This example asks, with no new DFT labels:
 
 ## Conclusions
 
-*Work in progress (2026-09-29): the Psi4 functional check (2 of 8 spin gaps so
-far) and the DFT check of the N₂ reaction energies are still running.*
-
 - **No foundation model reproduces the UBPW91 spin ladders.** UMA's Fe₂XY gaps are
   uncorrelated with UBPW91 (r ≈ 0), its MAE is twice that of predicting zero,
   and on Fe16 it is off by 12–14 eV. The spin-blind models give zero by
@@ -36,15 +33,17 @@ far) and the DFT check of the N₂ reaction energies are still running.*
   state 26 of 31 times (UMA 13), forces 0.08 eV/Å (UMA 1.05). It needed the
   embedding keys set by hand: without them mace-torch trains spin-blind silently
   (below).
-- **Part of UMA's disagreement is the functional, part is UMA.** On the two gaps
-  checked so far, Psi4 BPW91 reproduces the Gaussian labels within 0.2 eV and
-  ωB97M-V shifts the gap by 0.6–0.7 eV; UMA matches ωB97M-V once (within
-  0.08 eV) and misses it by 1 eV with the wrong sign once.
-- **On Fe₂O₄, N₂ is a spectator** (UMA, in SAMSON): turning it into two nitrosyls
-  has no concerted path below 12 eV, and the first step (N₂ adding to a terminal
-  Fe=O to give bound N₂O) has a 2.53 eV barrier and ends 0.91 eV uphill. The
-  trained MACE is no help there: its frames are relaxations near minima, and at
-  UMA's TS it puts the saddle below the intermediate.
+- **UMA's spin-gap error is the model, not the functional.** On 76 held-out and
+  picked Fe₂XY gaps recomputed with ORCA on LONI, PBE reproduces the UBPW91 labels
+  (MAE 0.14 eV, r = 0.91) and ωB97M-V, UMA's own level, moves the gaps by 0.35 eV
+  (MAE against PBE; r = 0.82). UMA misses ωB97M-V by 1.04 eV with r = −0.17: the
+  functional accounts for about a third of UMA's 0.88 eV error against UBPW91.
+- **On Fe₂O₄, N₂ is a spectator** (UMA, in SAMSON, checked at DFT): turning it into
+  two nitrosyls has no concerted path below 12 eV, and the first step (N₂ adding to
+  a terminal Fe=O to give bound N₂O) has a 2.53 eV barrier with UMA, 1.98 eV with
+  PBE and 2.22 eV with ωB97M-V at UMA's geometries. The trained MACE is no help
+  there: its frames are relaxations near minima, and at UMA's TS it puts the saddle
+  below the intermediate.
 
 ## The data and the tests
 
@@ -95,24 +94,52 @@ gap (the spin-blind models) already gives a 0.40 eV MAE.
 
 ![One held-out Fe₂H₂O₄ chain and one Fe16N₂ chain](images/example_chains.png)
 
-## Is it the functional? (running)
+## Is it the functional?
 
 UMA learned ωB97M-V, a range-separated hybrid; the labels are UBPW91, a GGA, and
-hybrids are known to favour high spin in iron compounds. `functional_check.py`
-recomputes eight small Fe₂XY hand-offs (q = 0, at most 6 atoms, spread over the
-UBPW91 gap range) with Psi4 at both levels, def2-TZVP: BPW91 checks that Psi4
-reaches the same states as Gaussian, ωB97M-V separates UMA's own error from the
-functional shift. ωB97M-V starts from the BPW91 orbitals of the same state, so
-both functionals are compared in the basin the Gaussian ladder labelled.
-Energies are good to about 1 mEh (27 meV): at a converged density they still
-wander by up to 1 mEh (meta-GGA + VV10 on these open-shell Fe clusters).
+hybrids are known to favour high spin in iron compounds. If UMA's gaps were right
+for ωB97M-V, its disagreement with the labels would be the functional's.
 
-| Hand-off | UBPW91 (Gaussian) | BPW91 (Psi4) | ωB97M-V (Psi4) | UMA-s-1p2 |
+Psi4 on the laptop converged only two of eight picked gaps in a day, so the check
+ran on LONI QB4 as one ORCA 6.1.1 package (`orca_campaign.py`, smoke package 16 of
+batch 03): every held-out Fe₂XY hand-off of the trained model's test split plus the
+eight picks, 80 gaps, each geometry at PBE/def2-TZVP (a GGA, against the UBPW91
+labels) and then ωB97M-V/def2-TZVP from the PBE orbitals, so both functionals start
+in the same basin. 158 of 166 inputs finished, about 4 min each, 3 node-hours in all.
+The 8 failures are one Fe₂HO₃ chain (key frames 1751–1758) whose H sits 6.8 Å from
+the cluster: the PBE SCF diverges. `write` now screens such fragments out.
+
+Over the 76 finished gaps (eV, E(M − 2) − E(M) at fixed geometry; campaign_results.json
+in `WORK`):
+
+| | MAE | max | r | within 0.3 eV |
 |---|---|---|---|---|
-| Fe₂N₂O₂, M 7 → 5 | −1.43 | −1.24 | −0.54 | −0.46 |
-| Fe₂HO, M 8 → 6 | +1.10 | +1.04 | +0.46 | −0.57 |
+| PBE vs UBPW91 (same functional class, other code) | 0.14 | 1.45 | 0.91 | 67 / 76 |
+| ωB97M-V vs PBE (the functional shift) | 0.35 | 0.94 | 0.82 | 36 / 76 |
+| **UMA-s-1p2 vs ωB97M-V (the model at its own level)** | **1.04** | 3.24 | **−0.17** | 9 / 76 |
+| UMA-s-1p2 vs UBPW91 | 0.88 | 2.93 | 0.11 | 10 / 76 |
+| Fe₂ spin-MACE (trained here) vs UBPW91 | 0.24 | 0.99 | 0.86 | 48 / 76 |
 
-(eV; E(M − 2) − E(M) at the same geometry.) Six more are running.
+- **PBE in ORCA reaches the Gaussian ladder's states**: r = 0.91, and on the 34
+  gaps without an ⟨S²⟩ flag (below) MAE 0.10 eV, r = 0.98.
+- **ωB97M-V favours high spin, as expected of a hybrid**: it raises E(M − 2) − E(M)
+  by 0.17 eV on average (in 55 of 76 gaps), 0.35 eV MAE.
+- **UMA does not follow ωB97M-V either**: 1 eV MAE, uncorrelated. The functional
+  explains about a third of UMA's error against the labels; the rest is the model.
+  On the 34 unflagged gaps UMA vs ωB97M-V is r = 0.41 and still 0.96 eV MAE.
+
+**⟨S²⟩ flags.** In 42 of the 76 gaps one end changes spin state between PBE and
+ωB97M-V (⟨S²⟩ differs by more than 0.5: a closed-shell PBE singlet that ωB97M-V
+breaks symmetry, say), or the two ends differ in spin contamination by more than 1.
+Those gaps compare different electronic states, not only different functionals;
+`collect` reports every comparison with and without them. The conclusion holds on
+both sets.
+
+ORCA and Psi4 do not agree on the two gaps Psi4 finished: ωB97M-V gives −0.93 and
++0.80 eV in ORCA, −0.54 and +0.46 eV in Psi4 (Fe₂N₂O₂ M 7 → 5, Fe₂HO M 8 → 6; UBPW91
+−1.43 and +1.10). Fe₂N₂O₂ is flagged (both ends change basin), and both codes start
+from different orbitals, so these open-shell SCFs land on different solutions; the
+ORCA set is the larger and the one used above.
 
 ## A spin-embedded MACE trained here
 
@@ -176,9 +203,22 @@ geometries (UBPW91 +0.60; its reactant chain is in the test split, the product's
 in validation), and at UMA's step-1 geometries it puts the TS at +0.25 eV, below
 the intermediate (+0.62): it has no frames like a TS to learn from.
 
-So UMA says N₂ stays N₂ on this cluster. The DFT check of the reaction energy,
-the barrier and the intermediate (BPW91 and ωB97M-V) is running; the
-reactant's SCF is hard to converge in Psi4 (physisorbed N₂ at M = 5).
+So UMA says N₂ stays N₂ on this cluster, and DFT agrees. The same ORCA package
+recomputed the six structures at M = 5 (single points at the UBPW91 and UMA
+geometries; eV, relative to the reactant at the same geometry source):
+
+| | UBPW91 | UMA-s-1p2 | PBE | ωB97M-V |
+|---|---|---|---|---|
+| N₂·Fe₂O₄ → Fe₂O₂(NO)₂, UBPW91 geometries | +0.60 | +1.69 | +0.52 | +1.21 |
+| the same, UMA geometries | | +1.72 | +0.73 | +0.60 |
+| step-1 barrier (UMA's TS) | | 2.53 | **1.98** | **2.22** |
+| step-1 N₂O intermediate | | +0.91 | +1.86 | +0.99 |
+
+The barrier stays near 2 eV at both functionals: N₂ does not react. PBE's
+⟨S²⟩ stays within 0.65 of the ideal 6.0 on all six; ωB97M-V's is 7.0–8.6 on the
+TS, the intermediate and both products, so the ωB97M-V column there mixes in
+other spin states and is the less reliable one. These are single points at
+UMA's stationary points, not DFT-optimized ones.
 
 ## Found on the way
 
@@ -219,6 +259,8 @@ functional_check.py pick 8           # then, in the qm env:
 <qm env>/python functional_check.py run gaps
 n2_to_no_endpoints.py; <mlip env>/python n2_step1.py
 <qm env>/python functional_check.py run reaction,step1
+orca_campaign.py write DIR           # the LONI package (ORCA PBE + ωB97M-V)
+orca_campaign.py collect DIR --out WORK/campaign_results.json   # after it is back
 ```
 
 `WORK` is `D:\MLIP_Work_Folder\fe_spin_ladder` (`FE_SPIN_WORK`); the data path is

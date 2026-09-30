@@ -1,7 +1,7 @@
 """The functional check at scale, as a LONI package: ORCA PBE and ωB97M-V spin gaps.
 
     python orca_campaign.py write DIR      # needs ASE (defects env)
-    python orca_campaign.py collect DIR    # after the outputs are back
+    python orca_campaign.py collect DIR [--out FILE]   # after the outputs are back
 
 Psi4 on the laptop converged only 2 of the 8 spin gaps of ``functional_check.py``
 in a day (open-shell Fe₂ SCFs at ωB97M-V are slow and fragile), so the check goes to
@@ -23,8 +23,11 @@ had a broken-symmetry one; ``collect`` flags them by ⟨S²⟩.
 Four 16-core inputs run side by side per 64-core node (workq), with the ORCA
 environment verified on QB4 (ORCA_ON_LONI.md in the dispatch repo). ``collect``
 parses both energies and ⟨S²⟩ per structure and writes ``campaign_results.json``
-next to the package: every gap and reaction energy at UBPW91 (labels), PBE,
-ωB97M-V, UMA-s-1p2 and the trained spin-MACE.
+into the package folder (or ``--out``): every gap and reaction energy at UBPW91
+(labels), PBE, ωB97M-V, UMA-s-1p2 and the trained spin-MACE, the MAE, r and max
+error of each comparison, and the gaps whose ⟨S²⟩ is not comparable (a structure
+that changes basin between PBE and ωB97M-V, or whose two ends differ in spin
+contamination by more than 1), counted separately.
 """
 
 import json
@@ -73,6 +76,10 @@ def structures():
     picked = json.loads((WORK / "functional_pairs.json").read_text())
     pairs += [tuple(int(i) for i in key.split("-")) for key in picked if "-" in key]
     pairs = sorted(set(pairs))
+    # A structure with an atom that has no neighbour within 3 Å is a fragment, not a
+    # vertical gap of one cluster; in package 16 (batch 03) the Fe2HO3 chain of key
+    # frames 1751-1758, with H 6.8 Å out, broke the PBE SCF in all 8 inputs.
+    pairs = [(hi, lo) for hi, lo in pairs if not (fragmented(frames[hi]) or fragmented(frames[lo]))]
     out = []
     for hi, lo in pairs:
         for role, index in (("high", hi), ("low", lo)):
@@ -102,6 +109,12 @@ def structures():
                       "charge": 0, "multiplicity": 5}
         out.append(atoms)
     return out
+
+
+def fragmented(atoms, cutoff: float = 3.0) -> bool:
+    distances = atoms.get_all_distances()
+    np.fill_diagonal(distances, np.inf)
+    return bool((distances.min(axis=1) > cutoff).any())
 
 
 def orca_input(atoms) -> str:
@@ -184,7 +197,7 @@ def parse(text: str) -> dict:
             "terminated": "ORCA TERMINATED NORMALLY" in text}
 
 
-def collect(directory: Path) -> None:
+def collect(directory: Path, out_file: Path | None = None) -> None:
     from ase.io import read
 
     items = read(directory / "frames.extxyz", ":")
@@ -211,12 +224,18 @@ def collect(directory: Path) -> None:
             out["gaps"][key] = {"ok": False}
             continue
         hi, lo = pair["high"], pair["low"]
+        flags = [f"{role} changes basin" for role, row in (("high", hi), ("low", lo))
+                 if basin_change(row)]
+        excess = [contamination(row) for row in (hi, lo)]
+        if any(abs(a - b) > 1 for a, b in zip(*excess)):
+            flags.append("<S^2> contamination of the two ends differs by > 1")
         out["gaps"][key] = {
-            "formula": hi["formula"], "charge": hi["charge"],
-            "M": [hi["multiplicity"], lo["multiplicity"]], "held_out": bool(hi["held_out"]),
+            "formula": hi["formula"], "charge": int(hi["charge"]),
+            "M": [int(hi["multiplicity"]), int(lo["multiplicity"])],
+            "held_out": bool(hi["held_out"]),
             **{f"{level}_meV": MEV * (lo[f"{level}_eV"] - hi[f"{level}_eV"])
                for level in ("UBPW91", "PBE", "wB97M-V", "UMA_s_1p2", "fe2_spin_mace")},
-            "s2": {"high": hi["s2"], "low": lo["s2"]},
+            "s2": {"high": hi["s2"], "low": lo["s2"]}, "flags": flags,
         }
     reaction = {row["name"]: row for row in rows if row["group"] == "reaction" and row["ok"]}
     for name, (a, b) in {"n2_to_2no_ubpw91_geometries": ("ubpw91_reactant", "ubpw91_product"),
@@ -224,26 +243,73 @@ def collect(directory: Path) -> None:
                          "step1_barrier": ("uma_reactant", "uma_ts"),
                          "step1_intermediate": ("uma_reactant", "uma_intermediate")}.items():
         if a in reaction and b in reaction:
-            out["reaction"][name] = {level: reaction[b][f"{level}_eV"] - reaction[a][f"{level}_eV"]
-                                     for level in ("PBE", "wB97M-V")}
+            out["reaction"][name] = {
+                "PBE": reaction[b]["PBE_eV"] - reaction[a]["PBE_eV"],
+                "wB97M-V": reaction[b]["wB97M-V_eV"] - reaction[a]["wB97M-V_eV"],
+                "s2_wB97M-V": [reaction[a]["s2"][-1], reaction[b]["s2"][-1]],
+            }
+    out["failed"] = [{"frame": index, **{k: rows[index].get(k) for k in
+                                         ("pair", "name", "formula", "key_frame")}}
+                     for index in range(len(rows)) if not rows[index]["ok"]]
     good = [g for g in out["gaps"].values() if g.get("PBE_meV") is not None]
+    clean = [g for g in good if not g["flags"]]
     if good:
-        def mae(a, b):
-            return float(np.mean([abs(g[a] - g[b]) for g in good]))
-        out["summary"] = {
-            "gaps_ok": len(good), "gaps_total": len(out["gaps"]),
-            "PBE_vs_UBPW91_mae_meV": mae("PBE_meV", "UBPW91_meV"),
-            "wB97M-V_vs_PBE_mae_meV": mae("wB97M-V_meV", "PBE_meV"),
-            "UMA_vs_wB97M-V_mae_meV": mae("UMA_s_1p2_meV", "wB97M-V_meV"),
-            "UMA_vs_UBPW91_mae_meV": mae("UMA_s_1p2_meV", "UBPW91_meV"),
-            "spin_mace_vs_UBPW91_mae_meV": mae("fe2_spin_mace_meV", "UBPW91_meV"),
-        }
-    target = Path(__file__).with_name("campaign_results.json")
-    target.write_text(json.dumps(out, indent=1))
-    print(json.dumps(out.get("summary", {}), indent=1), "\n->", target)
+        out["summary"] = {"gaps_ok": len(good), "gaps_total": len(out["gaps"]),
+                          "gaps_without_s2_flags": len(clean),
+                          "all": compare(good), "without_s2_flags": compare(clean)}
+    target = out_file or directory / "campaign_results.json"
+    target.write_text(json.dumps(out, indent=1, default=float), encoding="utf-8")
+    print(json.dumps(out.get("summary", {}), indent=1), f"\n{len(out['failed'])} failed",
+          "\n" + json.dumps(out["reaction"], indent=1), "\n->", target)
+
+
+def s_s1(multiplicity: int) -> float:
+    s = (multiplicity - 1) / 2
+    return s * (s + 1)
+
+
+def contamination(row) -> list[float]:
+    """<S^2> − S(S+1) at each level (PBE, ωB97M-V)."""
+    return [value - s_s1(row["multiplicity"]) for value in row["s2"]]
+
+
+def basin_change(row) -> bool:
+    """PBE and ωB97M-V landed on visibly different spin states of the same structure
+    (a singlet going from closed shell to broken symmetry, say)."""
+    return len(row["s2"]) == 2 and abs(row["s2"][0] - row["s2"][1]) > 0.5
+
+
+PAIRS = {"PBE_vs_UBPW91": ("PBE_meV", "UBPW91_meV"),
+         "wB97M-V_vs_PBE": ("wB97M-V_meV", "PBE_meV"),
+         "UMA_vs_wB97M-V": ("UMA_s_1p2_meV", "wB97M-V_meV"),
+         "UMA_vs_UBPW91": ("UMA_s_1p2_meV", "UBPW91_meV"),
+         "spin_mace_vs_UBPW91": ("fe2_spin_mace_meV", "UBPW91_meV")}
+
+
+def compare(gaps) -> dict:
+    """MAE, max error, Pearson r and the share within 0.3 eV for each comparison."""
+    if len(gaps) < 2:
+        return {"n": len(gaps)}
+    result = {"n": len(gaps)}
+    for name, (a, b) in PAIRS.items():
+        x, y = np.array([g[a] for g in gaps]), np.array([g[b] for g in gaps])
+        error = np.abs(x - y)
+        result[name] = {"mae_meV": float(error.mean()), "max_meV": float(error.max()),
+                        "r": float(np.corrcoef(x, y)[0, 1]),
+                        "within_300_meV": int((error <= 300).sum())}
+    return result
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3 or sys.argv[1] not in ("write", "collect"):
+    args = sys.argv[1:]
+    out_file = None
+    if "--out" in args:
+        at = args.index("--out")
+        out_file = Path(args[at + 1])
+        del args[at:at + 2]
+    if len(args) != 2 or args[0] not in ("write", "collect"):
         sys.exit(__doc__)
-    {"write": write, "collect": collect}[sys.argv[1]](Path(sys.argv[2]))
+    if args[0] == "write":
+        write(Path(args[1]))
+    else:
+        collect(Path(args[1]), out_file)
