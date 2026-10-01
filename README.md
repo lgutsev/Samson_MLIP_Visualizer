@@ -421,6 +421,17 @@ MACE-MP-0 plus an HSE06 correction, with VASP PBE+U/HSE06 packages from
 the best forces near equilibrium, but they needed a 7 Å cutoff to fix the
 long-ranged xTB overbinding of the Ni–CO bond.
 
+### Learning the Kohn-Sham Hamiltonian (MACE-H)
+
+[MACE-H](https://github.com/maurergroup/MACE-H) predicts the Kohn-Sham matrix
+block by block instead of an energy. `samson_mlip_visualizer.hamiltonian`
+exports Psi4's Kohn-Sham and overlap matrices in the DeepH format it reads,
+with the orbital order checked by rotation tests.
+[`examples/maceh_water/`](examples/maceh_water/) trains it on water dimers and
+trimers (PBE/def2-SVP). On water tetramers it never saw, the predicted H gives
+HOMO–LUMO gaps within 0.12 eV and valence levels within 52 meV. A model trained
+on dimers alone missed trimers and tetramers by 3.7–4.7 eV.
+
 ### Viewing normal modes
 
 After **Frequencies** (or a converged TS search with the frequency check), the
