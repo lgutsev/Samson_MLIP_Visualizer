@@ -1,11 +1,14 @@
-"""Water dimer and trimer frames from MACE-MP-0 Langevin MD at 400 K.
+"""Water dimer, trimer, and tetramer frames from MACE-MP-0 Langevin MD at 400 K.
 
     PYTHONPATH=../../src python make_frames.py      (an env with mace-torch)
 
 MACE-MP-0 only supplies plausible thermal geometries here; the labels are Psi4
-PBE (label.py). Writes ``dimer_frames.extxyz`` (4 runs x 80 frames) and
-``trimer_frames.extxyz`` (2 runs x 20 frames), keeping only frames whose
-molecules are still hydrogen-bonded (every water within 3.4 Å O-O of another).
+PBE (label.py). Writes ``dimer_frames.extxyz`` (4 runs x 80 frames),
+``trimer_frames.extxyz`` (2 runs x 20, the trimer test set),
+``trimer_train_frames.extxyz`` (4 more runs x 60, other seeds), and
+``tetramer_frames.extxyz`` (2 runs x 30, never trained on), keeping only frames
+whose molecules are still hydrogen-bonded (every water within 3.4 Å O-O of
+another). Files that already exist are kept.
 """
 
 import numpy as np
@@ -27,9 +30,14 @@ def bonded(atoms):
     return bool((distances.min(axis=1) < 3.4).all())
 
 
-def run(n_waters, runs, frames, every, calc):
+# name: (waters, MD runs, frames per run, seed offset of the runs)
+RUNS = {"dimer": (2, 4, 80, 0), "trimer": (3, 2, 20, 0),
+        "trimer_train": (3, 4, 60, 10), "tetramer": (4, 2, 30, 0)}
+
+
+def run(n_waters, runs, frames, every, calc, offset=0):
     kept = []
-    for r in range(runs):
+    for r in range(offset, offset + runs):
         atoms = water_cluster(n_waters, seed=SEED + r)
         atoms.calc = calc
         FIRE(atoms, logfile=None).run(fmax=0.05, steps=300)
@@ -50,8 +58,10 @@ def main():
     WORK.mkdir(parents=True, exist_ok=True)
     calc = MACECalculator(model_paths=str(foundation_model()), device="cuda",
                           default_dtype="float64")
-    for name, n, runs, frames in (("dimer", 2, 4, 80), ("trimer", 3, 2, 20)):
-        kept = run(n, runs, frames, every=50, calc=calc)
+    for name, (n, runs, frames, offset) in RUNS.items():
+        if FRAMES[name].is_file():
+            continue
+        kept = run(n, runs, frames, every=50, calc=calc, offset=offset)
         write(FRAMES[name], kept)
         print(f"{name}: {len(kept)} of {runs * frames} frames kept -> {FRAMES[name]}")
 

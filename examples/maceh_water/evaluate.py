@@ -1,18 +1,20 @@
 """Predict Kohn-Sham matrices with the trained MACE-H and compare them to Psi4.
 
-    PYTHONPATH=../../src python evaluate.py [--device cpu] [--model DIR]
+    PYTHONPATH=../../src python evaluate.py [--device cpu] [--model DIR] [--tag NAME]
 
-For each set (held-out dimer MD run, trimers never trained on, and the training
-dimers for reference) this runs MACE-H's ``deephe3-eval.py`` and then, per
-structure, diagonalizes the predicted H against the Psi4 overlap. Trimers are
-predicted in MACE-H's inference mode: the graph comes from ``overlaps.h5`` only,
-as it would for a new structure with no SCF. Reports:
+For each set that exists (held-out dimer MD run, held-out trimer runs,
+tetramers, and the training sets for reference) this runs MACE-H's
+``deephe3-eval.py`` and then, per structure, diagonalizes the predicted H against
+the Psi4 overlap. Tetramers are predicted in MACE-H's inference mode: the graph
+comes from ``overlaps.h5`` only, as it would for a new structure with no SCF.
+Reports:
 
 - matrix-element MAE (meV) over all blocks, and over on-site/off-site blocks;
 - orbital-energy errors of the occupied valence orbitals (the O 1s levels, near
   -510 eV, are left out), HOMO, LUMO, and gap (meV).
 
-Writes ``results.json`` and ``images/maceh_water.png``.
+Writes ``results_<tag>.json`` and ``images/maceh_water_<tag>.png`` (no suffix
+without ``--tag``); predictions go to ``eval/<tag>/<set>``.
 """
 
 import json
@@ -28,13 +30,16 @@ from samson_mlip_visualizer.hamiltonian import (
     read_orbital_types,
 )
 
-SETS = {"dimer_test": False, "trimer": True, "dimer_train": False}  # name: inference mode
+# name: inference mode (graph from overlaps.h5 only, as for a structure with no SCF)
+SETS = {"dimer_test": False, "trimer_test": False, "tetramer_test": True,
+        "dimer_train": False, "trimer_train": False}
+COLORS = {"dimer_test": "#1f77b4", "trimer_test": "#d62728", "tetramer_test": "#2ca02c"}
 
 
-def predict(name, inference, model, device):
-    config = write_ini(EVAL_DIR[name] / "eval.ini", {
+def predict(name, inference, model, device, out):
+    config = write_ini(out / "eval.ini", {
         "basic": {"device": device, "dtype": "float", "trained_model_dir": model.as_posix(),
-                  "output_dir": EVAL_DIR[name].as_posix(), "target": "hamiltonian",
+                  "output_dir": out.as_posix(), "target": "hamiltonian",
                   "inference": inference, "test_only": False},
         "data": {"graph_dir": "", "DFT_data_dir": "",
                  "processed_data_dir": PROCESSED[name].as_posix(),
@@ -42,7 +47,7 @@ def predict(name, inference, model, device):
                  "target_data": "hamiltonian", "dataset_name": f"{name}_eval",
                  "get_overlap": False, "radius": -1},
     })
-    run_maceh("deephe3-eval.py", config, EVAL_DIR[name] / "eval.log")
+    run_maceh("deephe3-eval.py", config, out / "eval.log")
 
 
 def compare(folder: Path, predicted: Path):
@@ -100,7 +105,7 @@ def plot(all_rows, path):
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4.3))
-    colors = {"dimer_test": "#1f77b4", "trimer": "#d62728"}
+    colors = COLORS
     for name, rows in all_rows.items():
         if name not in colors:
             continue
@@ -128,20 +133,25 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--model", type=Path, help="a MACE-H run folder (default: the latest)")
+    parser.add_argument("--tag", default="", help="suffix for results/plot/eval folders")
     args = parser.parse_args()
     model = args.model or latest_model()
+    suffix = f"_{args.tag}" if args.tag else ""
     print(f"Model: {model}")
     results, all_rows = {"model": model.name}, {}
     for name, inference in SETS.items():
-        predict(name, inference, model, args.device)
-        rows = [compare(folder, EVAL_DIR[name] / folder.name / "hamiltonians_pred.h5")
+        if not PROCESSED[name].is_dir():
+            continue
+        out = EVAL_DIR / (args.tag or "latest") / name
+        predict(name, inference, model, args.device, out)
+        rows = [compare(folder, out / folder.name / "hamiltonians_pred.h5")
                 for folder in sorted(PROCESSED[name].iterdir()) if folder.is_dir()]
         all_rows[name] = rows
         results[name] = summarize(rows)
         print(name, json.dumps(results[name], indent=1))
-    (WORK / "results.json").write_text(json.dumps(results, indent=1))
-    (HERE / "results.json").write_text(json.dumps(results, indent=1))
-    plot(all_rows, HERE / "images" / "maceh_water.png")
+    (WORK / f"results{suffix}.json").write_text(json.dumps(results, indent=1))
+    (HERE / f"results{suffix}.json").write_text(json.dumps(results, indent=1))
+    plot(all_rows, HERE / "images" / f"maceh_water{suffix}.png")
 
 
 if __name__ == "__main__":

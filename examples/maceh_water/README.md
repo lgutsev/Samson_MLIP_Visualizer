@@ -9,26 +9,31 @@ and its own converters cover OpenMX, ABACUS, and FHI-aims. None of those runs on
 this laptop, so [`hamiltonian.py`](../../src/samson_mlip_visualizer/hamiltonian.py)
 adds a Psi4 → DeepH converter, and this example trains on it.
 
-**Result (2026-09-30, 400 epochs):** on water dimers from an MD run it never
-saw, the predicted H gives HOMO–LUMO gaps within 0.14 eV (mean abs.) and
-valence orbital energies within 62 meV. On water trimers, which it was never
-trained on, it fails: gaps are off by 3.7 eV and some levels by tens of eV.
-128 training dimers teach the dimer, not local chemistry that transfers.
+**Result:** trained on water dimers and trimers, the predicted H gives
+HOMO–LUMO gaps within 0.12 eV (mean abs.) on water **tetramers it never saw**,
+and valence orbital energies within 52 meV. Trained on dimers alone (round 1),
+the same network failed on anything larger: gap errors of 3.7–4.7 eV.
 
 ## Pipeline
 
 | step | script | env | output (`D:\MLIP_Work_Folder\maceh_water`) |
 |---|---|---|---|
-| 1. frames | `make_frames.py` | `defects` (mace-torch) | MACE-MP-0 Langevin MD at 400 K: 208 H-bonded dimers (4 runs), 27 trimers |
-| 2. labels | `label.py` | `envs\maceh` | Psi4 PBE/def2-SVP KS matrix + overlap per frame, ~1 s each → `processed\{dimer_train,dimer_test,trimer}` |
-| 3. train | `train.py` | `envs\maceh` | MACE-H default network (3 blocks, ν = 3, l_max 4), 8 Å cutoff → `train\<date>_water_dimer` |
-| 4. evaluate | `evaluate.py [--device cpu]` | `envs\maceh` | predicted H, diagonalized with the Psi4 S → `results.json`, `images/maceh_water.png` |
+| 1. frames | `make_frames.py` | `defects` (mace-torch) | MACE-MP-0 Langevin MD at 400 K, hydrogen-bonded frames only |
+| 2. labels | `label.py` | `envs\maceh` | Psi4 PBE/def2-SVP KS matrix + overlap per frame (1–4 s each) → `processed\{train,test}\<set>` |
+| 3. train | `train.py [--sets dimer] [--init RUN]` | `envs\maceh` | MACE-H default network (3 blocks, ν = 3, l_max 4), 8 Å cutoff → `train\<date>_water_<sets>` |
+| 4. evaluate | `evaluate.py --device cpu --model RUN --tag NAME` | `envs\maceh` | predicted H, diagonalized with the Psi4 S → `results_<tag>.json`, `images/maceh_water_<tag>.png` |
 
-Run steps 2–4 with `PYTHONPATH=../../src`. The test sets are dimer MD run 3,
-held out as a whole (80 frames), and the trimers, a composition never trained
-on. Trimers are predicted in MACE-H's inference mode, with the graph built from
-`overlaps.h5` alone, which is how a new structure without an SCF would be
-handled.
+Run steps 2–4 with `PYTHONPATH=../../src`.
+
+| set | structures | MD runs | used for |
+|---|---|---|---|
+| dimer train | 128 | 3 | training (both rounds) |
+| trimer train | 166 | 4 | training (round 2) |
+| dimer test | 80 | 1, held out whole | test |
+| trimer test | 27 | 2, other seeds | test |
+| tetramer test | 44 | 2 | test, never trained on, predicted in MACE-H's inference mode (graph from `overlaps.h5` alone, as for a structure with no SCF) |
+
+Every atom pair in every set is within 7.4 Å, inside the 8 Å cutoff.
 
 ## What was checked
 
@@ -44,39 +49,52 @@ handled.
 
 ## Results
 
-Best checkpoint of 400 epochs (epoch 394, validation MSE 0.0074 eV²; learning
-rate decayed from 2e-3 to 2.5e-4). The epoch-30 checkpoint is shown for
-comparison.
+- **Round 1** (`--sets dimer`): 400 epochs from scratch, best epoch 394
+  (validation MSE 0.0074 eV²).
+- **Round 2** (`--init <round 1>`): fine-tuned on dimers and trimers for 150
+  epochs with a fresh optimizer (LR 1e-3), best epoch 124 (validation MSE
+  0.0020 eV² on a dimer + trimer split). This took 2 h on the free GPU at
+  about 27 s per epoch.
 
-| MAE | train dimers | test dimers | trimers | test dimers, epoch 30 |
-|---|---|---|---|---|
-| H elements (meV) | 12.5 | 23.6 | 278 | 129 |
-| on-site / off-site blocks (meV) | 13.8 / 12.2 | 30.9 / 21.6 | 220 / 288 | 169 / 118 |
-| valence orbital energies (meV) | 24 | 62 | 7 459 | 531 |
-| O 1s levels (meV) | 189 | 753 | 25 391 | 7 158 |
-| HOMO / LUMO (meV) | 17 / 107 | 61 / 154 | 1 700 / 5 354 | 662 / 2 329 |
-| HOMO–LUMO gap (meV) | 107 | 140 | 3 654 | 1 769 |
-| reference gaps (eV) | 4.45–6.43 | 4.18–6.07 | 3.97–5.54 | |
+Mean absolute errors on the test sets (meV):
 
-![Orbital energies and gaps on held-out dimers and trimers](images/maceh_water.png)
+| | dimers, round 1 | dimers, round 2 | trimers, round 1 | trimers, round 2 | tetramers, round 1 | tetramers, round 2 |
+|---|---|---|---|---|---|---|
+| H elements | 23.6 | 14.4 | 278 | 14.4 | 303 | 17.5 |
+| on-site / off-site blocks | 31 / 22 | 16 / 14 | 220 / 288 | 18 / 14 | 266 / 307 | 24 / 17 |
+| valence orbital energies | 62 | 28 | 7 459 | 32 | 13 775 | 52 |
+| O 1s levels | 753 | 333 | 25 391 | 496 | 36 227 | 714 |
+| HOMO / LUMO | 61 / 154 | 24 / 56 | 1 700 / 5 354 | 36 / 72 | 1 778 / 6 488 | 52 / 122 |
+| HOMO–LUMO gap | 140 | 60 | 3 654 | 85 | 4 714 | 116 |
 
-- **Held-out dimers.** The predicted gaps follow Psi4 across a 2 eV range (one
-  outlier, 4.2 vs 3.2 eV). The occupied levels are more accurate than the LUMO
-  (61 against 154 meV), and the O 1s core is the worst (0.75 eV) because its
-  diagonal near −510 eV is the largest number in the loss.
+Reference gaps are 4.2–6.1 eV (dimers), 4.0–5.5 eV (trimers), and 4.0–6.6 eV
+(tetramers).
+
+![Round 2: orbital energies and gaps on the three test sets](images/maceh_water_round2.png)
+
+![Round 1, dimers only: the same test sets](images/maceh_water_round1.png)
+
+- **Trimers in training fix the transfer.** Round 1 never saw a water with two
+  hydrogen-bond partners or a pair of waters that are not bonded to each other.
+  Its blocks there were off by 0.2–0.3 eV. After 166 trimers, the trimer and
+  tetramer blocks are as accurate as the dimer blocks (14–18 meV). A tetramer
+  has no environment a trimer lacks at this cutoff: each water has at most two
+  partners in a ring. So 4-ring transfer is expected, but larger or 3D clusters
+  should still be tested before relying on it.
+- **Adding trimers also improved the dimers** (gap errors 140 → 60 meV).
+  Partly that is 150 more epochs; partly the trimer environments constrain the
+  same blocks.
 - **Why the eigenvalues need meV accuracy.** def2-SVP on hydrogen-bonded
   clusters has near-linearly-dependent functions, so S has small eigenvalues,
-  and diagonalizing against S amplifies errors in H. At epoch 30, a 0.13 eV
-  element error still gave 1.8 eV gap errors. At 24 meV the errors are 0.14 eV.
-- **Trimers.** A trimer has environments no dimer has: two H-bond partners per
-  water and non-bonded water pairs. The blocks there are off by 0.2–0.3 eV,
-  and the amplification turns that into collapsed gaps and spurious deep
-  levels. Transfer to larger clusters needs trimers (or bulk-water snapshots)
-  in training, not only more dimers.
+  and diagonalizing against S amplifies errors in H. In round 1, 0.3 eV element
+  errors became gap errors of several eV and spurious deep levels. At 15–20 meV
+  the gap errors are 0.06–0.12 eV.
+- **The O 1s core is still the worst level** (0.3–0.7 eV). Its diagonal near
+  −510 eV is the largest number in the MSE loss.
 
 ## Next steps
 
-- Add trimers and larger clusters to training, and test on tetramers.
+- Test on larger 3D clusters (hexamer cage and prism) or bulk-water snapshots.
 - Weight the loss per block, or subtract the isolated-molecule on-site blocks,
   so the O 1s diagonal does not dominate.
 - Try a less diffuse basis (the ill-conditioned S sets how accurate H must be).
@@ -94,11 +112,13 @@ train config, and no `verbose=` in the scheduler parameters (torch ≥ 2.7).
 
 ## Running it
 
-The 400 epochs took about 6 h of running time spread over two days
-(28–70 s per epoch). They were interrupted by the laptop sleeping and by two CUDA
-faults while the GPU was shared: `CUBLAS_STATUS_EXECUTION_FAILED` and, with an
-earlier torch_scatter shim, an illegal instruction. `train.py --resume
-RUN/model.pkl` continues from the last epoch with the optimizer and LR schedule
-restored, on `--device cpu` if needed (about 60 s per epoch on 32 threads). On
-this laptop MACE-H evaluation hung on CUDA after those faults, so use
-`evaluate.py --device cpu` (4 minutes for all 235 structures).
+Round 1 took about 6 h of running time spread over two days (28–70 s per epoch).
+It was interrupted by the laptop sleeping and by two CUDA faults while the GPU
+was shared: `CUBLAS_STATUS_EXECUTION_FAILED` and, with an earlier torch_scatter
+shim, an illegal instruction. `train.py --resume RUN/model.pkl` continues from
+the last epoch with the optimizer and LR schedule restored, on `--device cpu`
+if needed (about 60 s per epoch on 32 threads). `--init RUN` instead starts a
+new training from RUN's weights (epoch 0, fresh optimizer, no best loss to
+beat), which is how round 2 was run. MACE-H evaluation hung on CUDA on this
+laptop after those faults, so use `evaluate.py --device cpu` (about 5 minutes
+for all 445 structures).

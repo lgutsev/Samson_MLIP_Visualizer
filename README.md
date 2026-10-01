@@ -427,10 +427,10 @@ long-ranged xTB overbinding of the Ni–CO bond.
 block by block instead of an energy. `samson_mlip_visualizer.hamiltonian`
 exports Psi4's Kohn-Sham and overlap matrices in the DeepH format it reads,
 with the orbital order checked by rotation tests.
-[`examples/maceh_water/`](examples/maceh_water/) trains it on 128 water dimers
-(PBE/def2-SVP). On dimers from a held-out MD run, the predicted H gives
-HOMO–LUMO gaps within 0.14 eV. On water trimers it fails (3.7 eV gap errors):
-dimers alone do not teach it the trimer's environments.
+[`examples/maceh_water/`](examples/maceh_water/) trains it on water dimers and
+trimers (PBE/def2-SVP). On water tetramers it never saw, the predicted H gives
+HOMO–LUMO gaps within 0.12 eV and valence levels within 52 meV. A model trained
+on dimers alone missed trimers and tetramers by 3.7–4.7 eV.
 
 ### Viewing normal modes
 

@@ -19,20 +19,29 @@ WORK = Path(os.environ.get("MACEH_WATER_DIR", r"D:\MLIP_Work_Folder\maceh_water"
 MACEH_DIR = Path(os.environ.get("MACEH_DIR", r"D:\MLIP_Work_Folder\maceh\MACE-H"))
 MACEH_PYTHON = Path(os.environ.get(
     "MACEH_PYTHON", r"D:\MLIP_Work_Folder\envs\maceh\Scripts\python.exe"))
-FRAMES = {"dimer": WORK / "dimer_frames.extxyz", "trimer": WORK / "trimer_frames.extxyz"}
-# Dimer MD run 3 is held out whole as the dimer test set; trimers are never trained on.
-SETS = ("dimer_train", "dimer_test", "trimer")
-PROCESSED = {name: WORK / "processed" / name for name in SETS}
+# Round 1 trained on dimers only; round 2 adds trimers from four more MD runs.
+# Held out: dimer MD run TEST_RUN, the two original trimer runs, and tetramers.
+FRAMES = {name: WORK / f"{name}_frames.extxyz"
+          for name in ("dimer", "trimer", "trimer_train", "tetramer")}
+TRAIN_DATA = WORK / "processed" / "train"
+PROCESSED = {
+    "dimer_train": TRAIN_DATA / "dimer",
+    "trimer_train": TRAIN_DATA / "trimer",
+    "dimer_test": WORK / "processed" / "test" / "dimer",
+    "trimer_test": WORK / "processed" / "test" / "trimer",
+    "tetramer_test": WORK / "processed" / "test" / "tetramer",
+}
+SETS = tuple(PROCESSED)
 TEST_RUN = 3
 GRAPHS = WORK / "graphs"
 TRAIN_DIR = WORK / "train"
-EVAL_DIR = {name: WORK / "eval" / name for name in SETS}
+EVAL_DIR = WORK / "eval"
 METHOD, BASIS = "pbe", "def2-svp"
 SEED = 7
 
 
 def water_cluster(n, spacing=2.85, seed=SEED):
-    """``n`` water molecules (1-3) on a small ring, O-O about ``spacing`` Å apart,
+    """``n`` water molecules (1-4) on a small ring, O-O about ``spacing`` Å apart,
     each turned at random; a starting point for MD, not an equilibrium structure."""
     from ase import Atoms
     from ase.build import molecule
