@@ -23,7 +23,6 @@ os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 import numpy as np  # noqa: E402
 from ase.io import read, write  # noqa: E402
 from ase.optimize import BFGS  # noqa: E402
-
 from common import MEV, WORK  # noqa: E402
 
 FOLDER = WORK / "n2_no"
@@ -64,7 +63,8 @@ def main():
                          "r_FeO": float(d[0, O_TERMINAL]), "r_FeN": float(d[0, N_ATTACK]),
                          "matches_samson_irc_end": bool(abs(r - SAMSON_IRC["intermediate_r"]) < 0.02
                                                         and abs(energies["intermediate"]
-                                                                - SAMSON_IRC["intermediate"]) < 0.02)},
+                                                                - SAMSON_IRC["intermediate"])
+                                                            < 0.02)},
         "ts": {"r_ON": float(ts.get_distance(O_TERMINAL, N_ATTACK)),
                "r_NN": float(ts.get_distance(N_ATTACK, N_ATTACK + 2)),
                "imaginary_cm": -557.0},

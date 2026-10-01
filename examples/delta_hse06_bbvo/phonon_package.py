@@ -1,5 +1,6 @@
 """PBE+U phonons of cubic Ba₂BiVO₆ for LONI. Nothing is submitted.
--> phonons/ (also loni_smoke_tests/batch04_2026-09-30/18_vasp_bbvo_phonons, dispatcher ``run_vasp.slurm`` layout)
+-> phonons/ (also loni_smoke_tests/batch04_2026-09-30/18_vasp_bbvo_phonons, dispatcher
+``run_vasp.slurm`` layout)
 
 Smoke test 08: a symmetry-free PBE+U relaxation from a 0.05 Å rattle lowered the
 cubic 40-atom cell by 48.6 meV/f.u. at fixed volume (coherent V and Bi
@@ -41,63 +42,89 @@ from phonopy.structure.atoms import PhonopyAtoms
 
 from samson_mlip_visualizer.vasp_labeling import species_order
 
-SUPERCELLS = {"sc40": [[-1, 1, 1], [1, -1, 1], [1, 1, -1]], "sc80": [[2, 0, 0], [0, 2, 0], [0, 0, 2]]}
-SETS = {"sc40": ("sc40", 1.00, None), "sc40k4": ("sc40", 1.00, (4, 4, 4)), "sc80": ("sc80", 1.00, None),
+SUPERCELLS = {"sc40": [[-1, 1, 1], [1, -1, 1], [1, 1, -1]],
+              "sc80": [[2, 0, 0], [0, 2, 0], [0, 0, 2]]}
+SETS = {"sc40": ("sc40", 1.00, None), "sc40k4": ("sc40", 1.00, (4, 4, 4)),
+        "sc80": ("sc80", 1.00, None),
         "p0.99": ("sc40", 0.99, None), "p0.98": ("sc40", 0.98, None), "t1.01": ("sc40", 1.01, None)}
 LAMBDAS = [0.0, 0.05, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2]
-TAGS = {"EDIFF": "1E-8", "ADDGRID": ".FALSE.", "NCORE": 4, "KPAR": 4, "LWAVE": ".FALSE.", "LCHARG": ".FALSE."}
+TAGS = {"EDIFF": "1E-8", "ADDGRID": ".FALSE.", "NCORE": 4, "KPAR": 4, "LWAVE": ".FALSE.",
+        "LCHARG": ".FALSE."}
 
 p = argparse.ArgumentParser()
 p.add_argument("--out", type=Path, default=WORK / "phonons")
-p.add_argument("--copy", type=Path, default=Path(r"C:\Users\lguts\OneDrive\Desktop\Test_Code\loni_smoke_tests\batch04_2026-09-30\18_vasp_bbvo_phonons"))
+p.add_argument("--copy", type=Path, default=Path(
+    r"C:\Users\lguts\OneDrive\Desktop\Test_Code\loni_smoke_tests\batch04_2026-09-30"
+    r"\18_vasp_bbvo_phonons"))
 args = p.parse_args()
 for d in (args.out, args.copy):
     if d and d.exists():
         sys.exit(f"{d} exists; remove it to write the package again")
 
-to_ph = lambda a: PhonopyAtoms(symbols=a.get_chemical_symbols(), cell=a.cell[:], scaled_positions=a.get_scaled_positions())
-to_ase = lambda c: Atoms(c.symbols, cell=c.cell, scaled_positions=c.scaled_positions, pbc=True)
+
+def to_ph(a):
+    return PhonopyAtoms(symbols=a.get_chemical_symbols(), cell=a.cell[:],
+                        scaled_positions=a.get_scaled_positions())
+
+
+def to_ase(c):
+    return Atoms(c.symbols, cell=c.cell, scaled_positions=c.scaled_positions, pbc=True)
+
+
 frames, sets = [], {}
 (args.out / "phonopy").mkdir(parents=True)
 for name, (sc, scale, mesh) in SETS.items():
-    ph = Phonopy(to_ph(primitive(scale)), supercell_matrix=SUPERCELLS[sc], primitive_matrix=np.eye(3))
+    ph = Phonopy(to_ph(primitive(scale)), supercell_matrix=SUPERCELLS[sc],
+                 primitive_matrix=np.eye(3))
     ph.generate_displacements(distance=0.01, is_plusminus=True)
     ph.save(args.out / "phonopy" / f"{name}.yaml")
     perfect = to_ase(ph.supercell)
-    assert species_order(perfect) == species_order(grouped(perfect)), "phonopy supercell not grouped by species"
+    assert species_order(perfect) == species_order(grouped(perfect)), (
+        "phonopy supercell not grouped by species")
     first = len(frames)
     for i, cell in enumerate(ph.supercells_with_displacements, 1):
-        used = write_frame(args.out, len(frames), to_ase(cell), {"pbe_u": TAGS}, KSPACING, mesh, f"{name} disp {i}")
+        used = write_frame(args.out, len(frames), to_ase(cell), {"pbe_u": TAGS}, KSPACING, mesh,
+                           f"{name} disp {i}")
         frames.append({"frame": len(frames), "set": name, "displacement": i})
-    sets[name] = dict(supercell=sc, lattice_scale=scale, atoms=len(perfect), frames=[first, len(frames) - 1],
-                      kmesh=list(used), phonopy_yaml=f"phonopy/{name}.yaml")
+    sets[name] = dict(supercell=sc, lattice_scale=scale, atoms=len(perfect),
+                      frames=[first, len(frames) - 1], kmesh=list(used),
+                      phonopy_yaml=f"phonopy/{name}.yaml")
     print(f"{name}: {len(perfect)} atoms, {len(frames) - first} displacements, mesh {used}")
 # linear path cubic (λ = 0) -> 08 fixed-cell PBE+U minimum (λ = 1), same cell: a double well has
 # E falling from λ = 0 with negative curvature; a barrier shows E rising first (metastable cubic)
-from ase.io import read
-from common import conventional
+from ase.io import read  # noqa: E402
+from common import conventional  # noqa: E402
+
 start = conventional()
 end = read(Path(__file__).parent / "polymorphs" / "pbeu08_fixedcell" / "POSCAR")
-assert start.get_chemical_symbols() == end.get_chemical_symbols() and np.allclose(start.cell, end.cell, atol=1e-6)
+assert (start.get_chemical_symbols() == end.get_chemical_symbols()
+        and np.allclose(start.cell, end.cell, atol=1e-6))
 delta = end.get_scaled_positions() - start.get_scaled_positions()
 delta -= np.round(delta)
 first = len(frames)
 for lam in LAMBDAS:
     img = start.copy()
     img.set_scaled_positions(start.get_scaled_positions() + lam * delta)
-    used = write_frame(args.out, len(frames), img, {"pbe_u": {**TAGS, "EDIFF": "1E-7"}}, KSPACING, None, f"path lambda {lam:.2f}")
+    used = write_frame(args.out, len(frames), img, {"pbe_u": {**TAGS, "EDIFF": "1E-7"}}, KSPACING,
+                       None, f"path lambda {lam:.2f}")
     frames.append({"frame": len(frames), "set": "path08", "lambda": lam})
-sets["path08"] = dict(supercell="sc40", lattice_scale=1.0, atoms=len(start), frames=[first, len(frames) - 1], kmesh=list(used),
-                      endpoints=["cubic 8.487 A", "08 CONTCAR.1_ions (-48.6 meV/f.u.)"], lambdas=LAMBDAS)
+sets["path08"] = dict(supercell="sc40", lattice_scale=1.0, atoms=len(start),
+                      frames=[first, len(frames) - 1], kmesh=list(used),
+                      endpoints=["cubic 8.487 A", "08 CONTCAR.1_ions (-48.6 meV/f.u.)"],
+                      lambdas=LAMBDAS)
 print(f"path08: {len(LAMBDAS)} images")
-write_script(args.out, len(frames), {"pbe_u": "poscar"}, name="bbvo-phonons", time="04:00:00", throttle=8)
-write_manifest(args.out, frames, {"package": "18_vasp_bbvo_phonons", "sets": sets, "incar_extra": TAGS,
+write_script(args.out, len(frames), {"pbe_u": "poscar"}, name="bbvo-phonons", time="04:00:00",
+             throttle=8)
+write_manifest(args.out, frames, {"package": "18_vasp_bbvo_phonons", "sets": sets,
+                                  "incar_extra": TAGS,
                                   "generator": "examples/delta_hse06_bbvo/phonon_package.py"})
-rows = "\n".join(f"| `{k}` | {v['atoms']} atoms, a × {v['lattice_scale']} | frames {v['frames'][0]}–{v['frames'][1]} | "
+rows = "\n".join(f"| `{k}` | {v['atoms']} atoms, a × {v['lattice_scale']} | frames "
+                 f"{v['frames'][0]}–{v['frames'][1]} | "
                  f"{'×'.join(map(str, v['kmesh']))} |" for k, v in sets.items())
 (args.out / "README.md").write_text(f"""# 18_vasp_bbvo_phonons: PBE+U phonons of cubic Ba2BiVO6
 
-Written by `examples/delta_hse06_bbvo/phonon_package.py` (Samson_MLIP_Visualizer). Nothing was submitted.
+Written by `examples/delta_hse06_bbvo/phonon_package.py` (Samson_MLIP_Visualizer). \
+Nothing was submitted.
 Layout: the dispatcher's `run_vasp.slurm` (one level, `pbe_u`; a frame is done when
 `outputs/frame_NNNN/pbe_u/vasprun.xml` is complete). Frame -> displacement map: `package.json`.
 

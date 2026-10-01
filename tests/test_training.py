@@ -93,7 +93,7 @@ def test_final_error_table_keeps_the_stress_column():
 | train_Default |           21.1      |         67.5     |         11.27     |                     2.0               |
 | valid_Default |           20.3      |         90.8     |         13.87     |                     1.6               |
 +---------------+---------------------+------------------+-------------------+---------------------------------------+
-"""
+"""  # noqa: E501
     assert final_errors(table)["valid_Default"] == {
         "rmse_e_mev_per_atom": 20.3, "rmse_f_mev_per_A": 90.8, "rmse_stress_mev_per_A3": 1.6}
 

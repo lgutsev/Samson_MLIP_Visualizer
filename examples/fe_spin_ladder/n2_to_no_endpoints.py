@@ -20,7 +20,6 @@ import json
 
 import numpy as np
 from ase.io import write
-
 from common import WORK, predictions, read_key_frames
 
 OUT = WORK / "n2_no"

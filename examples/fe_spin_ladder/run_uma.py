@@ -19,7 +19,6 @@ from pathlib import Path
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 
 import numpy as np  # noqa: E402
-
 from common import WORK, read_key_frames, save_predictions  # noqa: E402
 
 UMA_DIR = Path(os.environ.get("UMA_DIR", r"D:\MLIP_Foundational_Models\UMA"))

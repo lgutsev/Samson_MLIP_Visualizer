@@ -11,7 +11,6 @@ import json
 from collections import Counter
 
 from ase.io import write
-
 from common import DATA, KEY_FRAMES, WORK, family, key_frames, load_chains
 
 

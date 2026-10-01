@@ -16,7 +16,6 @@ import warnings
 from pathlib import Path
 
 import numpy as np
-
 from common import WORK, read_key_frames, save_predictions
 
 warnings.filterwarnings("ignore")

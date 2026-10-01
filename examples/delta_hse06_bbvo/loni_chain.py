@@ -14,8 +14,8 @@ Per level, ``chain[level]`` is one of:
 - ``("rattle", sigma, seed)``: the previous level's CONTCAR, rattled by ``sigma`` Å.
 
 A level without an INCAR.<level> in the frame is skipped (the next level chains from the last one
-that exists), and a level whose vasprun.xml is already complete is not rerun, so a resubmitted task picks up after
-the last finished level.
+that exists), and a level whose vasprun.xml is already complete is not rerun, so a resubmitted task
+picks up after the last finished level.
 """
 
 import json
@@ -53,7 +53,7 @@ NR == 8 { print "Direct";
 NR > 8 && k < n { k++; for (j = 1; j <= 3; j++) r[j] = sigma * gauss()
   for (j = 1; j <= 3; j++) f[j] = $j + r[1]*B[1,j] + r[2]*B[2,j] + r[3]*B[3,j]
   printf "%16.10f %16.10f %16.10f\n", f[1], f[2], f[3] }
-'''
+'''  # noqa: E501
 
 
 def write_frame(root, index, atoms, levels, spacing, mesh=None, title=""):
@@ -63,9 +63,11 @@ def write_frame(root, index, atoms, levels, spacing, mesh=None, title=""):
     folder.mkdir(parents=True)
     write_poscar(folder / "POSCAR", atoms)
     mesh = mesh or kpoint_mesh(atoms, spacing)
-    (folder / "KPOINTS").write_text(f"Gamma-centered {title}\n0\nGamma\n{mesh[0]} {mesh[1]} {mesh[2]}\n0 0 0\n",
+    (folder / "KPOINTS").write_text(f"Gamma-centered {title}\n0\nGamma\n"
+                                    f"{mesh[0]} {mesh[1]} {mesh[2]}\n0 0 0\n",
                                     newline="\n")
-    (folder / "POTCAR.names").write_text(" ".join(potcar_names(species_order(atoms))) + "\n", newline="\n")
+    (folder / "POTCAR.names").write_text(" ".join(potcar_names(species_order(atoms))) + "\n",
+                                         newline="\n")
     for level, tags in levels.items():
         text = incar("pbe_u", atoms, extra=tags).replace("single point", f"{title} {level}".strip())
         (folder / f"INCAR.{level}").write_text(text, newline="\n")
@@ -116,7 +118,7 @@ for name in $(cat "inputs/$frame/POTCAR.names"); do cat "$POTCARS/$name/POTCAR" 
 grep TITEL "$work/POTCAR" | awk '{{print $4}}' > "outputs/$frame/POTCAR.used"
 done_level() {{ [ -f "outputs/$frame/$1/vasprun.xml" ] && tail -n 3 "outputs/$frame/$1/vasprun.xml" | grep -q "</modeling>"; }}
 previous=
-""".splitlines()
+""".splitlines()  # noqa: E501
     for level in levels:
         how = chain[level]
         lines += [f"# --- {level} ---", f'if [ ! -f "inputs/$frame/INCAR.{level}" ]; then',
@@ -129,16 +131,20 @@ previous=
             lines += [f'  cp "inputs/$frame/POSCAR" "$work/{level}/POSCAR"']
         else:
             src = '"outputs/$frame/$previous/CONTCAR"'
-            lines += [f'  [ -s {src} ] || {{ echo "{level}: no CONTCAR from $previous" >&2; exit 1; }}']
+            lines += [f'  [ -s {src} ] || '
+                      f'{{ echo "{level}: no CONTCAR from $previous" >&2; exit 1; }}']
             if how == "contcar":
                 lines += [f'  cp {src} "$work/{level}/POSCAR"']
             else:
                 _, sigma, seed = how
-                lines += [f'  awk -v sigma={sigma} -v seed={seed} -f rattle.awk {src} > "$work/{level}/POSCAR"']
-        lines += ['  wrapper_ok || { sleep 30; wrapper_ok || { echo "vasp_std wrapper broken before srun" >&2; exit 2; }; }',
+                lines += [f'  awk -v sigma={sigma} -v seed={seed} -f rattle.awk {src} '
+                          f'> "$work/{level}/POSCAR"']
+        lines += ['  wrapper_ok || { sleep 30; wrapper_ok || '
+                  '{ echo "vasp_std wrapper broken before srun" >&2; exit 2; }; }',
                   f'  (cd "$work/{level}" && {cfg["run"]} > vasp.out 2>&1) || true',
                   "  for f in vasprun.xml OUTCAR OSZICAR CONTCAR vasp.out POSCAR; do",
-                  f'    if [ -f "$work/{level}/$f" ]; then cp "$work/{level}/$f" "outputs/$frame/{level}/"; fi',
+                  f'    if [ -f "$work/{level}/$f" ]; then '
+                  f'cp "$work/{level}/$f" "outputs/$frame/{level}/"; fi',
                   "  done",
                   f'  rm -f "$work/{level}/WAVECAR" "$work/{level}/CHG" "$work/{level}/CHGCAR"',
                   f'  done_level {level} || {{ echo "{level} did not finish" >&2; exit 1; }}',
@@ -149,4 +155,5 @@ previous=
 
 
 def write_manifest(root, frames, meta):
-    Path(root, "package.json").write_text(json.dumps({**meta, "frames": frames}, indent=1), encoding="utf-8")
+    Path(root, "package.json").write_text(json.dumps({**meta, "frames": frames}, indent=1),
+                                          encoding="utf-8")

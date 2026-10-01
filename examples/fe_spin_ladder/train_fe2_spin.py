@@ -27,7 +27,6 @@ from collections import Counter
 
 import numpy as np
 from ase.io import read, write
-
 from common import DATA, WORK, family
 
 from samson_mlip_visualizer.training import TrainingSpec, train_local
@@ -69,7 +68,7 @@ def fit_e0s(frames):
     energy = np.array([a.info["REF_energy"] for a in frames])
     e0, *_ = np.linalg.lstsq(counts, energy, rcond=None)
     residual = energy - counts @ e0
-    return dict(zip(elements, e0.tolist())), float(np.abs(residual).mean())
+    return dict(zip(elements, e0.tolist(), strict=True)), float(np.abs(residual).mean())
 
 
 def main():

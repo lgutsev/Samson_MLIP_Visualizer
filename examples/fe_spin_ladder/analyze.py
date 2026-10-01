@@ -21,7 +21,6 @@ import json
 from collections import defaultdict
 
 import numpy as np
-
 from common import HERE, IMAGES, MEV, WORK, predictions, read_key_frames
 
 MODELS = {  # name -> (label, colour); spin-aware first
@@ -181,7 +180,7 @@ def figures(frames, ref_e, pairs, ref_gap, ladders, models, results, groups):
         panels.append(("Fe2_test", ("uma-s-1p2", "fe2-spin-mace")))
     fig, axes = plt.subplots(2, 2, figsize=(13, 10))
     axes = axes.ravel()
-    for ax, (g, names) in zip(axes, panels):
+    for ax, (g, names) in zip(axes, panels, strict=False):
         series = []
         for name in names:
             if name not in models:
@@ -200,7 +199,7 @@ def figures(frames, ref_e, pairs, ref_gap, ladders, models, results, groups):
         x = np.arange(len(shown)) + (k - (len(names) - 1) / 2) * width
         vals = [results["models"][name].get(g, {}).get("chain_ground_state", {}).get("fraction")
                 for g in shown]
-        keep = [(xi, v) for xi, v in zip(x, vals) if v is not None]
+        keep = [(xi, v) for xi, v in zip(x, vals, strict=True) if v is not None]
         ax.bar([xi for xi, _ in keep], [100 * v for _, v in keep], width * 0.92,
                color=color, label=label)
         for xi, v in keep:
@@ -227,7 +226,7 @@ def figures(frames, ref_e, pairs, ref_gap, ladders, models, results, groups):
     # there) and the longest Fe16 chain
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.4))
     fe2 = groups.get("Fe2_test") or groups["Fe2"]
-    for ax, members in zip(axes, (fe2, groups["Fe16"])):
+    for ax, members in zip(axes, (fe2, groups["Fe16"]), strict=True):
         chain = max((c for c in ladders if c in members), key=lambda c: (len(ladders[c]), c))
         steps = ladders[chain]
         idx = [i for s in steps for i in (s[2], s[3])]

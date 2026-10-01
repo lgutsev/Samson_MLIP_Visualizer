@@ -78,9 +78,10 @@ def main():
     ladder = {}
     for level, key in (("PBE+U", "PBEU_eV"), ("HSE06", "HSE06_eV"), ("MACE-MP-0", "MACE_eV")):
         ladder[level] = {name: 1000 * (r[key] - stab[0][key]) / r["per_fu"]
-                         for name, r in zip(STABILITY, stab)}
+                         for name, r in zip(STABILITY, stab, strict=False)}
     # the symmetry-free PBE+U relaxation (no MACE-MP-0 involved)
-    ions, cell = oszicar_energies(RELAX / "OSZICAR.1_ions"), oszicar_energies(RELAX / "OSZICAR.2_cell")
+    ions, cell = (oszicar_energies(RELAX / "OSZICAR.1_ions"),
+                  oszicar_energies(RELAX / "OSZICAR.2_cell"))
     relaxed = read(RELAX / "CONTCAR.2_cell")
     relaxed.calc = calc
     ladder["PBE+U"]["PBE+U relaxation from a 0.05 Å rattle"] = 1000 * (
@@ -99,9 +100,11 @@ def main():
     (HERE / "vasp_results.json").write_text(json.dumps(out, indent=1))
     for r in rows:
         print(f"{r['package']} frame {r['frame']} ({r['atoms']} atoms): MACE−PBE+U "
-              f"{r['MACE_minus_PBEU_meV_per_atom']:+.1f} meV/atom, F {r['MACE_vs_PBEU_force_rmse']:.3f},"
+              f"{r['MACE_minus_PBEU_meV_per_atom']:+.1f} meV/atom, "
+              f"F {r['MACE_vs_PBEU_force_rmse']:.3f},"
               f" σ {r['MACE_vs_PBEU_stress_rmse_GPa']:.2f} GPa; HSE06−PBE+U "
-              f"{r['HSE06_minus_PBEU_meV_per_atom']:+.0f} meV/atom, F {r['HSE06_vs_PBEU_force_rmse']:.3f}")
+              f"{r['HSE06_minus_PBEU_meV_per_atom']:+.0f} meV/atom, "
+              f"F {r['HSE06_vs_PBEU_force_rmse']:.3f}")
     print(json.dumps(ladder, indent=1))
     print(json.dumps(out["pbeu_relaxation"], indent=1))
     figure(ladder)
@@ -123,7 +126,7 @@ def figure(ladder):
         x = np.arange(len(names)) + (k - 1) * (width + 0.02)
         vals = [ladder[level].get(n, np.nan) for n in names]
         ax.bar(x, vals, width, color=color, label=level)
-        for xi, v in zip(x, vals):
+        for xi, v in zip(x, vals, strict=True):
             if np.isfinite(v) and abs(v) > 0.5:
                 ax.text(xi, v - 15, f"{v:.0f}", ha="center", va="top", fontsize=8,
                         color="#52514e")

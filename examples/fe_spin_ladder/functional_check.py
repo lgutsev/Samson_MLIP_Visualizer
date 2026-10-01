@@ -27,7 +27,6 @@ import json
 import sys
 
 import numpy as np
-
 from common import MEV, WORK
 
 HARTREE = 27.211386245988
@@ -140,7 +139,7 @@ def state(psi4, symbols, positions, multiplicity, orbitals):
     go wrong: it imposes the occupation it was written with.)
     """
     lines = [f"0 {multiplicity}"] + [f"{s} {x:.8f} {y:.8f} {z:.8f}" for s, (x, y, z)
-                                      in zip(symbols, positions)]
+                                      in zip(symbols, positions, strict=True)]
     mol = psi4.geometry("\n".join(lines + ["symmetry c1", "no_reorient", "no_com"]))
     out, errors = {}, {}
     for options in ATTEMPTS:
