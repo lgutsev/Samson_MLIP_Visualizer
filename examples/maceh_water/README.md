@@ -32,8 +32,18 @@ Run steps 2–4 with `PYTHONPATH=../../src`.
 | dimer test | 80 | 1, held out whole | test |
 | trimer test | 27 | 2, other seeds | test |
 | tetramer test | 44 | 2 | test, never trained on, predicted in MACE-H's inference mode (graph from `overlaps.h5` alone, as for a structure with no SCF) |
+| hexamer ring test | 40 | 2, 300 K | test, never trained on (inference mode): each water has two H-bond partners, like the training trimers |
+| hexamer prism test | 40 | 2, 300 K | test, never trained on (inference mode): 3D, every frame has two to four waters with three H-bond partners |
 
-Every atom pair in every set is within 7.4 Å, inside the 8 Å cutoff.
+Every atom pair in the dimer, trimer, and tetramer sets is within 7.4 Å, inside
+the 8 Å cutoff; in each hexamer set one frame has one pair (of 153) at 8.1 Å.
+`make_frames.py` records each frame's H-bond topology (partners per water,
+O–O < 3.3 Å) in `info["partners"]`. The hexamers run at 300 K so that the
+prism stays a prism.
+
+Hexamer results are in progress; evaluate them with
+`evaluate.py --device cpu --model RUN --tag round2 --only hexamer_ring_test,hexamer_prism_test`,
+which merges them into the existing `results_round2.json`.
 
 ## What was checked
 
@@ -94,7 +104,8 @@ Reference gaps are 4.2–6.1 eV (dimers), 4.0–5.5 eV (trimers), and 4.0–6.6 
 
 ## Next steps
 
-- Test on larger 3D clusters (hexamer cage and prism) or bulk-water snapshots.
+- Finish the hexamer test (ring and prism, frames and labels in place), then
+  try the cage and bulk-water snapshots.
 - Weight the loss per block, or subtract the isolated-molecule on-site blocks,
   so the O 1s diagonal does not dominate.
 - Try a less diffuse basis (the ill-conditioned S sets how accurate H must be).

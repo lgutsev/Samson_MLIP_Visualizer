@@ -1,6 +1,6 @@
 """Predict Kohn-Sham matrices with the trained MACE-H and compare them to Psi4.
 
-    PYTHONPATH=../../src python evaluate.py [--device cpu] [--model DIR] [--tag NAME]
+    PYTHONPATH=../../src python evaluate.py [--device cpu] [--model DIR] [--tag NAME] [--only SETS]
 
 For each set that exists (held-out dimer MD run, held-out trimer runs,
 tetramers, and the training sets for reference) this runs MACE-H's
@@ -32,8 +32,10 @@ from samson_mlip_visualizer.hamiltonian import (
 
 # name: inference mode (graph from overlaps.h5 only, as for a structure with no SCF)
 SETS = {"dimer_test": False, "trimer_test": False, "tetramer_test": True,
+        "hexamer_ring_test": True, "hexamer_prism_test": True,
         "dimer_train": False, "trimer_train": False}
-COLORS = {"dimer_test": "#1f77b4", "trimer_test": "#d62728", "tetramer_test": "#2ca02c"}
+COLORS = {"dimer_test": "#1f77b4", "trimer_test": "#d62728", "tetramer_test": "#2ca02c",
+          "hexamer_ring_test": "#9467bd", "hexamer_prism_test": "#ff7f0e"}
 
 
 def predict(name, inference, model, device, out):
@@ -133,13 +135,23 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--model", type=Path, help="a MACE-H run folder (default: the latest)")
+    parser.add_argument("--only", default="",
+                        help="comma-separated sets; merged into an existing results file")
     parser.add_argument("--tag", default="", help="suffix for results/plot/eval folders")
     args = parser.parse_args()
     model = args.model or latest_model()
     suffix = f"_{args.tag}" if args.tag else ""
     print(f"Model: {model}")
+    only = [name for name in args.only.split(",") if name]
+    results_file = WORK / f"results{suffix}.json"
     results, all_rows = {"model": model.name}, {}
+    if only and results_file.is_file():
+        results = json.loads(results_file.read_text())
+        if results.get("model") != model.name:
+            raise SystemExit(f"{results_file} is for {results['model']}, not {model.name}")
     for name, inference in SETS.items():
+        if only and name not in only:
+            continue
         if not PROCESSED[name].is_dir():
             continue
         out = EVAL_DIR / (args.tag or "latest") / name
@@ -149,9 +161,10 @@ def main():
         all_rows[name] = rows
         results[name] = summarize(rows)
         print(name, json.dumps(results[name], indent=1))
-    (WORK / f"results{suffix}.json").write_text(json.dumps(results, indent=1))
+    results_file.write_text(json.dumps(results, indent=1))
     (HERE / f"results{suffix}.json").write_text(json.dumps(results, indent=1))
-    plot(all_rows, HERE / "images" / f"maceh_water{suffix}.png")
+    image = f"maceh_water{suffix}" + ("_" + "_".join(only) if only else "")
+    plot(all_rows, HERE / "images" / f"{image}.png")
 
 
 if __name__ == "__main__":

@@ -22,7 +22,8 @@ MACEH_PYTHON = Path(os.environ.get(
 # Round 1 trained on dimers only; round 2 adds trimers from four more MD runs.
 # Held out: dimer MD run TEST_RUN, the two original trimer runs, and tetramers.
 FRAMES = {name: WORK / f"{name}_frames.extxyz"
-          for name in ("dimer", "trimer", "trimer_train", "tetramer")}
+          for name in ("dimer", "trimer", "trimer_train", "tetramer",
+                       "hexamer_ring", "hexamer_prism")}
 TRAIN_DATA = WORK / "processed" / "train"
 PROCESSED = {
     "dimer_train": TRAIN_DATA / "dimer",
@@ -30,6 +31,8 @@ PROCESSED = {
     "dimer_test": WORK / "processed" / "test" / "dimer",
     "trimer_test": WORK / "processed" / "test" / "trimer",
     "tetramer_test": WORK / "processed" / "test" / "tetramer",
+    "hexamer_ring_test": WORK / "processed" / "test" / "hexamer_ring",
+    "hexamer_prism_test": WORK / "processed" / "test" / "hexamer_prism",
 }
 SETS = tuple(PROCESSED)
 TEST_RUN = 3
@@ -40,24 +43,36 @@ METHOD, BASIS = "pbe", "def2-svp"
 SEED = 7
 
 
-def water_cluster(n, spacing=2.85, seed=SEED):
-    """``n`` water molecules (1-4) on a small ring, O-O about ``spacing`` Å apart,
-    each turned at random; a starting point for MD, not an equilibrium structure."""
+def water_cluster(n, spacing=2.85, seed=SEED, shape="ring"):
+    """``n`` water molecules on a ring, O-O about ``spacing`` Å apart, each turned
+    at random; ``shape="prism"`` stacks two rings of n/2 instead (each water then
+    has three neighbors). A starting point for MD, not an equilibrium structure."""
     from ase import Atoms
     from ase.build import molecule
     from scipy.spatial.transform import Rotation
 
     rng = np.random.default_rng(seed)
-    radius = spacing / (2 * np.sin(np.pi / n)) if n > 1 else 0.0
+    layers = 2 if shape == "prism" else 1
+    per_ring = n // layers
+    radius = spacing / (2 * np.sin(np.pi / per_ring)) if per_ring > 1 else 0.0
     cluster = Atoms()
     for k in range(n):
         water = molecule("H2O")
         water.positions -= water.positions[0]
         water.positions = water.positions @ Rotation.random(random_state=rng).as_matrix().T
-        angle = 2 * np.pi * k / n
-        water.positions += radius * np.array([np.cos(angle), np.sin(angle), 0.0])
+        angle = 2 * np.pi * (k % per_ring) / per_ring
+        water.positions += [radius * np.cos(angle), radius * np.sin(angle),
+                            spacing * (k // per_ring)]
         cluster += water
     return cluster
+
+
+def hbond_partners(atoms, cutoff=3.3):
+    """Per water (oxygen), how many other oxygens lie within ``cutoff`` Å."""
+    oxygens = atoms.positions[atoms.numbers == 8]
+    distances = np.linalg.norm(oxygens[:, None] - oxygens[None], axis=-1)
+    np.fill_diagonal(distances, np.inf)
+    return (distances < cutoff).sum(axis=1)
 
 
 def psi4_calculator(overlap_only=False):

@@ -22,7 +22,8 @@ def target_set(name, atoms):
     if name == "dimer":
         return "dimer_test" if atoms.info["run"] == TEST_RUN else "dimer_train"
     return {"trimer": "trimer_test", "trimer_train": "trimer_train",
-            "tetramer": "tetramer_test"}[name]
+            "tetramer": "tetramer_test", "hexamer_ring": "hexamer_ring_test",
+            "hexamer_prism": "hexamer_prism_test"}[name]
 
 
 def main():
