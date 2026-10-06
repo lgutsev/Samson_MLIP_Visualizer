@@ -332,15 +332,31 @@ perovskite, yes; the host family, no.
 - **Nothing is gated on phonons.** CBM dispersion stays the primary dopant
   criterion; the remaining soft modes are a recorded finding.
 
-**Proposed next (not generated; awaiting approval):**
-1. HSE06 single points, then HSE06+SOC, on Cmc2₁ (the lowest), R3 (the lowest
-   perovskite, the target phase) and optionally MACE-MP-0 VO₄ (second lowest), at
-   19's 3_static geometries and settings. First a PBE+U+SOC single point on all
-   14 statics (< 1 nh) to see whether SOC reorders them.
-2. The frozen-mode scan, `phonon_analyze.py PACKAGE --scan DIR`: Γ T1u, X (−2.97),
-   Γ T1g and X (−0.69) from `sc40`, 6 amplitudes each, 24 PBE+U single points
-   (≈ 1 nh). It gives the well depth along each mode separately (path08 gives only
-   the combined path).
+**Next: packages 29 and 30 (written 2026-10-06, approved; not submitted).** Both are in the
+dispatch desk (`loni_smoke_tests/29_vasp_bbvo_cbm_screen`, `30_vasp_bbvo_hybrid_soc`) with routes,
+and use 19's settings and geometries.
+
+| Package | Generator / analyzer | What | Cost |
+|---|---|---|---|
+| 29 CBM screen | `cbm_package.py` / `cbm_analyze.py` | PBE+U band edges, electron and hole mass tensors and edge character at the relaxed cells (R3; 19's rattle-relaxed x = 0, 0.25, 0.5, 1; x = 0.75 relaxed with 19's chain), the cubic cells as reference. 17 frames | ~20-25 nh |
+| 30 hybrid + SOC | `hybrid_soc_package.py` / `hybrid_soc_analyze.py` | HSE06 gaps of cubic, R3, Cmc2₁ and MACE VO₄; PBE+U vs PBE+U+SOC on all 14 of 19's statics (does SOC reorder them?); one R3 HSE06+SOC run to measure its cost. 19 frames | ~60-110 nh |
+
+How the band levels work (`band_kpoints.py`): each is one SCF run whose KPOINTS lists the SCF
+mesh at weight 1 plus zero-weight points: a dense grid and the Γ → TRIM lines (edges), Cartesian
+stencils at the eight TRIMs (±0.04 Å⁻¹ on 3 axes and 6 diagonals, ±0.08 on the axes: the band
+Hessian, hence m* = ħ²H⁻¹), or the TRIMs with LORBIT 10 (character). Time reversal makes every
+TRIM a stationary point even in P1, and folding leaves the curvature at an extremum unchanged, so
+no unfolding is needed for the masses; the analyzer flags an edge off the TRIMs or a degenerate
+band. The masses come from a least-squares quadratic fit with the cell VASP used, so a relaxed
+cell is handled too. Tested: synthetic bands with a known rotated tensor come back within 1-2 %
+through vasprun's 0.1 meV rounding; both job scripts ran end to end with a stub VASP (level
+chaining, per-level KPOINTS, WAVECAR hand-off to HSE06, `vasp_ncl` for SOC).
+
+`loni_chain.py` gained opt-in options for these (per-level KPOINTS, a `"last"` start, a per-level
+executable, WAVECAR hand-off, extra files copied back); 18 and 19 regenerate byte for byte.
+
+Open before 30 runs: `vasp_ncl` in `vasp6/6.6.1-cpu` is unverified (`module load vasp6/6.6.1-cpu
+&& command -v vasp_ncl`); without it the SOC levels stop with a message and the rest runs.
 
 ## V-site substitution: Nb and Ta
 

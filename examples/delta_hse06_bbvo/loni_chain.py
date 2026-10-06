@@ -11,7 +11,17 @@ layout. The script is plain bash and awk, with no Python on the cluster.
 Per level, ``chain[level]`` is one of:
 - ``"poscar"``: start from inputs/frame_NNNN/POSCAR (a single point or the first relaxation);
 - ``"contcar"``: start from the previous level's CONTCAR;
+- ``"last"``: the previous level's CONTCAR if the frame ran an earlier level, else its POSCAR
+  (frames that relax first and frames that do not can share the later levels);
 - ``("rattle", sigma, seed)``: the previous level's CONTCAR, rattled by ``sigma`` Å.
+
+Optional, per level (``write_script`` keywords; packages that do not use them are unchanged):
+- ``level_kpoints``: ``inputs/frame_NNNN/KPOINTS.<level>``, if present, replaces the frame's
+  KPOINTS for that level (explicit lists with zero-weight band points);
+- ``exe``: {level: executable} instead of ``vasp_std`` (``vasp_ncl`` for spin-orbit coupling);
+- ``wavecar``: levels that start from the previous level's WAVECAR (that WAVECAR is kept until
+  they finish);
+- ``keep``: extra files copied back to outputs/ (e.g. EIGENVAL).
 
 A level without an INCAR.<level> in the frame is skipped (the next level chains from the last one
 that exists), and a level whose vasprun.xml is already complete is not rerun, so a resubmitted task
@@ -74,9 +84,16 @@ def write_frame(root, index, atoms, levels, spacing, mesh=None, title=""):
     return tuple(mesh)
 
 
-def write_script(root, count, chain, *, name, time, throttle=None, cfg=LONI):
+def write_script(root, count, chain, *, name, time, throttle=None, cfg=LONI, exe=None,
+                 wavecar=(), keep=(), level_kpoints=False):
     """run_vasp.slurm: array 0..count-1, the levels of ``chain`` (ordered dict) in order."""
     levels = list(chain)
+    exe = exe or {}
+    wavecar = set(wavecar)
+    # a level's WAVECAR is kept when the next level of the chain reads it
+    feeds = {levels[i] for i in range(len(levels) - 1) if levels[i + 1] in wavecar}
+    copied = " ".join(["vasprun.xml", "OUTCAR", "OSZICAR", "CONTCAR", "vasp.out", "POSCAR",
+                       *keep])
     arr = f"0-{count - 1}" + (f"%{throttle}" if throttle else "")
     lines = f"""#!/bin/bash
 #SBATCH --job-name={name}
@@ -127,8 +144,17 @@ previous=
                   f'  mkdir -p "$work/{level}" "outputs/$frame/{level}"',
                   f'  cp "inputs/$frame/INCAR.{level}" "$work/{level}/INCAR"',
                   f'  cp "inputs/$frame/KPOINTS" "$work/POTCAR" "$work/{level}/"']
+        if level_kpoints:
+            lines += [f'  if [ -f "inputs/$frame/KPOINTS.{level}" ]; then '
+                      f'cp "inputs/$frame/KPOINTS.{level}" "$work/{level}/KPOINTS"; fi']
         if how == "poscar":
             lines += [f'  cp "inputs/$frame/POSCAR" "$work/{level}/POSCAR"']
+        elif how == "last":
+            lines += ['  if [ -n "$previous" ]; then',
+                      '    [ -s "outputs/$frame/$previous/CONTCAR" ] || '
+                      f'{{ echo "{level}: no CONTCAR from $previous" >&2; exit 1; }}',
+                      f'    cp "outputs/$frame/$previous/CONTCAR" "$work/{level}/POSCAR"',
+                      f'  else cp "inputs/$frame/POSCAR" "$work/{level}/POSCAR"; fi']
         else:
             src = '"outputs/$frame/$previous/CONTCAR"'
             lines += [f'  [ -s {src} ] || '
@@ -139,16 +165,31 @@ previous=
                 _, sigma, seed = how
                 lines += [f'  awk -v sigma={sigma} -v seed={seed} -f rattle.awk {src} '
                           f'> "$work/{level}/POSCAR"']
+        if level in wavecar:
+            lines += ['  if [ -n "$previous" ] && [ -s "$work/$previous/WAVECAR" ]; then '
+                      f'cp "$work/$previous/WAVECAR" "$work/{level}/"; '
+                      f'else echo "{level}: no WAVECAR from ${{previous:-none}}, '
+                      'starting from scratch"; fi']
+        run = cfg["run"]
+        if level in exe:
+            run = run.replace("vasp_std", exe[level])
+            lines += [f'  x=$(command -v {exe[level]} || true)',
+                      f'  [ -n "$x" ] || {{ echo "{level}: no {exe[level]} after module load '
+                      f'{cfg["module"]}" >&2; exit 2; }}']
         lines += ['  wrapper_ok || { sleep 30; wrapper_ok || '
                   '{ echo "vasp_std wrapper broken before srun" >&2; exit 2; }; }',
-                  f'  (cd "$work/{level}" && {cfg["run"]} > vasp.out 2>&1) || true',
-                  "  for f in vasprun.xml OUTCAR OSZICAR CONTCAR vasp.out POSCAR; do",
+                  f'  (cd "$work/{level}" && {run} > vasp.out 2>&1) || true',
+                  f"  for f in {copied}; do",
                   f'    if [ -f "$work/{level}/$f" ]; then '
                   f'cp "$work/{level}/$f" "outputs/$frame/{level}/"; fi',
                   "  done",
-                  f'  rm -f "$work/{level}/WAVECAR" "$work/{level}/CHG" "$work/{level}/CHGCAR"',
-                  f'  done_level {level} || {{ echo "{level} did not finish" >&2; exit 1; }}',
-                  "fi", f'if [ -f "inputs/$frame/INCAR.{level}" ]; then previous={level}; fi']
+                  ('  rm -f' if level in feeds else '  rm -f "$work/' + level + '/WAVECAR"')
+                  + f' "$work/{level}/CHG" "$work/{level}/CHGCAR"',
+                  f'  done_level {level} || {{ echo "{level} did not finish" >&2; exit 1; }}']
+        if level in wavecar:
+            lines += [f'  rm -f "$work/{level}/WAVECAR"',
+                      '  if [ -n "$previous" ]; then rm -f "$work/$previous/WAVECAR"; fi']
+        lines += ["fi", f'if [ -f "inputs/$frame/INCAR.{level}" ]; then previous={level}; fi']
     Path(root, "run_vasp.slurm").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     Path(root, "rattle.awk").write_text(RATTLE_AWK.lstrip(), encoding="utf-8", newline="\n")
     (Path(root) / "logs").mkdir(exist_ok=True)
