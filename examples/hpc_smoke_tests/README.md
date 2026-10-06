@@ -66,8 +66,12 @@ should sample), then `05`, `07`, `09`, `06`, and the GPU checks `10` and `11`.
 | `12_uma_sn2_large` | Meta's large UMA (uma-m-1p1, a 10.7 GB checkpoint, too big for the laptop) on the F⁻ + CH₃Cl SN2 checks, with uma-s-1p1 as the control | `uma_sn2/make_loni_package.py` | 2 × 1 GPU (`gpu2`), minutes | `uma_sn2/check_loni_results.py`: uma-s-1p1 matches the laptop (46 frames within 5 meV, barrier within 0.1 kcal/mol); then read the uma-m-1p1 table |
 
 It needs a `fairchem-core` + `sella` environment (`/project/lgutsev/env/uma`,
-created as in the package README) and `<UMA_DIR>`, the folder with the UMA
-checkpoints on the cluster, filled in `run_uma.slurm`.
+created as in the package README). `run_uma.slurm` reads the checkpoints in place
+from the master folder
+`/ddnB/project/ramu/lgutsev/MLIP_PROJECT_STORAGE/MLIP_Foundational_Models/UMA`
+(no placeholder, no copy). **Result (2026-09-30): PASS.** The control matches the
+laptop to 0.00 meV; uma-m-1p1 gives a barrier of 3.00 kcal/mol (uma-s-1p1 3.46,
+CCSD(T) 3.39); table in [`../uma_sn2/README.md`](../uma_sn2/README.md#results).
 
 ## Submitting everything: `submit_smokes.sh`
 
@@ -89,7 +93,7 @@ Array packages get only their missing tasks (`--array=1,2`); 13 gets
 job lists of its unfinished molecules, with stage 2 after stage 1 as in its
 `submit.sh`. Tests that ran but did not finish show as FAILED and wait for
 `--retry-failed`, so a broken setup is not resubmitted over and over; scripts
-that still hold a `<PLACEHOLDER>` (12's `<UMA_DIR>`) show as SETUP. Every
+that still hold a `<PLACEHOLDER>` show as SETUP. Every
 submission goes into `submissions.log`.
 
 ## Bringing results back: `export_results.sh`

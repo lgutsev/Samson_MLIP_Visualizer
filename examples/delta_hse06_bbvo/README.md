@@ -86,9 +86,10 @@ MACE-MP-0 (→ [`vasp_results.json`](vasp_results.json)):
 - **Cost on one 64-core QB4 node**: PBE+U under 2 min per frame; HSE06 3.3 h on
   the 10-atom cell and 9.1–14.8 h on 40 atoms. The pristine campaign (16 primitive,
   42 40-atom frames) is therefore about 430–670 node-hours and the doped one (73
-  40-atom frames) about 660–1,080; `make_packages.py`
-  now asks for 36 h per 40-atom frame (the doped smoke test's 12 h killed all
-  three of its HSE06 runs) and the 72 h maximum for the 80-atom cells. PRECFOCK =
+  40-atom frames) about 660–1,080; the doped 40-atom cells are slower still
+  (07: 12.3, 21.8 and 28.1 h). `make_packages.py` now asks for 48 h per 40-atom
+  frame (the first doped smoke test's 12 h killed all three of its HSE06 runs, and
+  the rerun's 28.1 h came close to its 36 h) and the 72 h maximum for the 80-atom cells. PRECFOCK =
   Fast would roughly halve the HSE06 cost, but must be chosen before the campaign,
   not after.
 
@@ -154,6 +155,7 @@ at a time.
 **Update (2026-09-30):**
 - The 0.05 Å rattle result is strong evidence *motivating* a stability test. It is not a proof of negative curvature at the cubic point, and "saddle point" needs the unstable-mode count that phonons give. The HSE06 numbers below are single points at MACE-MP-0 geometries, taken at a lattice where HSE06 has −5.3 GPa of stress. They show that lower-energy configurations exist, not a local instability at HSE06.
 - Package 18 (phonons + a cubic → R3 path scan) and package 19 (consistent polymorph shortlist) test this. See [Structural candidates](#structural-candidates-beyond-the-perovskite-packages-18-and-19).
+- **Answered at PBE+U (packages 18 and 19, 2026-09-30):** cubic Ba₂BiVO₆ is locally unstable (Γ T1u −3.2 THz, T1g −2.3 THz, converged in k and supercell) and falls without a barrier to R3 (−48.6 meV/f.u. at fixed cell). See [Results](#results-loni-2026-09-30). Per the project direction this is a recorded finding, not a blocker.
 
 ![Energies of the cubic cell and its distortions at three levels](images/bbvo_stability_dft.png)
 
@@ -250,6 +252,96 @@ Both use the dispatcher's `run_vasp.slurm` layout. Chained levels come from `lon
 
 MACE-MP-0 overstates this distortion (−113 vs −48.6 meV/f.u. at the 08 geometry), so the preview only shows what to look for.
 
+### Results (LONI, 2026-09-30)
+
+Both packages ran on `vasp6/6.6.1-cpu` (each package on one version) and passed:
+57/57 single points of 18 and 14 × 4 levels of 19 converged (EDIFF reached; every
+relaxation stopped on EDIFFG, not NSW). Cost: 3.6 and 12.5 node-hours. Re-read here
+with `phonon_analyze.py` and `polymorph_analyze.py` on the returned packages
+(`D:\MLIP_Work_Folder\hpc_smoke_tests\batch04_2026-09-30`); the reports are also
+in the audit repository, `outputs/batch04_18_phonons` and `outputs/batch04_19_polymorphs`.
+
+**18: cubic Ba₂BiVO₆ is locally unstable at PBE+U.**
+
+| Set | Γ: unstable modes, lowest (THz) | X: unstable modes, lowest (THz) | L lowest (THz) |
+|---|---|---|---|
+| `sc40` (3×3×3) | 6: −3.24 (T1u ×3), −2.29 (T1g ×3) | 3: −2.97 | — |
+| `sc40k4` (4×4×4) | 6: −3.42 | 3: −3.23 | — |
+| `sc80` | 6: −3.42 | 3: −3.19 | **+1.74 (stable)** |
+| lattice × 0.99 | 6: −2.65 (T1g), −0.91 (T1u) | 3: −1.30 | — |
+| lattice × 0.98 | 3: −2.98 (T1g only) | 1: −1.68 | — |
+| lattice × 1.01 | 6: −4.84 (T1u), −1.88 (T1g) | 3: −4.57 | — |
+
+- **The modes are converged**: 4×4×4 k and the 80-atom cell agree within 0.2 THz.
+- **Character:** the polar T1u mode is mostly Bi and O (eigenvector weights O 0.81,
+  Bi 0.17, V 0.01, Ba 0.02), so Bi off-centring drives it more than V; T1g is a pure
+  O octahedral rotation. Compression weakens T1u and removes it at 0.98 a
+  (≈ 9 GPa, estimated) but deepens T1g; expansion does the opposite. Strain trades
+  one instability for the other rather than removing both.
+- **Path cubic → 08 R3** (9 points, E(λ) in meV/f.u.): 0, −0.2, −0.9, −3.7, −14.2,
+  −28.7, −42.2, **−48.6** (λ = 1), −40.6. It falls from λ = 0: no barrier, as the
+  imaginary modes require. Under the reading in the audit
+  (`13_STRUCTURAL_SHORTLIST.md` §5) this is the "locally unstable" case, not a
+  metastable cubic phase behind a barrier.
+
+**19: polymorph energies at one PBE+U level** (3_static e_fr, meV/f.u., same composition):
+
+| Structure | ΔE vs Cmc2₁ | vs cubic (10-atom) | V CN | Mesh gap (eV) | Rattle drop |
+|---|---|---|---|---|---|
+| OQMD Cmc2₁ (non-perovskite) | **0** | −1314 | 4 | 3.00 | 0 |
+| MACE-MP-0 VO₄ | +835 | −479 | 4 | 2.70 | 0 |
+| PBE+U P1 cell-relaxed (VO₅) | +1199 | −115 | 5 | 2.04 | 0 |
+| **R3 polar perovskite** (lowest perovskite) | +1234 | **−79** | 6 | 1.64 | 0 |
+| Alexandria C2/m tilt | +1298 | −16 | 6 | 1.19 | −27 |
+| cubic 40-atom (x = 0 control) | +1305 | −9 | 6 | 1.39 | −46 |
+| MP Pn‑3 (relaxed back to cubic) | +1305 | −8 | 6 | 1.39 | −51 |
+| cubic Fm‑3m, 10-atom | +1314 | 0 | 6 | 1.14 | −56 |
+
+- **OQMD's non-perovskite Cmc2₁ is the lowest by far**: 1.23 eV/f.u. below R3 and
+  1.31 below cubic, the order and size OQMD gave (−1.26). This is a 0 K
+  energy preference at one PBE+U level, not a hull energy and not a statement
+  about experimental accessibility (AGENTS.md).
+- **R3 is the lowest perovskite**, 79 meV/f.u. below cubic in the same 10-atom
+  cell, and survives the rattle (drop 0.1 meV/f.u.).
+- **Nb/Ta do not stabilize cubic.** The rattle drop grows with x: Nb −102, −139,
+  −165 and Ta −90, −117, −136 meV/f.u. at x = 0.25, 0.5, 1, against −46 for the
+  x = 0 control. That fits the Bi-dominated T1u mode, which a V-site
+  substitution does not remove. Stabilization was secondary; no further
+  stabilization screen is proposed.
+- **Error bar:** the 10- vs 40-atom cubic cross-check is −9 meV/f.u. (target 5;
+  the meshes differ), which matters only for comparisons across cell sizes, not
+  for the 79 meV or 1.3 eV differences.
+- Mesh gaps are PBE+U on the SCF mesh, for orientation only (the cubic cell gives
+  1.14 or 1.39 eV on its two meshes).
+
+**Does this change which structures the dopant screening uses?** Within the
+perovskite, yes; the host family, no.
+- **The host stays the perovskite.** Cmc2₁ (like the two other non-perovskites) has
+  isolated VO₄ tetrahedra and no B-site octahedron, so Nb/Ta-on-V there is a
+  different substitution problem. Per AGENTS.md, the lowest 0 K structure does not
+  replace the target phase's inputs automatically. Cmc2₁ goes to HSE06 as a
+  phase-specific comparison (its own gap and band edges), not as a dopant host.
+- **The geometry changes from cubic to relaxed.** Cubic is a saddle, and every
+  doped cubic cell relaxes 90–165 meV/f.u. lower after a rattle. CBM dispersion has
+  to be compared at consistently treated geometries, so the screening geometry is
+  the symmetry-free relaxed cell: R3 for the pristine host and package 19's
+  rattle-relaxed CONTCARs (x = 0, 0.25, 0.5, 1) for Nb/Ta, with x = 0.75 still to be
+  relaxed the same way. The cubic-cell numbers (`doping.py`, the ShakeNBreak screen,
+  the 07 HSE06 labels) remain valid as the labelled cubic reference and as Δ-learning
+  labels; they are not the screening geometry.
+- **Nothing is gated on phonons.** CBM dispersion stays the primary dopant
+  criterion; the remaining soft modes are a recorded finding.
+
+**Proposed next (not generated; awaiting approval):**
+1. HSE06 single points, then HSE06+SOC, on Cmc2₁ (the lowest), R3 (the lowest
+   perovskite, the target phase) and optionally MACE-MP-0 VO₄ (second lowest), at
+   19's 3_static geometries and settings. First a PBE+U+SOC single point on all
+   14 statics (< 1 nh) to see whether SOC reorders them.
+2. The frozen-mode scan, `phonon_analyze.py PACKAGE --scan DIR`: Γ T1u, X (−2.97),
+   Γ T1g and X (−0.69) from `sc40`, 6 amplitudes each, 24 PBE+U single points
+   (≈ 1 nh). It gives the well depth along each mode separately (path08 gives only
+   the combined path).
+
 ## V-site substitution: Nb and Ta
 
 `doping.py` replaces V by Nb or Ta in the 40-atom cell. The four V sites there
@@ -288,6 +380,13 @@ footing. `make_packages.py` turns them into:
   Ba₂BiNbO₆, Ba₂BiTaO₆, and Nb at x = 0.5, relaxed. This checks the Nb_pv and
   Ta_pv POTCARs, that PBE+U puts U on V only (the end members get none, as in the
   Materials Project), and the cost of the doped cells.
+  **Passed (LONI, rerun at 36 h, back 2026-09-30):** `collect_vasp_labels` accepts
+  3/3 (all six OUTCARs vasp.6.5.1; Nb_pv/Ta_pv/V_pv; U = 3.25 eV on V only, so the
+  "PBE+U" level of the two end members is plain PBE). HSE06 took 28.1 h (Ba₂BiNbO₆,
+  56 SCF steps), 21.8 h (Ba₂BiTaO₆) and 12.3 h (Nb x = 0.5) on 64 ranks, hence
+  48 h per 40-atom frame now. The PBE+U times are WAVECAR restarts (2–4 SCF steps),
+  not cost numbers. Results:
+  `D:\MLIP_Work_Folder\hpc_smoke_tests\batch01_2026-09-28\07_vasp_bbvo_doped`.
 - `doped_campaign/`: all 73 frames. Heavy, like the pristine campaign.
 
 Once `doped_campaign/labeled.extxyz` exists, `train.py` trains on both
@@ -422,16 +521,18 @@ memory was not logged, so whether three seeds fit one GPU is still open.
 
 ### Campaign
 
-All 58 frames. The smoke tests settled the cost (HSE06 9.1–14.8 h per 40-atom
-frame on one node, so `make_packages.py` asks for 36 h), the VASP build (new
+All 58 frames. The smoke tests settled the cost (HSE06 9.1–14.8 h per pristine
+40-atom frame on one node and up to 28.1 h on doped ones, so `make_packages.py`
+asks for 48 h), the VASP build (new
 packages run 6.6.1, bit-identical to 6.5.1 in smoke test 20; this campaign stays
 on 6.5.1, like the 05/07/08 labels it joins) and the labels (05's three frames
 accepted). Two decisions are still to take before it runs:
 
 - **Which structures it samples.** 08 showed that cubic Ba₂BiVO₆ is not the
-  lowest structure at either DFT level; the frames are all cubic-derived. Packages
-  18 (phonons) and 19 (polymorph shortlist, on LONI now) say what else it should
-  sample.
+  lowest structure at either DFT level; the frames are all cubic-derived. 18 and
+  19 (see [Results](#results-loni-2026-09-30)) show that the perovskite falls to R3
+  without a barrier, so R3 and the rattle-relaxed doped cells belong in the frames;
+  whether Cmc2₁ does too depends on what the model is for.
 - **PRECFOCK.** Fast would roughly halve the HSE06 cost and is what the earlier
   reference used; Normal is what 05/08 used. Mixing them within one label set is
   not an option. After collecting,

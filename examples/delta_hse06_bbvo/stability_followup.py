@@ -64,7 +64,9 @@ for stage, isif in (("1_ions", 2), ("2_cell", 3), ("3_cell", 3)):
 # are kept with a suffix; a stage that is already done is skipped on resubmit.
 set -eo pipefail
 module purge
-module load vasp6/6.5.1-cpu
+# 6.6.1 (personal license): bit-identical to 6.5.1 on 08's cubic frame (smoke 20),
+# so the comparison with 08's single points holds
+module load vasp6/6.6.1-cpu
 set -u
 export SINGULARITYENV_OMP_NUM_THREADS=1
 cd "$SLURM_SUBMIT_DIR"
