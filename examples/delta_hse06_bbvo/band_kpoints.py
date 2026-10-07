@@ -25,7 +25,8 @@ import numpy as np
 HBAR2_OVER_ME = 7.619964  # ħ²/m_e in eV Å²
 # package 19, whose relaxed geometries packages 29 and 30 start from
 SOURCE19 = Path(r"D:\MLIP_Work_Folder\hpc_smoke_tests\batch04_2026-09-30\19_vasp_bbvo_polymorphs")
-ZVAL = {"Ba": 10, "V": 11, "Nb": 11, "Ta": 11, "Bi": 5, "O": 6}  # MP POTCARs (19's OUTCARs)
+ZVAL = {"Ba": 10, "V": 11, "Nb": 11, "Ta": 11, "Bi": 5, "O": 6,  # MP POTCARs (19's OUTCARs)
+        "In": 13, "Sc": 11}  # In_d, Sc_sv (MP POTCAR set; package 31)
 
 
 def nbands(atoms, soc=False):
