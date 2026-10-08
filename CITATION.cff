@@ -21,6 +21,14 @@ keywords:
   - SAMSON
   - transition states
   - delta learning
+doi: 10.5281/zenodo.23243373
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23243373
+    description: Concept DOI (all versions; resolves to the latest release)
+  - type: doi
+    value: 10.5281/zenodo.23243374
+    description: Version DOI for v0.1.0
 repository-code: "https://github.com/lgutsev/Samson_MLIP_Visualizer"
 license: MIT
 version: 0.1.0
