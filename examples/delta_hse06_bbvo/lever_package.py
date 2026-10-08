@@ -163,8 +163,11 @@ for lever, name, atoms, mode, src, how in plan:
     print(f"frame {index:2d} [{lever}] {name:18s} {atoms.get_chemical_formula():20s} "
           f"{len(atoms):3d} at  {spg(atoms):8s} mesh {mesh} NBANDS {nb} {mode}")
 
+# relaxes and the rattle relax continue from their own CONTCAR after a time-out; the biaxial
+# frames stop if IOPTCELL did not hold a and b (desk, 66df534)
 write_script(args.out, len(frames), CHAIN, name="bbvo-levers", time="12:00:00", throttle=8,
-             keep=("EIGENVAL",), level_kpoints=True)
+             keep=("EIGENVAL",), level_kpoints=True,
+             resume=("1_relax", "2_relax", "4_rattle"), inplane_guard=("1_relax", "2_relax"))
 write_manifest(args.out, frames, {
     "package": "31_vasp_bbvo_levers", "kspacing": SPACING,
     "chain": {k: str(v) for k, v in CHAIN.items()},
@@ -196,7 +199,8 @@ Levels (dispatcher `run_vasp.slurm`, `vasp6/6.6.1-cpu`, one 64-core node per fra
 `3_static` -> `4_rattle` (0.05 A, ISIF 2, ISYM 0) -> `5_edges` / `6_mass` / `7_char` at the rattle-relaxed
 geometry (package 29's band levels, explicit `KPOINTS.<level>` with zero-weight points).
 - Relax modes: `fixed` = ISIF 2 at the strained cell; `biaxial` = ISIF 3 with `IOPTCELL = 0 0 0 0 0 0 0 0 1`
-  (only c relaxes; **first use of IOPTCELL here**: check that a and b in `2_relax/CONTCAR` equal the start);
+  (only c relaxes; **first use of IOPTCELL here**: after `1_relax` and `2_relax` the job stops, exit 4, if a or b
+  moved by more than 1e-4 A); a timed-out relax or rattle relax resumes from its own CONTCAR;
   `full` = 19's ISIF 3 relaxation.
 - POTCARs: MP set, new here In_d and Sc_sv (`POTCAR.names`); U on V only.
 
