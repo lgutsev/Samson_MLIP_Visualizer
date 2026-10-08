@@ -1,5 +1,6 @@
 """Package 31: three levers for CBM dispersion and the structural instability together, PBE+U.
-For LONI; nothing is submitted.  -> lever_run/ (also loni_smoke_tests/batch09_2026-10-07/31_vasp_bbvo_levers)
+For LONI; nothing is submitted.  -> lever_run/
+(also loni_smoke_tests/batch09_2026-10-07/31_vasp_bbvo_levers)
 
 Package 29 showed that partial Nb/Ta on the V site makes the V-3d conduction band heavier
 (m*_e 2.8 -> 4.1-9.0 m_e at x = 0.25-0.75): the V site was the wrong lever. Package 18 showed the
@@ -23,7 +24,8 @@ levels at the rattle-relaxed geometry: 5_edges, 6_mass, 7_char (cbm_analyze.py r
 References at strain 1.00 and at the rock-salt orderings are package 29's frames.
 
 Usage (defects env):
-    PYTHONPATH=../../src micromamba run -n defects python lever_package.py [--out DIR] [--copy DIR|'']
+    PYTHONPATH=../../src micromamba run -n defects python lever_package.py \
+        [--out DIR] [--copy DIR|'']
 """
 
 import argparse
@@ -46,8 +48,8 @@ from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from samson_mlip_visualizer.vasp_labeling import incar, kpoint_mesh
 
 SPACING = 0.25
-CHAIN = {"1_relax": "poscar", "2_relax": "contcar", "3_static": "contcar", "4_rattle": ("rattle", 0.05, 1),
-         "5_edges": "last", "6_mass": "last", "7_char": "last"}
+CHAIN = {"1_relax": "poscar", "2_relax": "contcar", "3_static": "contcar",
+         "4_rattle": ("rattle", 0.05, 1), "5_edges": "last", "6_mass": "last", "7_char": "last"}
 BAND = {"NSW": 0, "IBRION": -1, "ISIF": 2, "ISYM": 0, "EDIFF": "1E-7", "NCORE": 4, "KPAR": 4,
         "LWAVE": ".FALSE.", "LCHARG": ".FALSE."}
 
@@ -55,7 +57,8 @@ p = argparse.ArgumentParser()
 p.add_argument("--source19", type=Path, default=SOURCE19)
 p.add_argument("--out", type=Path, default=WORK / "lever_run")
 p.add_argument("--copy", type=lambda s: Path(s) if s else None,
-               default=Path(r"C:\Users\lguts\OneDrive\Desktop\Test_Code\loni_smoke_tests\batch09_2026-10-07\31_vasp_bbvo_levers"))
+               default=Path(r"C:\Users\lguts\OneDrive\Desktop\Test_Code\loni_smoke_tests"
+                            r"\batch09_2026-10-07\31_vasp_bbvo_levers"))
 args = p.parse_args()
 for d in (args.out, args.copy):
     if d and d.exists():
@@ -73,7 +76,8 @@ def from19(name, level="3_static"):
 
 
 def spg(atoms, tol=0.01):
-    return SpacegroupAnalyzer(AseAtomsAdaptor.get_structure(atoms), symprec=tol).get_space_group_symbol()
+    structure = AseAtomsAdaptor.get_structure(atoms)
+    return SpacegroupAnalyzer(structure, symprec=tol).get_space_group_symbol()
 
 
 def substitute(atoms, old, new, count):
@@ -88,7 +92,8 @@ def substitute(atoms, old, new, count):
 
 
 def relax_levels(mode):
-    """1-4 for a frame: 'fixed' cell (ISIF 2), 'biaxial' (ISIF 3, only c free), or 'full' (ISIF 3)."""
+    """1-4 for a frame: 'fixed' cell (ISIF 2), 'biaxial' (ISIF 3, only c free), or 'full'
+    (ISIF 3)."""
     if mode == "fixed":
         r = {**RELAX, "ISIF": 2, "ISYM": 2}
     elif mode == "biaxial":
@@ -103,18 +108,27 @@ cub40, cub40_src = from19("x0_cubic40")
 r3, r3_src = from19("R3_polar")
 prim, prim_src = from19("cubic_Fm-3m")
 for s in (0.98, 0.99, 1.01):  # A: hydrostatic, cubic
-    a = cub40.copy(); a.set_cell(a.cell[:] * s, scale_atoms=True)
-    plan.append(("A", f"cubic40_hydro{s:.2f}", a, "fixed", cub40_src, f"x0_cubic40 static, lattice x {s}"))
+    a = cub40.copy()
+    a.set_cell(a.cell[:] * s, scale_atoms=True)
+    plan.append(("A", f"cubic40_hydro{s:.2f}", a, "fixed", cub40_src,
+                 f"x0_cubic40 static, lattice x {s}"))
 for s in (0.98, 1.02):  # A: biaxial, cubic
-    a = cub40.copy(); c = a.cell[:].copy(); c[0] *= s; c[1] *= s; a.set_cell(c, scale_atoms=True)
-    plan.append(("A", f"cubic40_biax{s:.2f}", a, "biaxial", cub40_src, f"x0_cubic40 static, a = b x {s}, c relaxed"))
+    a = cub40.copy()
+    c = a.cell[:].copy()
+    c[0] *= s
+    c[1] *= s
+    a.set_cell(c, scale_atoms=True)
+    plan.append(("A", f"cubic40_biax{s:.2f}", a, "biaxial", cub40_src,
+                 f"x0_cubic40 static, a = b x {s}, c relaxed"))
 for s in (0.98, 1.02):  # A: hydrostatic, R3
-    a = r3.copy(); a.set_cell(a.cell[:] * s, scale_atoms=True)
+    a = r3.copy()
+    a.set_cell(a.cell[:] * s, scale_atoms=True)
     plan.append(("A", f"R3_hydro{s:.2f}", a, "fixed", r3_src, f"R3_polar static, lattice x {s}"))
 for m in ("In", "Sc"):  # B: Bi-site substitution in the 40-atom cell (4 Bi sites)
     for y, n in ((0.25, 1), (0.5, 2), (1.0, 4)):
         a = substitute(cub40, "Bi", m, n)
-        plan.append(("B", f"Bi{m}{y:g}", a, "full", cub40_src, f"x0_cubic40 static, {n} of 4 Bi -> {m}"))
+        plan.append(("B", f"Bi{m}{y:g}", a, "full", cub40_src,
+                     f"x0_cubic40 static, {n} of 4 Bi -> {m}"))
 for m in ("Nb", "Ta"):  # C: (111)-layered orderings from the 10-atom primitive cell
     a2 = grouped(make_supercell(prim, np.diag([2, 1, 1])))
     plan.append(("C", f"{m}0.5_111", substitute(a2, "V", m, 1), "full", prim_src,
@@ -137,26 +151,36 @@ for lever, name, atoms, mode, src, how in plan:
     for level, extra, lorbit in (("5_edges", edges, 0), ("6_mass", mass, 0), ("7_char", char, 10)):
         labels = bk.write_explicit(folder / f"KPOINTS.{level}", mesh, extra, f"{name} {level}")
         bk.write_labels(folder, level, labels)
-        text = incar("pbe_u", atoms, extra={**BAND, "NBANDS": nb, "LORBIT": lorbit}).replace("single point", f"{name} {level}")
+        text = incar("pbe_u", atoms, extra={**BAND, "NBANDS": nb, "LORBIT": lorbit})
+        text = text.replace("single point", f"{name} {level}")
         (folder / f"INCAR.{level}").write_text(text, newline="\n")
-    frames.append({"frame": index, "lever": lever, "name": name, "kind": "relaxed", "relax_mode": mode,
-                   "natoms": len(atoms), "formula": atoms.get_chemical_formula(), "start_spacegroup": spg(atoms),
-                   "cell_start_A": np.round(atoms.cell.lengths(), 4).tolist(), "kmesh": list(mesh), "nbands": nb,
-                   "geometry": how, "source_file": str(src), "source_sha256": hashlib.sha256(Path(src).read_bytes()).hexdigest()})
-    print(f"frame {index:2d} [{lever}] {name:18s} {atoms.get_chemical_formula():20s} {len(atoms):3d} at  {spg(atoms):8s} mesh {mesh} NBANDS {nb} {mode}")
+    frames.append({"frame": index, "lever": lever, "name": name, "kind": "relaxed",
+                   "relax_mode": mode, "natoms": len(atoms),
+                   "formula": atoms.get_chemical_formula(), "start_spacegroup": spg(atoms),
+                   "cell_start_A": np.round(atoms.cell.lengths(), 4).tolist(),
+                   "kmesh": list(mesh), "nbands": nb, "geometry": how, "source_file": str(src),
+                   "source_sha256": hashlib.sha256(Path(src).read_bytes()).hexdigest()})
+    print(f"frame {index:2d} [{lever}] {name:18s} {atoms.get_chemical_formula():20s} "
+          f"{len(atoms):3d} at  {spg(atoms):8s} mesh {mesh} NBANDS {nb} {mode}")
 
 write_script(args.out, len(frames), CHAIN, name="bbvo-levers", time="12:00:00", throttle=8,
              keep=("EIGENVAL",), level_kpoints=True)
 write_manifest(args.out, frames, {
-    "package": "31_vasp_bbvo_levers", "kspacing": SPACING, "chain": {k: str(v) for k, v in CHAIN.items()},
-    "relax": RELAX, "static": STATIC, "rattle": RATTLE, "band": BAND, "stencil_steps_A-1": list(bk.STEPS),
-    "references": "package 29 (strain 1.00, rock-salt orderings, x0 control); package 19 rattle drops",
+    "package": "31_vasp_bbvo_levers", "kspacing": SPACING,
+    "chain": {k: str(v) for k, v in CHAIN.items()},
+    "relax": RELAX, "static": STATIC, "rattle": RATTLE, "band": BAND,
+    "stencil_steps_A-1": list(bk.STEPS),
+    "references": "package 29 (strain 1.00, rock-salt orderings, x0 control); "
+                  "package 19 rattle drops",
     "budget_nh": "25-40 (agreed with the PI 2026-10-07)",
-    "generator": "examples/delta_hse06_bbvo/lever_package.py", "analyzer": "examples/delta_hse06_bbvo/cbm_analyze.py",
-    "decision_rule": "a lever advances only if m*_e (conductivity, relaxed) < 2.8 m_e (29's x = 0), PBE+U gap <= ~1.7 eV, "
+    "generator": "examples/delta_hse06_bbvo/lever_package.py",
+    "analyzer": "examples/delta_hse06_bbvo/cbm_analyze.py",
+    "decision_rule": "a lever advances only if m*_e (conductivity, relaxed) < 2.8 m_e "
+                     "(29's x = 0), PBE+U gap <= ~1.7 eV, "
                      "and the rattle drop is no larger than the reference's"})
-rows = "\n".join(f"| {f['frame']} | {f['lever']} | {f['name']} | {f['natoms']} | {f['start_spacegroup']} | "
-                 f"{f['relax_mode']} | {'×'.join(map(str, f['kmesh']))} | {f['geometry']} |" for f in frames)
+rows = "\n".join(f"| {f['frame']} | {f['lever']} | {f['name']} | {f['natoms']} | "
+                 f"{f['start_spacegroup']} | {f['relax_mode']} | "
+                 f"{'×'.join(map(str, f['kmesh']))} | {f['geometry']} |" for f in frames)
 (args.out / "README.md").write_text(f"""# 31_vasp_bbvo_levers: strain, Bi-site In/Sc, and B'-ordering screen (PBE+U)
 
 Written by `examples/delta_hse06_bbvo/lever_package.py` (Samson_MLIP_Visualizer). Nothing was submitted.
@@ -186,7 +210,7 @@ Compare with package 29 (x0 relaxed m*_e 2.76 m_e, R3 2.79 m_e; rock-salt Nb/Ta 
 Decision rule (agreed): a lever advances only if the relaxed electron conductivity mass falls below 2.8 m_e,
 the PBE+U gap stays at or below ~1.7 eV, and the rattle drop is no larger than its reference's. If none
 qualifies, the stabilization/dispersion search stops and the paper goes ahead as a structure-property study.
-""", encoding="utf-8")
+""", encoding="utf-8")  # noqa: E501
 if args.copy:
     shutil.copytree(args.out, args.copy)
 print(f"-> {args.out}" + (f" and {args.copy}" if args.copy else "") + f": {len(frames)} frames")
