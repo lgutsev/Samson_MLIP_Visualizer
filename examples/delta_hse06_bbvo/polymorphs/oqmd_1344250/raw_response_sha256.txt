@@ -1,0 +1,2 @@
+4f6870b96ca9a0a8a4366fbcce0e6f29d4fc1c826260de2d82173b24de45faf4 *data/oqmd/oqmd_optimade_comp.json
+41facebac8b6a5dd6fdad83caa7669ab6036ad42a20e993337a325e2ffdb0d69 *data/oqmd/oqmd_rest_comp.json

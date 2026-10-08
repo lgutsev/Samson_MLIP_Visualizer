@@ -35,6 +35,9 @@ from sn2_common import WORK  # noqa: E402
 OUT = Path(r"D:\MLIP_Work_Folder\hpc_smoke_tests\12_uma_sn2_large")
 CONTROL = WORK / "uma" / "uma-s-1p1"
 CHECKPOINTS = ["uma-s-1p1.pt", "uma-m-1p1.pt"]  # array task 1, 2
+# The master checkpoints on LONI, read in place: never a placeholder, never a copy
+# (laptop sha256: uma-s-1p1 07068e9c..., uma-m-1p1 c30034ed...).
+UMA_DIR = "/ddnB/project/ramu/lgutsev/MLIP_PROJECT_STORAGE/MLIP_Foundational_Models/UMA"
 
 SLURM = """#!/bin/bash
 #SBATCH --job-name=uma-sn2
@@ -45,11 +48,10 @@ SLURM = """#!/bin/bash
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
-#SBATCH --mem=64G
 #SBATCH --time=01:00:00
 #SBATCH --output=logs/%x_%A_%a.out
 # Written by samson-mlip-visualizer (examples/uma_sn2/make_loni_package.py).
-# For LONI QB4. Replace <UMA_DIR> (see README.md) before sbatch.
+# For LONI QB4. The checkpoints are the master copies in MLIP_Foundational_Models/UMA.
 # Array task 1: uma-s-1p1, the control; task 2: uma-m-1p1.
 # conda's activation scripts read unset variables: -u only after them
 set -eo pipefail
@@ -65,7 +67,7 @@ export TORCHDYNAMO_DISABLE=1
 # caches in /project, not ~/.cache: the home quota is 10 GB
 export XDG_CACHE_HOME=/project/lgutsev/cache
 nvidia-smi --query-gpu=name,memory.total --format=csv
-python run_uma_sn2.py "<UMA_DIR>/$CHECKPOINT" "outputs/${{CHECKPOINT%.pt}}" --device cuda
+python run_uma_sn2.py "{uma_dir}/$CHECKPOINT" "outputs/${{CHECKPOINT%.pt}}" --device cuda
 """
 
 README = """# 12 · UMA uma-m-1p1 on F⁻ + CH₃Cl (GPU)
@@ -80,8 +82,8 @@ been submitted.
 | 1 | `uma-s-1p1.pt` | control: must reproduce the laptop run |
 | 2 | `uma-m-1p1.pt` | the large model |
 
-Each task takes a few minutes on one GPU (`gpu2`, 64 GB memory for the large
-checkpoint): energies and forces on 46 frames, two relaxations, a Sella TS
+Each task takes a few minutes on one GPU (`gpu2`; no `--mem`, QB4 rejects it:
+memory comes with the cores): energies and forces on 46 frames, two relaxations, a Sella TS
 refinement with a finite-difference frequency check, and the fragments.
 
 ## Before `sbatch run_uma.slurm`
@@ -102,16 +104,14 @@ refinement with a finite-difference frequency check, and the fragments.
    On the login node the last line may print `False`; it has to be `True` on a
    `gpu2` node, as the job's log shows. If it isn't, install the CUDA build of
    torch that matches the node's driver.
-2. **One placeholder in `run_uma.slurm`:** `<UMA_DIR>`, the folder on the
-   cluster holding `uma-s-1p1.pt` and `uma-m-1p1.pt` (you already copied UMA
-   there). The rest is set for QB4: account `loni_perovsk27`, partition `gpu2`,
+2. **Nothing to fill in.** `run_uma.slurm` reads `uma-s-1p1.pt` and
+   `uma-m-1p1.pt` in place from the master folder
+   `{uma_dir}`. The rest is set for QB4: account `loni_perovsk27`, partition `gpu2`,
    conda from `/home/lgutsev/miniforge3`, and the environment above.
-3. **Optional: `iso_atom_elem_refs.yaml`** (facebook/UMA, `references/`) in
-   `<UMA_DIR>` or `<UMA_DIR>/references/`. uma-m-1p1 may not carry UMA's
-   isolated-atom table, and without it the job can't evaluate a free F⁻ or Cl⁻ and
-   `results.json` lists the error. That doesn't matter: the desktop check fills
-   in those two ions from UMA's table, taken from uma-s-1p2
-   (`examples/uma_sn2/fragment_energies.py`).
+3. **Free ions.** Neither 1p1 checkpoint carries UMA's isolated-atom table, so
+   the job can't evaluate a free F⁻ or Cl⁻ and `results.json` lists the error.
+   That doesn't matter: the desktop check fills in those two ions from UMA's
+   table, taken from uma-s-1p2 (`examples/uma_sn2/fragment_energies.py`).
 
 Then `sbatch run_uma.slurm`.
 
@@ -174,9 +174,10 @@ def main():
     write(OUT / "data" / "labeled_frames.extxyz", frames)
     write(OUT / "data" / "starts.extxyz", starts())
     shutil.copy(HERE / "loni" / "run_uma_sn2.py", OUT / "run_uma_sn2.py")
-    slurm = SLURM.format(n=len(CHECKPOINTS), checkpoints=" ".join(CHECKPOINTS))
+    slurm = SLURM.format(n=len(CHECKPOINTS), checkpoints=" ".join(CHECKPOINTS),
+                         uma_dir=UMA_DIR)
     (OUT / "run_uma.slurm").write_text(slurm, newline="\n")
-    (OUT / "README.md").write_text(README, encoding="utf-8")
+    (OUT / "README.md").write_text(README.replace("{uma_dir}", UMA_DIR), encoding="utf-8")
     print(f"wrote {OUT} ({len(frames)} labeled frames)")
 
 

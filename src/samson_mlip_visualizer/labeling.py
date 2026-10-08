@@ -85,8 +85,9 @@ def _script(code: str, count: int, slurm: SlurmSettings, job: str = "force") -> 
         *([f"#SBATCH --ntasks={slurm.cpus * jobs}", "#SBATCH --cpus-per-task=1"]
           if code == "orca" else
           ["#SBATCH --ntasks=1", f"#SBATCH --cpus-per-task={slurm.cpus * jobs}"]),
-        # a packed task fills the node: take all of its memory, whatever the node has
-        "#SBATCH --mem=0" if jobs > 1 else f"#SBATCH --mem={slurm.memory_gb * jobs}G",
+        # no --mem: QB4's sbatch filter rejects it ("--mem is unsupported"); memory
+        # comes with the cores or the node. memory_gb still sizes the program's own
+        # limit (ORCA %maxcore, Gaussian %mem).
         f"#SBATCH --time={slurm.time}",
         "#SBATCH --output=logs/%x_%A_%a.out",
         "# Written by samson-mlip-visualizer. Replace every placeholder in angle brackets",

@@ -26,7 +26,9 @@ repository (`examples/hpc_smoke_tests/`). Nothing here has been submitted.
 5. Bring the results back: `bash export_results.sh`, then unpack the archive
    it writes into this folder on the desktop (see below).
 6. On the desktop, in SAMSON's Python, from this folder:
-   `python check_smoke_results.py`. It prints PASS / FAIL / NOT RUN per test:
+   `python check_smoke_results.py` (`… 02 04` checks only those; `--no-write`
+   installs no model and writes no `smoke_results.json`). It prints PASS / FAIL /
+   NOT RUN per test:
    - 01/02: every output accepted, and the barrier, reaction energy, and
      forces within 0.02 eV and 0.05 eV/Å of Psi4 PBE/def2-TZVP on the same
      geometries (`reference_psi4_pbe_def2tzvp.json`);
@@ -61,11 +63,15 @@ should sample), then `05`, `07`, `09`, `06`, and the GPU checks `10` and `11`.
 
 | Folder | What it checks | Written by | Resources | Pass if |
 |---|---|---|---|---|
-| `12_uma_sn2_large` | Meta's large UMA (uma-m-1p1, a 10.7 GB checkpoint, too big for the laptop) on the F⁻ + CH₃Cl SN2 checks, with uma-s-1p1 as the control | `uma_sn2/make_loni_package.py` | 2 × 1 GPU (`gpu2`), minutes; 64 GB memory | `uma_sn2/check_loni_results.py`: uma-s-1p1 matches the laptop (46 frames within 5 meV, barrier within 0.1 kcal/mol); then read the uma-m-1p1 table |
+| `12_uma_sn2_large` | Meta's large UMA (uma-m-1p1, a 10.7 GB checkpoint, too big for the laptop) on the F⁻ + CH₃Cl SN2 checks, with uma-s-1p1 as the control | `uma_sn2/make_loni_package.py` | 2 × 1 GPU (`gpu2`), minutes | `uma_sn2/check_loni_results.py`: uma-s-1p1 matches the laptop (46 frames within 5 meV, barrier within 0.1 kcal/mol); then read the uma-m-1p1 table |
 
 It needs a `fairchem-core` + `sella` environment (`/project/lgutsev/env/uma`,
-created as in the package README) and `<UMA_DIR>`, the folder with the UMA
-checkpoints on the cluster, filled in `run_uma.slurm`.
+created as in the package README). `run_uma.slurm` reads the checkpoints in place
+from the master folder
+`/ddnB/project/ramu/lgutsev/MLIP_PROJECT_STORAGE/MLIP_Foundational_Models/UMA`
+(no placeholder, no copy). **Result (2026-09-30): PASS.** The control matches the
+laptop to 0.00 meV; uma-m-1p1 gives a barrier of 3.00 kcal/mol (uma-s-1p1 3.46,
+CCSD(T) 3.39); table in [`../uma_sn2/README.md`](../uma_sn2/README.md#results).
 
 ## Submitting everything: `submit_smokes.sh`
 
@@ -87,7 +93,7 @@ Array packages get only their missing tasks (`--array=1,2`); 13 gets
 job lists of its unfinished molecules, with stage 2 after stage 1 as in its
 `submit.sh`. Tests that ran but did not finish show as FAILED and wait for
 `--retry-failed`, so a broken setup is not resubmitted over and over; scripts
-that still hold a `<PLACEHOLDER>` (12's `<UMA_DIR>`) show as SETUP. Every
+that still hold a `<PLACEHOLDER>` show as SETUP. Every
 submission goes into `submissions.log`.
 
 ## Bringing results back: `export_results.sh`
@@ -115,6 +121,27 @@ Everything lands where the checkers look: `check_smoke_results.py`, `collect_lab
 out is listed in `exports/exported.txt` on the cluster, so the next export takes only
 what is new.
 
+## Results on QB4 (September 2026)
+
+Two rounds, checked by the dispatch desk and on the desktop (archives
+`results_20260929_1113`, `results_20260929_1240`, `results_20260930_1240_*`, unpacked in
+`D:\MLIP_Work_Folder\hpc_smoke_tests`). Every piece of the workflow runs on QB4:
+
+| Test | Result |
+|---|---|
+| `01` Gaussian | PASS: G16 C.01, 3/3 normal termination (2–3 s each); barrier 1.9949 eV, HNC − HCN 0.6629 eV, both within 0.1 meV of Psi4 PBE/def2-TZVP, forces within 0.001 eV/Å |
+| `02` ORCA | PASS: ORCA 6.1.1 (after the OpenMPI fix, below); barrier 1.9942 eV, HNC − HCN 0.6626 eV, 0.7 meV from Psi4, forces within 0.004 eV/Å; ~10 s per frame on 8 cores |
+| `03` plain fine-tune | PASS on `gpu2`: 5 epochs, valid RMSE E 33.5 meV/atom, F 139.7 meV/Å; the model keeps all 89 foundation elements |
+| `04` multihead + MP replay | PASS on `gpu2`: heads `pt_head` and `Default`, 89 elements |
+| `05` VASP BBVO pairs | PARTIAL: 3/3 labels accepted, but the primitive cell misses the expected energies (HSE06 −83.907 eV, +0.30 eV; PBE+U −65.994 eV, +0.08 eV); see `delta_hse06_bbvo/README.md`. 40-atom HSE06 9.1 h on one node |
+| `06` ORCA Ni porphine | PASS: 3/3, 147–152 s per frame on 16 cores |
+| `08` BBVO stability | PASS: cubic Ba₂BiVO₆ is a saddle point at PBE+U and HSE06; 40-atom HSE06 9.2–14.8 h per frame |
+| `09` ORCA DLPNO-CCSD(T) | PASS: 3/3, 540–700 s each on 16 cores; CO pull 1.077 eV (PBE0 1.108 eV); T1 0.029–0.031 |
+| `10`, `11` GPU Δ/direct training | PASS: ~42 s per job; `10`'s validation losses match the laptop runs to 8 digits; `11` trains with the stress loss on 40-atom cells (GPU memory not logged yet) |
+| `20` VASP 6.6.1 | PASS: bit-identical to 6.5.1 on 08's cubic PBE+U frame (TOTEN, forces, stress) with the personal license |
+
+LONI has mace-torch 0.3.15 (the laptop 0.3.16); `10` reproduces the laptop anyway.
+
 ## Running on QB4
 
 Every script is filled in for LONI QB4 (account `loni_perovsk27`, 64 cores per
@@ -123,16 +150,19 @@ already run there:
 
 - **Gaussian** (`01`): `gaussian/g16-c01`, `single` partition, 8 cores.
 - **ORCA** (`02` on `single`; `06`, `09` and the ORCA campaigns on `workq`, four
-  16-core frames per node): ORCA 6.1.1 and OpenMPI 4.1.8 (the version ORCA 6.1.1
-  is built with) from `/ddnB/project/ramu/lgutsev/` (`Orca_6_1_1`,
-  `openmpi-4.1.8/bin` and `/lib`). ORCA runs its parallel steps through that
-  `mpirun`, so the scripts ask for the cores as SLURM tasks (`--ntasks`, one CPU
-  each). `02` is the first check that this OpenMPI still works. A packed node
-  takes all its memory (`--mem=0`) and turns off OpenMPI's core binding
+  16-core frames per node): ORCA 6.1.1 with OpenMPI 4.1.6 from `/project/lgutsev/`
+  (`Orca_6_1_1`, `openmpi-4.1.6/bin` and `/lib`), `unset OPAL_PREFIX`,
+  `OMP_NUM_THREADS=1`, as verified on 2026-09-29 (`ORCA_ON_LONI.md` in the dispatch
+  repo). The earlier `openmpi-4.1.8` was moved after its build, and its `mpirun`
+  rejects `-np` without `OPAL_PREFIX`; ORCA 6.1.1 does not need 4.1.8. ORCA runs its
+  parallel steps through that `mpirun`, so the scripts ask for the cores as SLURM
+  tasks (`--ntasks`, one CPU each). A packed node turns off OpenMPI's core binding
   (`OMPI_MCA_hwloc_base_binding_policy=none`), since otherwise every mpirun pins
-  its ranks to the same first 16 cores.
-- **VASP** (`05`, `07`, `08`, `workq`, 64 tasks per node): `vasp6/6.5.1-cpu` (6.6.1
-  needs a new license key) with `export SINGULARITYENV_OMP_NUM_THREADS=1` and
+  its ranks to the same first 16 cores. No script asks for `--mem`: QB4's sbatch
+  filter warns that it is unsupported, and memory comes with the cores.
+- **VASP** (`05`, `07`, `08`, `workq`, 64 tasks per node): `vasp6/6.5.1-cpu` for the
+  label sets that started on it; new packages use `vasp6/6.6.1-cpu` with the personal
+  license (`20`: bit-identical to 6.5.1). Both with `export SINGULARITYENV_OMP_NUM_THREADS=1` and
   `srun vasp_std`, as in InterfaceForge's `runvasp.sh`.
 - **POTCARs**: by default concatenated from `/home/lgutsev/pot/potpaw_PBE` by the
   names in each frame's `POTCAR.names`, the Materials Project choices (Ba_sv, V_pv,
@@ -145,7 +175,10 @@ already run there:
   records what each run used, and the collector reports it.
 - **GPU training** (`03`, `04`, `10`, `11`, `gpu2`): the existing conda env
   `/project/lgutsev/env/mace_env` (activated with
-  `source /home/lgutsev/miniforge3/etc/profile.d/conda.sh`). The training
+  `source /home/lgutsev/miniforge3/etc/profile.d/conda.sh`). The packages point to the one
+  master copy of MACE-MP-0 small,
+  `/ddnB/project/ramu/lgutsev/MLIP_PROJECT_STORAGE/MLIP_Foundational_Models/mace/`
+  (`GpuSlurmSettings(foundation_dir=...)`), instead of bundling a copy each. The training
   arguments are written for mace-torch 0.3.16; with another version, check that
   `mace_run_train --help` still knows `--foundation_model_elements`, `--E0s`, and
   `--loss=stress`.

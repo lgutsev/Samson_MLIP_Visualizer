@@ -64,7 +64,7 @@ def conventional(scale=1.0):
 
 def grouped(atoms):
     """Atoms reordered so each species is contiguous, in the order Ba, V/Nb/Ta, Bi, O."""
-    rank = {"Ba": 0, "V": 1, "Nb": 2, "Ta": 3, "Bi": 4, "O": 5}
+    rank = {"Ba": 0, "V": 1, "Nb": 2, "Ta": 3, "Bi": 4, "In": 5, "Sc": 6, "O": 7}
     order = sorted(range(len(atoms)), key=lambda i: rank[atoms[i].symbol])
     out = atoms[order]
     out.calc = None

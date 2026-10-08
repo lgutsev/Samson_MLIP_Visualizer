@@ -1,0 +1,130 @@
+{
+ "source": "mp",
+ "id": "mp-1522665",
+ "raw_file": "data\\optimade\\mp.json",
+ "raw_sha256": "25dc3ea36f219d308ffd9715bc4bbc557dfa8dcdaaf8d7b6402cf05275f2888a",
+ "formula": "Ba8Bi4O24V4",
+ "natoms": 40,
+ "volume_A3": 609.9376274126944,
+ "database_fields": {
+  "immutable_id": "645d2b97bcd30f748b47554f",
+  "last_modified": "2020-05-08T06:47:58.255000",
+  "elements": [
+   "Ba",
+   "Bi",
+   "O",
+   "V"
+  ],
+  "nelements": 4,
+  "elements_ratios": [
+   0.2,
+   0.1,
+   0.1,
+   0.6
+  ],
+  "chemical_formula_descriptive": "Ba8Bi4O24V4",
+  "chemical_formula_reduced": "Ba2BiO6V",
+  "chemical_formula_hill": "Ba8Bi4O24V4",
+  "chemical_formula_anonymous": "A6B2CD",
+  "dimension_types": [
+   1,
+   1,
+   1
+  ],
+  "nperiodic_dimensions": 3,
+  "lattice_vectors": [
+   [
+    8.48063702,
+    -0.0,
+    0.0
+   ],
+   [
+    -0.0,
+    8.48063702,
+    0.0
+   ],
+   [
+    -0.0,
+    0.0,
+    8.48063702
+   ]
+  ],
+  "space_group_symmetry_operations_xyz": null,
+  "space_group_symbol_hall": null,
+  "space_group_symbol_hermann_mauguin": null,
+  "space_group_symbol_hermann_mauguin_extended": null,
+  "space_group_it_number": null,
+  "nsites": 40,
+  "species": [
+   {
+    "name": "Ba",
+    "chemical_symbols": [
+     "Ba"
+    ],
+    "concentration": [
+     1.0
+    ],
+    "mass": null,
+    "original_name": null,
+    "attached": null,
+    "nattached": null
+   },
+   {
+    "name": "V",
+    "chemical_symbols": [
+     "V"
+    ],
+    "concentration": [
+     1.0
+    ],
+    "mass": null,
+    "original_name": null,
+    "attached": null,
+    "nattached": null
+   },
+   {
+    "name": "Bi",
+    "chemical_symbols": [
+     "Bi"
+    ],
+    "concentration": [
+     1.0
+    ],
+    "mass": null,
+    "original_name": null,
+    "attached": null,
+    "nattached": null
+   },
+   {
+    "name": "O",
+    "chemical_symbols": [
+     "O"
+    ],
+    "concentration": [
+     1.0
+    ],
+    "mass": null,
+    "original_name": null,
+    "attached": null,
+    "nattached": null
+   }
+  ],
+  "assemblies": null,
+  "structure_features": [],
+  "_mp_chemical_system": "Ba-Bi-O-V",
+  "_mp_stability": {
+   "gga_gga+u_r2scan": {
+    "thermo_id": "mp-1522665_GGA_GGA+U_R2SCAN",
+    "energy_above_hull": 0.14612898762500137,
+    "formation_energy_per_atom": -2.5386469852499998,
+    "last_updated_thermo": "2023-04-27T02:05:46.376000"
+   },
+   "gga_gga+u": {
+    "thermo_id": "mp-1522665_GGA_GGA+U",
+    "energy_above_hull": 0.14612898762500137,
+    "formation_energy_per_atom": -2.541991992,
+    "last_updated_thermo": "2023-04-27T02:06:06.399000"
+   }
+  }
+ }
+}

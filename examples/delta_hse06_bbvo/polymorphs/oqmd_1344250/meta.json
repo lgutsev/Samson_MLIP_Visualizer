@@ -1,0 +1,108 @@
+{
+ "source": "oqmd_optimade_comp",
+ "id": "5740924",
+ "raw_file": "data\\oqmd\\oqmd_optimade_comp.json",
+ "raw_sha256": "4f6870b96ca9a0a8a4366fbcce0e6f29d4fc1c826260de2d82173b24de45faf4",
+ "formula": "Ba4Bi2O12V2",
+ "natoms": 20,
+ "volume_A3": 363.9543670334986,
+ "database_fields": {
+  "immutable_id": null,
+  "last_modified": null,
+  "chemical_formula_reduced": "Ba2BiO6V",
+  "chemical_formula_hill": null,
+  "chemical_formula_anonymous": "A6B2CD",
+  "nelements": 4,
+  "elements": [
+   "Ba",
+   "Bi",
+   "O",
+   "V"
+  ],
+  "nsites": 20,
+  "lattice_vectors": [
+   [
+    4.97983538,
+    -6.22565573,
+    0.0
+   ],
+   [
+    4.97983538,
+    6.22565573,
+    0.0
+   ],
+   [
+    0.0,
+    0.0,
+    5.869712793
+   ]
+  ],
+  "dimension_types": [
+   1,
+   1,
+   1
+  ],
+  "nperiodic_dimensions": 3,
+  "elements_ratios": [
+   0.2,
+   0.1,
+   0.6,
+   0.1
+  ],
+  "structure_features": [],
+  "chemical_formula_descriptive": "Ba2BiO6V",
+  "species": [
+   {
+    "name": "Ba",
+    "chemical_symbols": [
+     "Ba"
+    ],
+    "concentration": [
+     1.0
+    ]
+   },
+   {
+    "name": "Bi",
+    "chemical_symbols": [
+     "Bi"
+    ],
+    "concentration": [
+     1.0
+    ]
+   },
+   {
+    "name": "O",
+    "chemical_symbols": [
+     "O"
+    ],
+    "concentration": [
+     1.0
+    ]
+   },
+   {
+    "name": "V",
+    "chemical_symbols": [
+     "V"
+    ],
+    "concentration": [
+     1.0
+    ]
+   }
+  ],
+  "space_group_it_number": 36,
+  "space_group_symmetry_operations_xyz": null,
+  "space_group_symbol_hall": "C 2c -2",
+  "space_group_symbol_hermann_mauguin": "C m c 21",
+  "space_group_symbol_hermann_mauguin_extended": null,
+  "assemblies": null,
+  "_oqmd_entry_id": 1344250,
+  "_oqmd_calculation_id": 3402125,
+  "_oqmd_icsd_id": null,
+  "_oqmd_band_gap": 2.978,
+  "_oqmd_delta_e": -2.5693,
+  "_oqmd_volume": 363.954,
+  "_oqmd_stability": 0.016,
+  "_oqmd_prototype": null,
+  "_oqmd_spacegroup": "Cmc21"
+ }
+}

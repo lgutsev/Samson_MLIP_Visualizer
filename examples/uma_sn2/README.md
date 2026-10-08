@@ -44,26 +44,30 @@ saw none of them.*
   −31.9, so every one is within 0.7 kcal/mol. Stock AIMNet2 overbinds the complex
   by 6 kcal/mol. A free ion is a single atom, whose energy UMA takes from its
   isolated-atom table ([Free ions](#free-ions-single-atoms)).
-- **Not yet done:** the large model, uma-m-1p1. It is packaged for LONI as smoke
-  test 12 (see [On LONI](#on-loni-the-large-model)).
+- **The large model, uma-m-1p1, is not better here.** Run on LONI (smoke test 12,
+  2026-09-30; see [On LONI](#on-loni-the-large-model)), it gives a barrier of
+  3.00 kcal/mol, 0.39 below CCSD(T) (3.39), where uma-s-1p1 is 0.07 above (3.46).
+  Its TS mode (−449 cm⁻¹) matches ωB97X-D (−450) and its errors on the r(C–F) scan
+  are the smallest of the three (27 / 8 meV), but on the IRC frames they are the
+  largest (42 / 16 meV). It costs 10× the checkpoint and 1.5× the time per frame.
 
 ## Results
 
-| | UMA-s-1p1 | UMA-s-1p2 | Fine-tuned AIMNet2 + fragments | Stock AIMNet2 | Reference |
-|---|---|---|---|---|---|
-| Barrier from F⁻···CH₃Cl (kcal/mol) | 3.46 | 3.58 | 3.26 | 9.3 | 3.39 (CCSD(T)); 2.6 (ωB97M-V); 3.0 (ωB97X-D) |
-| FCH₃···Cl⁻ − F⁻···CH₃Cl (kcal/mol) | −27.0 | −26.5 | −27.1 | −24.9 | −26.0 (CCSD(T)); −27.1 (ωB97X-D) |
-| TS r(C–F) / r(C–Cl) (Å) | 2.073 / 2.096 | **2.035 / 2.115** | 2.049 / 2.121 | 2.00 / 2.17 | 2.025 / 2.112 (CCSD(T)) |
-| F⁻···CH₃Cl r(C–F) / r(C–Cl) (Å) | 2.553 / 1.850 | 2.537 / 1.848 | 2.517 / 1.850 | 2.45 / 1.88 | 2.498 / 1.843 (CCSD(T)) |
-| FCH₃···Cl⁻ r(C–F) / r(C–Cl) (Å) | 1.419 / 3.256 | 1.416 / 3.223 | 1.407 / 3.262 | 1.40 / 3.12 | 1.413 / 3.180 (CCSD(T)) |
-| TS imaginary mode (cm⁻¹) | −483 | −465 | −448 | −743 | −450 (ωB97X-D) |
-| MACE IRC, 31 frames: max \|ΔE\| / RMSE (meV) | 19 / 7 | 41 / 19 | 2.7 / 0.7 (near its training frames) | 187 / 70 | vs ωB97X-D |
-| MACE IRC: force RMSE / worst atom (eV/Å) | 0.069 / 0.36 | 0.057 / 0.26 | 0.009 / 0.054 | 0.165 / 1.09 | vs ωB97X-D |
-| r(C–F) scan, 15 frames: max \|ΔE\| / RMSE (meV) | 60 / 22 | 30 / 12 | 32 / 11 | — | vs ωB97X-D |
-| r(C–F) scan: force RMSE / worst atom (eV/Å) | 0.055 / 0.37 | 0.033 / 0.25 | 0.035 / 0.26 | — | vs ωB97X-D |
-| CH₃F C–F / CH₃Cl C–Cl, neutral (Å) | 1.387 / 1.782 | 1.387 / 1.781 | 1.380 / 1.781 | 1.384 / 1.793 | 1.380 / 1.781 (ωB97X-D) |
-| Relative to F⁻ + CH₃Cl, complex / TS / product complex / products (kcal/mol) | −14.9 / −11.4 / −41.9 / −32.6 | **−15.3 / −11.8 / −41.8 / −32.6** | −15.1 / −11.8 / −42.2 / −32.9 | −21.7 / −12.4 / −46.6 / −38.7 | −15.6 / −12.2 / −41.6 / −31.9 (CCSD(T)); −15.5 / −12.9 / −41.9 / −32.3 (ωB97M-V/def2-TZVPPD) |
-| Cost | none: stock; 54 ms per force call | none | 7 min CPU training + 93 DFT labels | none | — |
+| | UMA-s-1p1 | UMA-s-1p2 | UMA-m-1p1 (LONI) | Fine-tuned AIMNet2 + fragments | Stock AIMNet2 | Reference |
+|---|---|---|---|---|---|---|
+| Barrier from F⁻···CH₃Cl (kcal/mol) | 3.46 | 3.58 | 3.00 | 3.26 | 9.3 | 3.39 (CCSD(T)); 2.6 (ωB97M-V); 3.0 (ωB97X-D) |
+| FCH₃···Cl⁻ − F⁻···CH₃Cl (kcal/mol) | −27.0 | −26.5 | −26.5 | −27.1 | −24.9 | −26.0 (CCSD(T)); −27.1 (ωB97X-D) |
+| TS r(C–F) / r(C–Cl) (Å) | 2.073 / 2.096 | **2.035 / 2.115** | 2.055 / 2.100 | 2.049 / 2.121 | 2.00 / 2.17 | 2.025 / 2.112 (CCSD(T)) |
+| F⁻···CH₃Cl r(C–F) / r(C–Cl) (Å) | 2.553 / 1.850 | 2.537 / 1.848 | 2.525 / 1.849 | 2.517 / 1.850 | 2.45 / 1.88 | 2.498 / 1.843 (CCSD(T)) |
+| FCH₃···Cl⁻ r(C–F) / r(C–Cl) (Å) | 1.419 / 3.256 | 1.416 / 3.223 | 1.417 / 3.204 | 1.407 / 3.262 | 1.40 / 3.12 | 1.413 / 3.180 (CCSD(T)) |
+| TS imaginary mode (cm⁻¹) | −483 | −465 | −449 | −448 | −743 | −450 (ωB97X-D) |
+| MACE IRC, 31 frames: max \|ΔE\| / RMSE (meV) | 19 / 7 | 41 / 19 | 42 / 16 | 2.7 / 0.7 (near its training frames) | 187 / 70 | vs ωB97X-D |
+| MACE IRC: force RMSE / worst atom (eV/Å) | 0.069 / 0.36 | 0.057 / 0.26 | 0.063 / — | 0.009 / 0.054 | 0.165 / 1.09 | vs ωB97X-D |
+| r(C–F) scan, 15 frames: max \|ΔE\| / RMSE (meV) | 60 / 22 | 30 / 12 | 27 / 8 | 32 / 11 | — | vs ωB97X-D |
+| r(C–F) scan: force RMSE / worst atom (eV/Å) | 0.055 / 0.37 | 0.033 / 0.25 | 0.039 / — | 0.035 / 0.26 | — | vs ωB97X-D |
+| CH₃F C–F / CH₃Cl C–Cl, neutral (Å) | 1.387 / 1.782 | 1.387 / 1.781 | — | 1.380 / 1.781 | 1.384 / 1.793 | 1.380 / 1.781 (ωB97X-D) |
+| Relative to F⁻ + CH₃Cl, complex / TS / product complex / products (kcal/mol) | −14.9 / −11.4 / −41.9 / −32.6 | **−15.3 / −11.8 / −41.8 / −32.6** | −15.5 / −12.5 / −42.0 / −32.6 | −15.1 / −11.8 / −42.2 / −32.9 | −21.7 / −12.4 / −46.6 / −38.7 | −15.6 / −12.2 / −41.6 / −31.9 (CCSD(T)); −15.5 / −12.9 / −41.9 / −32.3 (ωB97M-V/def2-TZVPPD) |
+| Cost | none: stock; 54 ms per force call | none | none; 124 ms per frame on an A100 GPU (uma-s-1p1 85 ms), 22 s to load | 7 min CPU training + 93 DFT labels | none | — |
 
 The UMA and fine-tuned AIMNet2 geometries are each model's own stationary
 points:
@@ -72,7 +76,13 @@ points:
 
 For the energies relative to F⁻ + CH₃Cl, every fragment is at its own charge,
 with CH₃Cl and CH₃F relaxed with the model. The free F⁻ and Cl⁻ come from UMA's
-isolated-atom table for both UMA columns (see below).
+isolated-atom table for all three UMA columns (see below). uma-m-1p1 carries no
+table, so its ions are uma-s-1p2's, the same OMol25 values.
+
+The uma-m-1p1 column is from the LONI run (one A100); its worst-atom forces and
+neutral-molecule bonds were not part of that script (—). The uma-s-1p1 control in
+the same run reproduced the laptop exactly: 0.00 meV on all 46 frames, barrier
+3.464 kcal/mol in both.
 
 The AIMNet2 columns come from [`../sn2_f_ch3cl`](../sn2_f_ch3cl/README.md); stock
 AIMNet2's same-frame numbers are its errors on the committee's IRC there. The
@@ -208,10 +218,17 @@ starting geometries, and a SLURM array:
 - **task 1: uma-s-1p1**, the control; it must reproduce the laptop;
 - **task 2: uma-m-1p1.**
 
-The script is set for QB4: account `loni_perovsk27`, `gpu2`, and conda from
-`/home/lgutsev/miniforge3`. Two things are left, both in the package README:
-- create the environment `/project/lgutsev/env/uma` (fairchem-core and sella);
-- fill in `<UMA_DIR>`, the folder where UMA already sits on the cluster.
+The script is set for QB4: account `loni_perovsk27`, `gpu2`, conda from
+`/home/lgutsev/miniforge3`, the environment `/project/lgutsev/env/uma`
+(fairchem-core and sella), and the master checkpoints in
+`/ddnB/project/ramu/lgutsev/MLIP_PROJECT_STORAGE/MLIP_Foundational_Models/UMA`
+(read in place, never copied).
+
+- **Run (2026-09-30):** PASS. The control matches the laptop to 0.00 meV; the
+  uma-m-1p1 numbers are the column in [Results](#results). F⁻ and Cl⁻ fail in the
+  job (no `atom_refs` in either 1p1 checkpoint); the checker fills them in from
+  uma-s-1p2's table and says so. Results:
+  `D:\MLIP_Work_Folder\hpc_smoke_tests\batch01_2026-09-28\12_uma_sn2_large`.
 
 - **Tested:** the same script, run on the laptop CPU with uma-s-1p1, reproduces
   the evaluation above (barrier 3.464 kcal/mol, TS mode −483 cm⁻¹) in 35 s.
@@ -219,7 +236,7 @@ The script is set for QB4: account `loni_perovsk27`, `gpu2`, and conda from
   for the control and the uma-m-1p1 numbers against ωB97X-D and CCSD(T):
 
 ```bash
-python examples/uma_sn2/check_loni_results.py
+python examples/uma_sn2/check_loni_results.py D:\MLIP_Work_Folder\hpc_smoke_tests\batch01_2026-09-28\12_uma_sn2_large
 ```
 
 ## Files

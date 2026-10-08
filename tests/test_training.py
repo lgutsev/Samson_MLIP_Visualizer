@@ -84,6 +84,20 @@ def test_final_error_table():
     }
 
 
+def test_final_error_table_keeps_the_stress_column():
+    # as mace-torch 0.3.15 printed it on LONI (smoke test 11, --loss=stress)
+    table = """\
++---------------+---------------------+------------------+-------------------+---------------------------------------+
+|  config_type  | RMSE E / meV / atom | RMSE F / meV / A | relative F RMSE % | RMSE Stress (Virials) / meV / A (A^3) |
++---------------+---------------------+------------------+-------------------+---------------------------------------+
+| train_Default |           21.1      |         67.5     |         11.27     |                     2.0               |
+| valid_Default |           20.3      |         90.8     |         13.87     |                     1.6               |
++---------------+---------------------+------------------+-------------------+---------------------------------------+
+"""  # noqa: E501
+    assert final_errors(table)["valid_Default"] == {
+        "rmse_e_mev_per_atom": 20.3, "rmse_f_mev_per_A": 90.8, "rmse_stress_mev_per_A3": 1.6}
+
+
 def test_train_local_runs_every_seed_and_installs(data, tmp_path, monkeypatch):
     trainer = tmp_path / "fake_train.py"
     trainer.write_text(FAKE_TRAINER)
@@ -144,6 +158,17 @@ def test_package_keeps_caches_out_of_a_small_home(data, tmp_path):
     download = (package / "download_mp_replay.sh").read_text()
     assert 'cache="/project/me/cache/mace"' in download and "HOME" not in download
     assert "/project/me/cache/mace" in (package / "README.md").read_text()
+
+
+def test_package_points_to_the_master_foundation_copy(data, tmp_path):
+    package = write_training_package(
+        spec(data), tmp_path / "package",
+        slurm=GpuSlurmSettings(foundation_dir="/project/me/models/mace/"))
+    script = (package / "run_train.slurm").read_text()
+    assert '"--foundation_model=/project/me/models/mace/foundation.model"' in script
+    assert not (package / "foundation").exists()
+    assert json.loads((package / "spec.json").read_text())["package_foundation"] == \
+        "/project/me/models/mace/foundation.model"
 
 
 def test_package_with_an_own_replay_file(data, tmp_path):

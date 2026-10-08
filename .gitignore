@@ -17,3 +17,7 @@ samson_api_probe.json
 # Psi4 scratch files written into the working directory
 timer.dat
 ijk.dat
+
+# Psi4 process files (clean-up list) and output sent to "nul"
+psi.*.clean
+nul.log

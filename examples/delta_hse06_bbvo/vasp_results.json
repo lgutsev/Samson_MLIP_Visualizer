@@ -1,0 +1,163 @@
+{
+ "frames": [
+  {
+   "package": "05",
+   "frame": 0,
+   "atoms": 10,
+   "group": "",
+   "PBEU_eV": -65.99428268,
+   "HSE06_eV": -83.90699372,
+   "MACE_eV": -66.08418433224006,
+   "MACE_minus_PBEU_meV_per_atom": -8.990165224005864,
+   "MACE_vs_PBEU_force_rmse": 0.05392747406988483,
+   "PBEU_max_force": 0.06680471084085388,
+   "MACE_vs_PBEU_stress_rmse_GPa": 0.47748244770149006,
+   "MACE_minus_HSE06_meV_per_atom": 1782.2809387759946,
+   "MACE_vs_HSE06_force_rmse": 0.2812338696621654,
+   "HSE06_max_force": 0.4415303100024845,
+   "MACE_vs_HSE06_stress_rmse_GPa": 4.396940740143374,
+   "HSE06_minus_PBEU_meV_per_atom": -1791.2711040000006,
+   "HSE06_vs_PBEU_force_rmse": 0.22730640450860062,
+   "per_fu": 1.0
+  },
+  {
+   "package": "05",
+   "frame": 1,
+   "atoms": 10,
+   "group": "",
+   "PBEU_eV": -65.88001407,
+   "HSE06_eV": -83.8115285,
+   "MACE_eV": -65.99961931147209,
+   "MACE_minus_PBEU_meV_per_atom": -11.960524147208673,
+   "MACE_vs_PBEU_force_rmse": 0.12332437715408193,
+   "PBEU_max_force": 0.954049401545308,
+   "MACE_vs_PBEU_stress_rmse_GPa": 0.5758955579622846,
+   "MACE_minus_HSE06_meV_per_atom": 1781.1909188527904,
+   "MACE_vs_HSE06_force_rmse": 0.29846480136842524,
+   "HSE06_max_force": 0.9640772766434389,
+   "MACE_vs_HSE06_stress_rmse_GPa": 4.434950855564355,
+   "HSE06_minus_PBEU_meV_per_atom": -1793.1514429999993,
+   "HSE06_vs_PBEU_force_rmse": 0.2681677075930026,
+   "per_fu": 1.0
+  },
+  {
+   "package": "05",
+   "frame": 2,
+   "atoms": 40,
+   "group": "",
+   "PBEU_eV": -262.47832976,
+   "HSE06_eV": -334.73675388,
+   "MACE_eV": -263.55321879282985,
+   "MACE_minus_PBEU_meV_per_atom": -26.87222582074611,
+   "MACE_vs_PBEU_force_rmse": 0.2024459217407384,
+   "PBEU_max_force": 1.9122987003396688,
+   "MACE_vs_PBEU_stress_rmse_GPa": 0.12809697928237274,
+   "MACE_minus_HSE06_meV_per_atom": 1779.588377179253,
+   "MACE_vs_HSE06_force_rmse": 0.49866801826558027,
+   "HSE06_max_force": 3.073674141464219,
+   "MACE_vs_HSE06_stress_rmse_GPa": 4.005014889083243,
+   "HSE06_minus_PBEU_meV_per_atom": -1806.460602999999,
+   "HSE06_vs_PBEU_force_rmse": 0.4691425811274895,
+   "per_fu": 4.0
+  },
+  {
+   "package": "08",
+   "frame": 0,
+   "atoms": 40,
+   "group": "",
+   "PBEU_eV": -264.01409377,
+   "HSE06_eV": -335.65979597,
+   "MACE_eV": -264.3367373268684,
+   "MACE_minus_PBEU_meV_per_atom": -8.06608892170999,
+   "MACE_vs_PBEU_force_rmse": 0.05218043728301217,
+   "PBEU_max_force": 0.07069195045992507,
+   "MACE_vs_PBEU_stress_rmse_GPa": 0.4952900033775938,
+   "MACE_minus_HSE06_meV_per_atom": 1783.0764660782904,
+   "MACE_vs_HSE06_force_rmse": 0.2793046559973847,
+   "HSE06_max_force": 0.437277320001291,
+   "MACE_vs_HSE06_stress_rmse_GPa": 4.406043025753005,
+   "HSE06_minus_PBEU_meV_per_atom": -1791.1425550000004,
+   "HSE06_vs_PBEU_force_rmse": 0.22712422103368052,
+   "per_fu": 4.0
+  },
+  {
+   "package": "08",
+   "frame": 1,
+   "atoms": 40,
+   "group": "",
+   "PBEU_eV": -264.04273296,
+   "HSE06_eV": -336.53511423,
+   "MACE_eV": -264.91422836136326,
+   "MACE_minus_PBEU_meV_per_atom": -21.78738503408084,
+   "MACE_vs_PBEU_force_rmse": 0.15126747138417998,
+   "PBEU_max_force": 0.44433484636118176,
+   "MACE_vs_PBEU_stress_rmse_GPa": 0.22155802029380328,
+   "MACE_minus_HSE06_meV_per_atom": 1790.5221467159179,
+   "MACE_vs_HSE06_force_rmse": 0.44230014805793283,
+   "HSE06_max_force": 1.3864486956369473,
+   "MACE_vs_HSE06_stress_rmse_GPa": 4.178706626518569,
+   "HSE06_minus_PBEU_meV_per_atom": -1812.3095317499988,
+   "HSE06_vs_PBEU_force_rmse": 0.4730812557082372,
+   "per_fu": 4.0
+  },
+  {
+   "package": "08",
+   "frame": 2,
+   "atoms": 40,
+   "group": "",
+   "PBEU_eV": -265.8064594,
+   "HSE06_eV": -339.3239166,
+   "MACE_eV": -266.7703048132667,
+   "MACE_minus_PBEU_meV_per_atom": -24.096135331667767,
+   "MACE_vs_PBEU_force_rmse": 0.09557973160820465,
+   "PBEU_max_force": 0.354276469166087,
+   "MACE_vs_PBEU_stress_rmse_GPa": 0.22389926692404885,
+   "MACE_minus_HSE06_meV_per_atom": 1813.8402946683327,
+   "MACE_vs_HSE06_force_rmse": 0.5408549468528162,
+   "HSE06_max_force": 1.6486299266325204,
+   "MACE_vs_HSE06_stress_rmse_GPa": 3.0745332512230883,
+   "HSE06_minus_PBEU_meV_per_atom": -1837.9364300000004,
+   "HSE06_vs_PBEU_force_rmse": 0.5199273908996318,
+   "per_fu": 4.0
+  }
+ ],
+ "stability_meV_per_fu": {
+  "PBE+U": {
+   "cubic (Fm-3m, PBE+U lattice)": 0.0,
+   "ions relaxed by MACE-MP-0 (cubic cell)": -7.159797500008835,
+   "fully relaxed by MACE-MP-0": -448.09140750000154,
+   "PBE+U relaxation from a 0.05 \u00c5 rattle": -88.46905750000644
+  },
+  "HSE06": {
+   "cubic (Fm-3m, PBE+U lattice)": 0.0,
+   "ions relaxed by MACE-MP-0 (cubic cell)": -218.82956499999295,
+   "fully relaxed by MACE-MP-0": -916.0301575000034
+  },
+  "MACE-MP-0": {
+   "cubic (Fm-3m, PBE+U lattice)": 0.0,
+   "ions relaxed by MACE-MP-0 (cubic cell)": -144.37275862371735,
+   "fully relaxed by MACE-MP-0": -608.3918715995793,
+   "PBE+U relaxation from a 0.05 \u00c5 rattle": -189.75215785511068
+  }
+ },
+ "pbeu_relaxation": {
+  "ionic_steps": [
+   185,
+   120
+  ],
+  "final_eV": -264.36797,
+  "cell_A": [
+   9.072,
+   8.343,
+   8.439
+  ],
+  "angles_deg": [
+   90.31,
+   91.12,
+   88.8
+  ],
+  "volume_A3": 638.4989256553932,
+  "cubic_volume_A3": 611.3953032772712,
+  "MACE_max_force_eV_per_A": 0.18137959656815145
+ }
+}

@@ -1,0 +1,101 @@
+[
+ {
+  "name": "cubic_Fm-3m",
+  "group": "polymorph",
+  "path": "../poscars/Ba2BiVO6_primitive_PBEU/POSCAR",
+  "isym": 2,
+  "source": "VASP PBE+U relaxed in Fm-3m (manuscript package, Sep 24); = mp-1522771 (StructureMatcher rms 0.0006)"
+ },
+ {
+  "name": "R3_polar",
+  "group": "polymorph",
+  "path": "pbeu08_fixedcell/POSCAR",
+  "isym": 2,
+  "symmetrize": 0.1,
+  "source": "LONI 08 PBE+U fixed-cell relaxation from a 0.05 A rattle (-48.6 meV/f.u.), symmetrized at 0.1 A"
+ },
+ {
+  "name": "PBEU_P1_cellrelaxed",
+  "group": "polymorph",
+  "path": "pbeu08_cellrelaxed/POSCAR",
+  "isym": 0,
+  "source": "LONI 08 PBE+U ISIF 3 continuation (-88.5 meV/f.u., V CN 5)"
+ },
+ {
+  "name": "MP_Pn-3",
+  "group": "polymorph",
+  "path": "mp_mp-1522665/POSCAR",
+  "isym": 2,
+  "source": "Materials Project mp-1522665 via OPTIMADE (E_hull 0.146 eV/atom GGA/GGA+U; retrieved 2026-09-29)"
+ },
+ {
+  "name": "Alexandria_C2m",
+  "group": "polymorph",
+  "path": "alexandria_pbe_agm002175356/POSCAR",
+  "isym": 2,
+  "source": "Alexandria PBE agm002175356 via OPTIMADE (hull 0.138 eV/atom; retrieved 2026-09-29)"
+ },
+ {
+  "name": "MACE_VO4",
+  "group": "polymorph",
+  "path": "../poscars/Ba2BiVO6_distorted_relaxedcell_MACE-MP-0/POSCAR",
+  "isym": 0,
+  "source": "MACE-MP-0 cell+ion relaxation from a rattle (isolated VO4, +23 % volume); DFT single points in 08 only"
+ },
+ {
+  "name": "OQMD_Cmc21_1344250",
+  "group": "polymorph",
+  "path": "oqmd_1344250/POSCAR",
+  "isym": 2,
+  "source": "OQMD entry 1344250 (calculation 3402125), Cmc2_1, 20 atoms, reported stability 0.0155 eV/atom, band gap 2.978 eV; OPTIMADE id 5740924, retrieved 2026-09-30 (REST and OPTIMADE agree, rms 0.001 A); isolated VO4 tetrahedra, not a perovskite"
+ },
+ {
+  "name": "x0_cubic40",
+  "group": "stabilization",
+  "path": "../poscars/Ba2BiVO6_cubic40_MACE-MP-0/POSCAR",
+  "isym": 2,
+  "source": "40-atom control for the Nb/Ta series (cubic, MACE-MP-0 lattice start)"
+ },
+ {
+  "name": "Nb0.25",
+  "group": "stabilization",
+  "path": "../poscars/Ba2Bi_V0.75Nb0.25_O6_x0.25_MACE-MP-0/POSCAR",
+  "isym": 2,
+  "source": "MACE-MP-0 cubic-derived start"
+ },
+ {
+  "name": "Nb0.5",
+  "group": "stabilization",
+  "path": "../poscars/Ba2Bi_V0.5Nb0.5_O6_x0.5_MACE-MP-0/POSCAR",
+  "isym": 2,
+  "source": "MACE-MP-0 cubic-derived start"
+ },
+ {
+  "name": "Nb1",
+  "group": "stabilization",
+  "path": "../poscars/Ba2BiNbO6_x1_MACE-MP-0/POSCAR",
+  "isym": 2,
+  "source": "MACE-MP-0 cubic-derived start (bulk Ba2BiNbO6 space group not verified in the audit)"
+ },
+ {
+  "name": "Ta0.25",
+  "group": "stabilization",
+  "path": "../poscars/Ba2Bi_V0.75Ta0.25_O6_x0.25_MACE-MP-0/POSCAR",
+  "isym": 2,
+  "source": "MACE-MP-0 cubic-derived start"
+ },
+ {
+  "name": "Ta0.5",
+  "group": "stabilization",
+  "path": "../poscars/Ba2Bi_V0.5Ta0.5_O6_x0.5_MACE-MP-0/POSCAR",
+  "isym": 2,
+  "source": "MACE-MP-0 cubic-derived start"
+ },
+ {
+  "name": "Ta1",
+  "group": "stabilization",
+  "path": "../poscars/Ba2BiTaO6_x1_MACE-MP-0/POSCAR",
+  "isym": 2,
+  "source": "MACE-MP-0 cubic-derived start (Ba2BiTaO6 reported R-3 at RT: Wallwork et al. 2005, doi:10.1016/j.jssc.2004.11.012, abstract-level)"
+ }
+]

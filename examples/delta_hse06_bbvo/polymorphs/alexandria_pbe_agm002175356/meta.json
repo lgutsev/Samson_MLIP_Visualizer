@@ -1,0 +1,279 @@
+{
+ "source": "alexandria_pbe",
+ "id": "agm002175356",
+ "raw_file": "data\\optimade\\alexandria_pbe.json",
+ "raw_sha256": "8ec8808fc1da2f5e6c67317a445924012968ac98cc004454ecb8df1d20072fa4",
+ "formula": "Ba2BiO6V",
+ "natoms": 10,
+ "volume_A3": 152.7250577326119,
+ "database_fields": {
+  "immutable_id": "agm002175356",
+  "last_modified": "2023-11-16T07:57:59Z",
+  "elements": [
+   "Ba",
+   "Bi",
+   "O",
+   "V"
+  ],
+  "nelements": 4,
+  "elements_ratios": [
+   0.2,
+   0.1,
+   0.6,
+   0.1
+  ],
+  "chemical_formula_descriptive": "Ba2 V1 Bi1 O6",
+  "chemical_formula_reduced": "Ba2BiO6V",
+  "chemical_formula_hill": null,
+  "chemical_formula_anonymous": "A6B2CD",
+  "dimension_types": [
+   1,
+   1,
+   1
+  ],
+  "nperiodic_dimensions": 3,
+  "lattice_vectors": [
+   [
+    5.99038037,
+    -0.00332692,
+    -0.00766549
+   ],
+   [
+    -2.99667861,
+    5.18730428,
+    0.00718941
+   ],
+   [
+    -2.96937327,
+    -1.74223254,
+    4.91914314
+   ]
+  ],
+  "cartesian_site_positions": [
+   [
+    -2.982926763907454,
+    1.7231932969157346,
+    2.463849913826038
+   ],
+   [
+    -5.01667733661001e-05,
+    0.000918810303889,
+    0.0007794768525312
+   ],
+   [
+    3.12337642543072,
+    0.08382151790231525,
+    3.4621537976668124
+   ],
+   [
+    -3.099094742994699,
+    3.357223755222792,
+    1.4561844493498626
+   ],
+   [
+    -1.5062796510252432,
+    2.438192063066269,
+    3.4663992367562
+   ],
+   [
+    4.235968631745628,
+    1.0062020784644157,
+    1.1592762012926607
+   ],
+   [
+    1.5301303853715233,
+    1.0027888676587984,
+    1.4513309590806347
+   ],
+   [
+    -4.211185261338078,
+    2.4346386069470967,
+    3.7585774907671894
+   ],
+   [
+    0.019362340104588475,
+    -0.011286406493485644,
+    3.677096256753943
+   ],
+   [
+    0.004989969839381902,
+    3.4538173207683154,
+    1.2421867252395145
+   ]
+  ],
+  "nsites": 10,
+  "species": [
+   {
+    "name": "O",
+    "chemical_symbols": [
+     "O"
+    ],
+    "concentration": [
+     1.0
+    ],
+    "mass": null,
+    "original_name": null,
+    "attached": null,
+    "nattached": null
+   },
+   {
+    "name": "Bi",
+    "chemical_symbols": [
+     "Bi"
+    ],
+    "concentration": [
+     1.0
+    ],
+    "mass": null,
+    "original_name": null,
+    "attached": null,
+    "nattached": null
+   },
+   {
+    "name": "V",
+    "chemical_symbols": [
+     "V"
+    ],
+    "concentration": [
+     1.0
+    ],
+    "mass": null,
+    "original_name": null,
+    "attached": null,
+    "nattached": null
+   },
+   {
+    "name": "Ba",
+    "chemical_symbols": [
+     "Ba"
+    ],
+    "concentration": [
+     1.0
+    ],
+    "mass": null,
+    "original_name": null,
+    "attached": null,
+    "nattached": null
+   }
+  ],
+  "species_at_sites": [
+   "V",
+   "Bi",
+   "O",
+   "O",
+   "O",
+   "O",
+   "O",
+   "O",
+   "Ba",
+   "Ba"
+  ],
+  "assemblies": null,
+  "structure_features": [],
+  "_alexandria_band_gap": 1.1785,
+  "_alexandria_hull_distance": 0.13756059,
+  "_alexandria_xc_functional": "gga_x_pbe + gga_c_pbe",
+  "_alexandria_charges": [
+   9.358,
+   3.526,
+   4.984,
+   4.984,
+   4.984,
+   4.985,
+   4.984,
+   4.985,
+   7.879,
+   7.879
+  ],
+  "_alexandria_stress_tensor": [
+   [
+    0.8147713,
+    0.01821392,
+    0.03046754
+   ],
+   [
+    0.01821361,
+    0.8390584,
+    0.0015818
+   ],
+   [
+    0.03046772,
+    0.00158156,
+    0.7421218
+   ]
+  ],
+  "_alexandria_magnetization": 0.0,
+  "_alexandria_band_gap_direct": 1.1837,
+  "_alexandria_formation_energy_per_atom": -2.5473154,
+  "_alexandria_energy": -66.17170594,
+  "_alexandria_phase_separation_energy": 0.13756059,
+  "_alexandria_energy_corrected": -72.067444,
+  "_alexandria_space_group": 12,
+  "_alexandria_decomposition": " Bi2O3  Ba2Bi2O5  Ba3V2O8 ",
+  "_alexandria_forces": [
+   [
+    0.0001752,
+    0.00157165,
+    0.0016406
+   ],
+   [
+    -0.00017184,
+    0.00189748,
+    0.00165709
+   ],
+   [
+    -0.00097448,
+    0.00029935,
+    0.00241603
+   ],
+   [
+    0.00090398,
+    -0.00182636,
+    -0.00322507
+   ],
+   [
+    -0.00246234,
+    -0.00094742,
+    0.00151844
+   ],
+   [
+    0.00118649,
+    -0.00250701,
+    -0.00264103
+   ],
+   [
+    0.00152765,
+    -0.00079876,
+    -0.00361025
+   ],
+   [
+    -0.00016764,
+    0.00053485,
+    0.00079945
+   ],
+   [
+    0.00150046,
+    -0.0005723,
+    0.0008335
+   ],
+   [
+    -0.00151749,
+    0.00234853,
+    0.00061124
+   ]
+  ],
+  "_alexandria_magnetic_moments": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   -0.0,
+   -0.0,
+   0.0,
+   0.0,
+   -0.0,
+   0.0
+  ],
+  "_alexandria_dos_ef": 0.0
+ }
+}

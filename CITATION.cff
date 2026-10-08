@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+title: SAMSON MLIP Visualizer
+message: "If SAMSON MLIP Visualizer contributes to published work, please cite the repository release."
+type: software
+authors:
+  - family-names: Gutsev
+    given-names: Lavrenty G.
+    orcid: "https://orcid.org/0000-0002-9679-9093"
+    affiliation: "Louisiana Tech University"
+abstract: >-
+  Runs machine-learned interatomic potentials (MACE, DeepMD-kit, UMA, AIMNet2) and
+  semi-empirical/quantum backends (xTB, Psi4) on structures in SAMSON Connect through
+  ASE: relaxations, transition-state searches with IRC confirmation, free-energy
+  sampling, benchmarking, Δ-learning and active-learning fine-tuning, and a remote
+  control bridge (CLI and MCP server). Includes worked examples and HPC job packages.
+keywords:
+  - machine-learned interatomic potentials
+  - MACE
+  - DeepMD
+  - ASE
+  - SAMSON
+  - transition states
+  - delta learning
+repository-code: "https://github.com/lgutsev/Samson_MLIP_Visualizer"
+license: MIT
+version: 0.1.0
+date-released: 2026-10-08

@@ -105,6 +105,8 @@ if PACKAGE:
                              activate=("source /home/lgutsev/miniforge3/etc/profile.d/conda.sh && "
                                        "conda activate /project/lgutsev/env/mace_env"),
                              cache_dir="/project/lgutsev/cache",  # home is 10 GB
+                             # the one master copy of MACE-MP-0 small on LONI
+                             foundation_dir="/ddnB/project/ramu/lgutsev/MLIP_PROJECT_STORAGE/MLIP_Foundational_Models/mace",
                              time="01:00:00" if SMOKE else "12:00:00", memory_gb=32)
     for spec in specs:
         if SMOKE:

@@ -32,17 +32,21 @@ OUT = Path(sys.argv[1] if len(sys.argv) > 1 else r"D:\MLIP_Work_Folder\hpc_smoke
 HERE = Path(__file__).parent
 FOUNDATION = foundation_model()
 HCN_DATA = HERE / "hcn_training_87_structures.extxyz"
-# LONI QB4: ORCA 6.1.1 and OpenMPI 4.1.8 from the project folder; Gaussian from its
-# module; a conda env with mace-torch 0.3.16 for the GPU jobs (see the README).
-ORCA_QB4 = dict(modules=(),  # the user's OpenMPI 4.1.8, the one ORCA 6.1.1 is built with
-                setup=("OMPI_DIR=/ddnB/project/ramu/lgutsev/openmpi-4.1.8",
-                       "ORCA_DIR=/ddnB/project/ramu/lgutsev/Orca_6_1_1",
+# LONI QB4: ORCA 6.1.1 with OpenMPI 4.1.6 from the project folder, as verified on
+# 2026-09-29 (ORCA_ON_LONI.md in the dispatch repo); Gaussian from its module; a
+# conda env with mace-torch 0.3.16 for the GPU jobs (see the README).
+ORCA_QB4 = dict(modules=(),                  setup=("OMPI_DIR=/project/lgutsev/openmpi-4.1.6",
+                       "ORCA_DIR=/project/lgutsev/Orca_6_1_1",
                        'export PATH="$ORCA_DIR:$OMPI_DIR/bin:$PATH"',
-                       'export LD_LIBRARY_PATH="$ORCA_DIR/lib:$OMPI_DIR/lib:${LD_LIBRARY_PATH:-}"'))
+                       'export LD_LIBRARY_PATH="$ORCA_DIR/lib:$OMPI_DIR/lib:${LD_LIBRARY_PATH:-}"',
+                       "unset OPAL_PREFIX",
+                       "export OMP_NUM_THREADS=1"))
 GPU_QB4 = dict(account="loni_perovsk27", partition="gpu2", modules=(),
                activate=("source /home/lgutsev/miniforge3/etc/profile.d/conda.sh && "
                          "conda activate /project/lgutsev/env/mace_env"),
-               cache_dir="/project/lgutsev/cache")  # not ~/.cache: home is 10 GB
+               cache_dir="/project/lgutsev/cache",  # not ~/.cache: home is 10 GB
+               # the one master copy of MACE-MP-0 small on LONI, not one per package
+               foundation_dir="/ddnB/project/ramu/lgutsev/MLIP_PROJECT_STORAGE/MLIP_Foundational_Models/mace")
 
 # HCN, the transition state, and HNC from the MACE-MP-0 IRC (atom order C, N, H).
 GEOMETRIES = {

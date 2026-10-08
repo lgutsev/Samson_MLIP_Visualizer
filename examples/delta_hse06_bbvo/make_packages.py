@@ -60,15 +60,19 @@ def choose(name, frames):
     return list(range(len(frames)))
 
 
-# One node per frame. HSE06 on 40 atoms: allow a long wall time; KPAR splits k-points.
-# QB4: 64 cores per node.
+# One node per frame; KPAR splits k-points. QB4: 64 cores per node, 72 h at most.
+# Measured on QB4 (smoke tests 05, 07 and 08): HSE06 takes 3.3 h on the 10-atom
+# cell and 9.1-14.8 h on pristine 40-atom cells; the doped 40-atom cells (07) took
+# 12.3, 21.8 and 28.1 h (Ba2BiNbO6: 56 SCF steps), too close to 07's 36 h. So every
+# 40-atom package gets 48 h; the 80-atom dilute cells the maximum.
+# These label sets began on vasp6/6.5.1 (05/07/08) and stay on it; new packages
+# use 6.6.1 (loni_chain.py).
 slurm = {name: VaspSlurmSettings(account="loni_perovsk27", partition="workq",
                                  potcar_dir="/home/lgutsev/pot/potpaw_PBE", tasks_per_node=64,
                                  modules=("vasp6/6.5.1-cpu",),
                                  setup=("export SINGULARITYENV_OMP_NUM_THREADS=1",),
                                  run="srun vasp_std",
-                                 time="12:00:00" if "smoke" in name else "48:00:00"
-                                 if name == "dilute" else "24:00:00",
+                                 time="72:00:00" if name == "dilute" else "48:00:00",
                                  max_parallel=None if "smoke" in name else 10)
          for name in sources}
 extra = {"pbe_u": {"NCORE": 4, "KPAR": 4}, "hse06": {"NCORE": 4, "KPAR": 4}}

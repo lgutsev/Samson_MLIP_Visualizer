@@ -31,14 +31,16 @@ from samson_mlip_visualizer.finetune import Selection, write_selection
 from samson_mlip_visualizer.labeling import SlurmSettings, write_label_package
 
 LEVEL = "PBE0 def2-TZVP def2/J RIJCOSX"
-# LONI QB4: ORCA 6.1.1 and OpenMPI 4.1.8 from the project folder; Gaussian from its
-# module; a conda env with mace-torch 0.3.16 for the GPU jobs (see the README).
-# the user's OpenMPI 4.1.8, the one ORCA 6.1.1 is built with
+# LONI QB4: ORCA 6.1.1 with OpenMPI 4.1.6 from the project folder, as verified on
+# 2026-09-29 (ORCA_ON_LONI.md in the dispatch repo); Gaussian from its module; a
+# conda env with mace-torch 0.3.16 for the GPU jobs (see the README).
 ORCA_QB4 = dict(account="loni_perovsk27", partition="workq", modules=(),
-                setup=("OMPI_DIR=/ddnB/project/ramu/lgutsev/openmpi-4.1.8",
-                       "ORCA_DIR=/ddnB/project/ramu/lgutsev/Orca_6_1_1",
+                setup=("OMPI_DIR=/project/lgutsev/openmpi-4.1.6",
+                       "ORCA_DIR=/project/lgutsev/Orca_6_1_1",
                        'export PATH="$ORCA_DIR:$OMPI_DIR/bin:$PATH"',
-                       'export LD_LIBRARY_PATH="$ORCA_DIR/lib:$OMPI_DIR/lib:${LD_LIBRARY_PATH:-}"'))
+                       'export LD_LIBRARY_PATH="$ORCA_DIR/lib:$OMPI_DIR/lib:${LD_LIBRARY_PATH:-}"',
+                       "unset OPAL_PREFIX",
+                       "export OMP_NUM_THREADS=1"))
 SMOKE_COPY = r"D:\MLIP_Work_Folder\hpc_smoke_tests\06_orca_ni_porphine"
 which = sys.argv[1:] or ["smoke", "campaign"]
 

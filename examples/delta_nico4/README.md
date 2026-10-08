@@ -107,10 +107,17 @@ minutes on a cluster node, too much for a laptop campaign:
 - `porphine_campaign/`: 150 frames (the minimum, 10 rattled copies, GFN2-xTB MD
   at 300 and 600 K), for the same learning curves as Ni(CO)₄.
 
-Fill in `<ACCOUNT>`, `<PARTITION>`, and `<MODULE>` in `run_orca.slurm`, submit,
-copy back `outputs/`, and run `collect_labels` on the folder. Given the
-Ni(CO)₄ result, train the xTB corrections for porphine with a cutoff of at
-least 7 Å.
+The packages are filled in for LONI QB4 (ORCA 6.1.1 with OpenMPI 4.1.6, four
+16-core frames per 64-core `workq` node): submit, copy back `outputs/`, and run
+`collect_labels` on the folder. Given the Ni(CO)₄ result, train the xTB
+corrections for porphine with a cutoff of at least 7 Å.
+
+**Smoke test (September 2026): PASS.** `collect_labels` accepts all 3 frames (37
+atoms, forces), 147–152 s per frame on 16 cores. The 150-frame campaign is
+therefore about 150 × 2.5 min ≈ 6.3 h of frame time, 100 core-hours (1.6 QB4
+node-hours); with four frames per node and 10 array tasks at once it finishes in
+well under an hour of wall time. The 4 h task limit leaves room for slower SCFs on
+the 600 K frames.
 
 ## Next steps on LONI
 
@@ -123,6 +130,24 @@ Two things are too heavy for the laptop and are packaged for LONI (see
   (`hpc_smoke_tests/09_orca_nico4_dlpno`); the campaign is the whole pull plus the
   held-out 650 K frames (30). If PBE0 is off by more than ~0.1 eV, a second
   correction (CCSD(T) − PBE0) on those points is next.
+
+  **Smoke test: PASS, and PBE0 is close.** 3/3 single points, 540–700 s each on 16
+  cores. The CO pull from 1.8 to 5.0 Å costs 1.077 eV at DLPNO-CCSD(T) against
+  1.108 eV at PBE0 (−32 meV); at 2.7 Å, 0.884 against 0.925 eV. That is well inside
+  the 0.1 eV threshold, so **PBE0/def2-TZVP stays the reference level** and no
+  CCSD(T) − PBE0 correction is planned. The T1 diagnostic is 0.029–0.031 on every
+  frame, above the usual 0.02: Ni(CO)₄ has some multireference character, so
+  DLPNO-CCSD(T) is a cross-check here, not a gold standard to train on. The
+  30-frame campaign (≈ 10 min per frame, ~80 core-hours) is optional; run it if the
+  650 K frames need the same check.
+- **GPU training works on QB4.** Smoke test 10 (`direct_N74` and
+  `delta-gfn2_rmax7_N74`, 3 epochs): both write a `.model` that `install_models`
+  accepts (direct: 89 elements, r_max 6 Å; Δ: Ni/C/O, r_max 7 Å), about 42 s per job
+  on `gpu2`. Validation losses at epochs 0–2 match the laptop runs to 8 digits
+  (same data, foundation, E0s and settings), although LONI has mace-torch 0.3.15 and
+  the laptop 0.3.16. The fitted E0s for C and O are degenerate (every frame has C:O
+  1:1), which is harmless for these models but means the per-element offsets are not
+  meaningful on their own.
 - **Error bars and both cutoffs for every size.** `train.py --package DIR
   --seeds 1 2 3 --rmax 7` writes the 24 models of the learning curves
   (72 trainings) as GPU packages; the residual labels are computed here, so the

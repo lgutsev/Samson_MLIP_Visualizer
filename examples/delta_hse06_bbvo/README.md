@@ -1,5 +1,9 @@
 # HSE06 quality from MACE-MP-0: Δ-learning for Ba₂BiVO₆
 
+## Project priorities — PI direction, 2026-09-30
+
+Read [AGENTS.md](AGENTS.md) before planning or dispatching BBVO work. **Dopants primarily target improved CBM dispersion; phonon stabilization is secondary and optional.** Rank substitutions using DFT electronic properties (dispersion, mass tensors, band character and gap tradeoffs), not removal of imaginary modes. The MLIP supplies structures and paths, not electronic bands. Residual soft modes do not disqualify a useful dopant or block BBVO. Pursue stabilization only through accessible, modest-cost opportunities; defer it if those do not emerge. Keep model-accuracy gates separate from material-stability questions. This direction supersedes earlier stabilization-first wording below.
+
 Hybrid functionals fix a lot of what PBE(+U) gets wrong in oxides, but at 10–100×
 the cost, which rules out MD and large cells. The idea here is to keep an MLIP
 at run time and learn only the difference:
@@ -25,6 +29,8 @@ The example is split between the laptop and LONI:
 | `make_packages.py` | laptop | four VASP packages: `smoke/` (3 frames), `campaign/` (58), `doped_smoke/` (3), `doped_campaign/` (73) |
 | run the packages | **LONI** | PBE+U then HSE06 on every frame, same k-mesh, cutoff, and precision |
 | `collect_vasp_labels` | laptop | checks every run and writes `labeled.extxyz` |
+| `vasp_results.py` | laptop, 1 min | the first real labels (smoke tests 05, 08) against MACE-MP-0, and the stability ladder |
+| `stability_followup.py` | laptop | the next LONI job: PBE+U relaxation from the MACE-MP-0 distortion, then HSE06 |
 | `train.py`, `evaluate.py`, `figures.py` | laptop | the Δ-model, a direct HSE06 fine-tune for comparison, the tests, and the figure |
 
 `fake_labels.py` and `--dry-run` run the laptop half on synthetic labels, to
@@ -42,10 +48,50 @@ regenerates both.
 ## The baseline, checked
 
 At the PBE+U geometry of the primitive cell, MACE-MP-0 gives −66.084 eV per
-10-atom cell against VASP PBE+U's −66.071 eV (13 meV per cell). It relaxes the
+10-atom cell against the earlier VASP PBE+U run's −66.071 eV (13 meV per cell). It relaxes the
 cubic cell to 8.502 Å against PBE+U's 8.487 Å (+0.17 %). The residual forces at
-the PBE+U minimum are up to 0.19 eV/Å. For this material, MACE-MP-0 is a close
-stand-in for PBE+U.
+the PBE+U minimum are up to 0.19 eV/Å. Near the cubic structure, MACE-MP-0 is a
+close stand-in for PBE+U; away from it, it is not (next section).
+
+## The first real labels (LONI, 2026-09-29)
+
+Smoke tests 05 and 08 came back with PBE+U and HSE06 on six frames, all converged
+and accepted by `collect_vasp_labels`. `vasp_results.py` compares them with
+MACE-MP-0 (→ [`vasp_results.json`](vasp_results.json)):
+
+| Frame | Atoms | MACE-MP-0 − PBE+U (meV/atom) | Force RMSE vs PBE+U (eV/Å) | Stress RMSE (GPa) | HSE06 − PBE+U forces (eV/Å) |
+|---|---|---|---|---|---|
+| primitive cell, PBE+U geometry | 10 | −9.0 | 0.054 | 0.48 | 0.23 |
+| primitive cell, rattled | 10 | −12.0 | 0.123 | 0.58 | 0.27 |
+| 300 K MD frame | 40 | −26.9 | 0.202 | 0.13 | 0.47 |
+| cubic 40-atom cell | 40 | −8.1 | 0.052 | 0.50 | 0.23 |
+| ions relaxed by MACE-MP-0 | 40 | −21.8 | 0.151 | 0.22 | 0.47 |
+| fully relaxed by MACE-MP-0 | 40 | −24.1 | 0.096 | 0.22 | 0.52 |
+
+- **MACE-MP-0's error is not a constant.** It ranges from −8 meV/atom (cubic) to
+  −27 meV/atom (distorted or hot), so it favours distortions that PBE+U does not
+  (below). A Δ-model has to learn that part too, not only the functional.
+- **HSE06 − PBE+U is large where it matters**: 0.23–0.52 eV/Å in the forces, and
+  its energy varies by 47 meV/atom across the six frames. (The constant part, about
+  −1.8 eV/atom, is only a different energy zero.)
+- **The primitive-cell energies do not match the earlier runs** to the few meV
+  predicted: PBE+U −65.994 eV against −66.071 (+77 meV per cell), HSE06
+  −83.907 eV against −84.208 (+0.30 eV per cell). The earlier runs used PRECFOCK =
+  Fast (HSE06) and a 7×7×7 mesh with LREAL = Auto (PBE+U), but their INCARs and
+  POTCARs are not on this machine, so the cause is still open. It does not affect
+  anything inside this campaign (every frame has identical settings), but do not
+  mix absolute energies from the two setups. One cheap test on LONI would settle it:
+  the primitive cell again with PRECFOCK = Fast (3 h) and with 7×7×7 + LREAL = Auto
+  (2 min).
+- **Cost on one 64-core QB4 node**: PBE+U under 2 min per frame; HSE06 3.3 h on
+  the 10-atom cell and 9.1–14.8 h on 40 atoms. The pristine campaign (16 primitive,
+  42 40-atom frames) is therefore about 430–670 node-hours and the doped one (73
+  40-atom frames) about 660–1,080; the doped 40-atom cells are slower still
+  (07: 12.3, 21.8 and 28.1 h). `make_packages.py` now asks for 48 h per 40-atom
+  frame (the first doped smoke test's 12 h killed all three of its HSE06 runs, and
+  the rerun's 28.1 h came close to its 36 h) and the 72 h maximum for the 80-atom cells. PRECFOCK =
+  Fast would roughly halve the HSE06 cost, but must be chosen before the campaign,
+  not after.
 
 ## Dry run: the laptop half, on synthetic labels
 
@@ -104,7 +150,47 @@ Three MACE-MP-0 fine-tunes with stress on 40-atom cells do not fit in 8 GB of
 GPU memory side by side, so `train.py` trains the direct fine-tune's seeds one
 at a time.
 
-## Is cubic Ba₂BiVO₆ a minimum? (MACE-MP-0 says no)
+## Is cubic Ba₂BiVO₆ a minimum? Not along PBE+U's own relaxation path
+
+**Update (2026-09-30):**
+- The 0.05 Å rattle result is strong evidence *motivating* a stability test. It is not a proof of negative curvature at the cubic point, and "saddle point" needs the unstable-mode count that phonons give. The HSE06 numbers below are single points at MACE-MP-0 geometries, taken at a lattice where HSE06 has −5.3 GPa of stress. They show that lower-energy configurations exist, not a local instability at HSE06.
+- Package 18 (phonons + a cubic → R3 path scan) and package 19 (consistent polymorph shortlist) test this. See [Structural candidates](#structural-candidates-beyond-the-perovskite-packages-18-and-19).
+- **Answered at PBE+U (packages 18 and 19, 2026-09-30):** cubic Ba₂BiVO₆ is locally unstable (Γ T1u −3.2 THz, T1g −2.3 THz, converged in k and supercell) and falls without a barrier to R3 (−48.6 meV/f.u. at fixed cell). See [Results](#results-loni-2026-09-30). Per the project direction this is a recorded finding, not a blocker.
+
+![Energies of the cubic cell and its distortions at three levels](images/bbvo_stability_dft.png)
+
+LONI smoke test 08 answered the question below (`vasp_results.py`), in meV per
+formula unit relative to the cubic 40-atom cell, all at identical settings:
+
+| Structure | PBE+U | HSE06 | MACE-MP-0 |
+|---|---|---|---|
+| ions relaxed by MACE-MP-0, cubic cell | −7 | −219 | −144 |
+| PBE+U relaxation from a 0.05 Å rattle (no symmetry, no MACE-MP-0) | **−88** | — | −190 |
+| fully relaxed by MACE-MP-0 | **−448** | **−916** | −608 |
+
+- **Lower-energy distortions are established.** Both DFT levels put the MACE-MP-0 structure far
+  below cubic, and PBE+U's own symmetry-free relaxation also leaves the cubic cell:
+  it stops in a strained cell (9.07 × 8.34 × 8.44 Å, angles within 1.2° of 90°,
+  volume +4.4 %) 88 meV/f.u. down.
+- **HSE06 puts the same remote structure lower still**: −916 against −448 meV/f.u.
+  (single points at the PBE+U lattice). The cubic structure's band gap and effective
+  masses belong to a structure that is not the lowest found at either level.
+- **PBE+U's own relaxation found a shallower minimum** than MACE-MP-0's structure,
+  360 meV/f.u. higher. `stability_followup.py` writes the next LONI job: PBE+U
+  relaxation from the MACE-MP-0 structure (ions, then the cell twice), then HSE06
+  at the result, to get the distortion energy at a DFT geometry.
+- **MACE-MP-0 is right about the direction and wrong about the size.** At fixed
+  cell it overshoots PBE+U twentyfold (−144 against −7) and lands near HSE06;
+  with the cell free it is between the two.
+- **For the Δ-model**: the campaign frames are all cubic-derived (strained cells,
+  MD from cubic, dopants in cubic cells). They should also sample the distorted
+  structures, or the corrected model will be trained where the material is not.
+  That changes `make_frames.py` and the campaign size, so it is a decision to take
+  before the campaign runs.
+
+What follows is the question as it stood before LONI.
+
+### Before LONI: MACE-MP-0 says no
 
 Found while testing dilute dopants. Every relaxation above starts from the cubic
 (Fm-3m) cell, where every force is zero by symmetry, so it stays cubic. From a
@@ -130,10 +216,147 @@ a saddle point.
 - **a PBE+U relaxation** from the cubic cell rattled by 0.05 Å, with ISYM = 0
   (ions, then cell and ions). It does not depend on MACE-MP-0 at all.
 
-Until that comes back, everything below that relaxes a structure (the doping
-series and the dilute cells) describes the cubic structure, not necessarily the
-ground state. The Δ-learning pipeline itself does not depend on the answer, but
-if the distortion is real, the training frames must include it.
+The answer (above) is that the distortion is real, so the doping series and dilute cells below are cubic-derived screening results,
+not an established ground-state description. This does not disqualify their CBM-screening
+purpose or make harmonic stabilization a prerequisite. The Δ-learning pipeline itself does not
+depend on the answer, but the training frames must include the distortion.
+
+## Structural candidates beyond the perovskite (packages 18 and 19)
+
+**Candidate set.** Every Ba₂BiVO₆ entry in OQMD (13), Materials Project (2) and Alexandria (1) was compared with the PBE+U and MACE-MP-0 structures above (the BBVO audit repository, `13_STRUCTURAL_SHORTLIST.md`):
+- The perovskite polymorphs lie 0.13–0.26 eV/atom above the database hulls.
+- OQMD entry 1344250 is lower still: **Cmc2₁ Ba₂[BiO₂][VO₄], isolated VO₄ tetrahedra, not a perovskite**, 0.0155 eV/atom above the OQMD hull, OQMD gap 2.98 eV.
+- The 08 fixed-cell product symmetrises to R3 and matches OQMD entry 1286152.
+- The MACE-MP-0 VO₄ structure is a different arrangement.
+
+The structures and their provenance are in [`polymorphs/`](polymorphs/README.md).
+
+**Packages (written; nothing submitted):**
+
+| Package | Generator | Content |
+|---|---|---|
+| `loni_smoke_tests/batch04_2026-09-30/18_vasp_bbvo_phonons` | `phonon_package.py` | 57 PBE+U single points: finite-displacement phonons of the cubic cell (40 atoms: Γ, X; 4×4×4 check; 80 atoms: adds L; a × 0.99/0.98/1.01) and a 9-point linear path from cubic to the 08 R3 minimum |
+| `loni_smoke_tests/batch04_2026-09-30/19_vasp_bbvo_polymorphs` | `polymorph_package.py` | 14 frames: the shortlist (incl. Cmc2₁) and Nb/Ta x = 0.25/0.5/1 with an x = 0 control. Each frame runs relax (ISIF 3) → relax → static (the comparison energy) → 0.05 Å rattle + ISIF 2 relax, all at one consistent PBE+U setting (0.25 Å⁻¹) |
+
+Both use the dispatcher's `run_vasp.slurm` layout. Chained levels come from `loni_chain.py` (plain bash plus `rattle.awk`, no Python on the cluster). They are numbered 18 and 19 because 14–17 are routed to other packages. They sit in the desk's batch 04, with routes 18 and 19 in `dispatch/routes.json`.
+
+**Analysis.**
+- `phonon_analyze.py PACKAGE` checks every run (via `parse_vasp_run`, plus a minimum-image geometry match). It reports frequencies at Γ/X/L with irreps and species weights, the dispersion, the strain series and E(λ) on the path. `--scan DIR` writes a frozen-mode scan for the soft modes.
+- `polymorph_analyze.py PACKAGE` refuses unconverged relaxations. It reports energies per f.u. within each composition, the rattle drop, space group, V coordination, a spin-aware mesh gap, and the 10- vs 40-atom k-sampling cross-check.
+
+**MACE-MP-0 preview (not DFT).** `phonon_analyze.py --mace` on package 18:
+- Γ: a T1u polar mode at −5.8i THz and a T1g rotation at −2.8i THz;
+- X: unstable modes to −5.5i THz;
+- compression to 0.98 a weakens them;
+- the path falls from λ = 0.
+
+MACE-MP-0 overstates this distortion (−113 vs −48.6 meV/f.u. at the 08 geometry), so the preview only shows what to look for.
+
+### Results (LONI, 2026-09-30)
+
+Both packages ran on `vasp6/6.6.1-cpu` (each package on one version) and passed:
+57/57 single points of 18 and 14 × 4 levels of 19 converged (EDIFF reached; every
+relaxation stopped on EDIFFG, not NSW). Cost: 3.6 and 12.5 node-hours. Re-read here
+with `phonon_analyze.py` and `polymorph_analyze.py` on the returned packages
+(`D:\MLIP_Work_Folder\hpc_smoke_tests\batch04_2026-09-30`); the reports are also
+in the audit repository, `outputs/batch04_18_phonons` and `outputs/batch04_19_polymorphs`.
+
+**18: cubic Ba₂BiVO₆ is locally unstable at PBE+U.**
+
+| Set | Γ: unstable modes, lowest (THz) | X: unstable modes, lowest (THz) | L lowest (THz) |
+|---|---|---|---|
+| `sc40` (3×3×3) | 6: −3.24 (T1u ×3), −2.29 (T1g ×3) | 3: −2.97 | — |
+| `sc40k4` (4×4×4) | 6: −3.42 | 3: −3.23 | — |
+| `sc80` | 6: −3.42 | 3: −3.19 | **+1.74 (stable)** |
+| lattice × 0.99 | 6: −2.65 (T1g), −0.91 (T1u) | 3: −1.30 | — |
+| lattice × 0.98 | 3: −2.98 (T1g only) | 1: −1.68 | — |
+| lattice × 1.01 | 6: −4.84 (T1u), −1.88 (T1g) | 3: −4.57 | — |
+
+- **The modes are converged**: 4×4×4 k and the 80-atom cell agree within 0.2 THz.
+- **Character:** the polar T1u mode is mostly Bi and O (eigenvector weights O 0.81,
+  Bi 0.17, V 0.01, Ba 0.02), so Bi off-centring drives it more than V; T1g is a pure
+  O octahedral rotation. Compression weakens T1u and removes it at 0.98 a
+  (≈ 9 GPa, estimated) but deepens T1g; expansion does the opposite. Strain trades
+  one instability for the other rather than removing both.
+- **Path cubic → 08 R3** (9 points, E(λ) in meV/f.u.): 0, −0.2, −0.9, −3.7, −14.2,
+  −28.7, −42.2, **−48.6** (λ = 1), −40.6. It falls from λ = 0: no barrier, as the
+  imaginary modes require. Under the reading in the audit
+  (`13_STRUCTURAL_SHORTLIST.md` §5) this is the "locally unstable" case, not a
+  metastable cubic phase behind a barrier.
+
+**19: polymorph energies at one PBE+U level** (3_static e_fr, meV/f.u., same composition):
+
+| Structure | ΔE vs Cmc2₁ | vs cubic (10-atom) | V CN | Mesh gap (eV) | Rattle drop |
+|---|---|---|---|---|---|
+| OQMD Cmc2₁ (non-perovskite) | **0** | −1314 | 4 | 3.00 | 0 |
+| MACE-MP-0 VO₄ | +835 | −479 | 4 | 2.70 | 0 |
+| PBE+U P1 cell-relaxed (VO₅) | +1199 | −115 | 5 | 2.04 | 0 |
+| **R3 polar perovskite** (lowest perovskite) | +1234 | **−79** | 6 | 1.64 | 0 |
+| Alexandria C2/m tilt | +1298 | −16 | 6 | 1.19 | −27 |
+| cubic 40-atom (x = 0 control) | +1305 | −9 | 6 | 1.39 | −46 |
+| MP Pn‑3 (relaxed back to cubic) | +1305 | −8 | 6 | 1.39 | −51 |
+| cubic Fm‑3m, 10-atom | +1314 | 0 | 6 | 1.14 | −56 |
+
+- **OQMD's non-perovskite Cmc2₁ is the lowest by far**: 1.23 eV/f.u. below R3 and
+  1.31 below cubic, the order and size OQMD gave (−1.26). This is a 0 K
+  energy preference at one PBE+U level, not a hull energy and not a statement
+  about experimental accessibility (AGENTS.md).
+- **R3 is the lowest perovskite**, 79 meV/f.u. below cubic in the same 10-atom
+  cell, and survives the rattle (drop 0.1 meV/f.u.).
+- **Nb/Ta do not stabilize cubic.** The rattle drop grows with x: Nb −102, −139,
+  −165 and Ta −90, −117, −136 meV/f.u. at x = 0.25, 0.5, 1, against −46 for the
+  x = 0 control. That fits the Bi-dominated T1u mode, which a V-site
+  substitution does not remove. Stabilization was secondary; no further
+  stabilization screen is proposed.
+- **Error bar:** the 10- vs 40-atom cubic cross-check is −9 meV/f.u. (target 5;
+  the meshes differ), which matters only for comparisons across cell sizes, not
+  for the 79 meV or 1.3 eV differences.
+- Mesh gaps are PBE+U on the SCF mesh, for orientation only (the cubic cell gives
+  1.14 or 1.39 eV on its two meshes).
+
+**Does this change which structures the dopant screening uses?** Within the
+perovskite, yes; the host family, no.
+- **The host stays the perovskite.** Cmc2₁ (like the two other non-perovskites) has
+  isolated VO₄ tetrahedra and no B-site octahedron, so Nb/Ta-on-V there is a
+  different substitution problem. Per AGENTS.md, the lowest 0 K structure does not
+  replace the target phase's inputs automatically. Cmc2₁ goes to HSE06 as a
+  phase-specific comparison (its own gap and band edges), not as a dopant host.
+- **The geometry changes from cubic to relaxed.** Cubic is a saddle, and every
+  doped cubic cell relaxes 90–165 meV/f.u. lower after a rattle. CBM dispersion has
+  to be compared at consistently treated geometries, so the screening geometry is
+  the symmetry-free relaxed cell: R3 for the pristine host and package 19's
+  rattle-relaxed CONTCARs (x = 0, 0.25, 0.5, 1) for Nb/Ta, with x = 0.75 still to be
+  relaxed the same way. The cubic-cell numbers (`doping.py`, the ShakeNBreak screen,
+  the 07 HSE06 labels) remain valid as the labelled cubic reference and as Δ-learning
+  labels; they are not the screening geometry.
+- **Nothing is gated on phonons.** CBM dispersion stays the primary dopant
+  criterion; the remaining soft modes are a recorded finding.
+
+**Next: packages 29 and 30 (written 2026-10-06, approved; not submitted).** Both are in the
+dispatch desk (`loni_smoke_tests/29_vasp_bbvo_cbm_screen`, `30_vasp_bbvo_hybrid_soc`) with routes,
+and use 19's settings and geometries.
+
+| Package | Generator / analyzer | What | Cost |
+|---|---|---|---|
+| 29 CBM screen | `cbm_package.py` / `cbm_analyze.py` | PBE+U band edges, electron and hole mass tensors and edge character at the relaxed cells (R3; 19's rattle-relaxed x = 0, 0.25, 0.5, 1; x = 0.75 relaxed with 19's chain), the cubic cells as reference. 17 frames | ~20-25 nh |
+| 30 hybrid + SOC | `hybrid_soc_package.py` / `hybrid_soc_analyze.py` | HSE06 gaps of cubic, R3, Cmc2₁ and MACE VO₄; PBE+U vs PBE+U+SOC on all 14 of 19's statics (does SOC reorder them?); one R3 HSE06+SOC run to measure its cost. 19 frames | ~60-110 nh |
+
+How the band levels work (`band_kpoints.py`): each is one SCF run whose KPOINTS lists the SCF
+mesh at weight 1 plus zero-weight points: a dense grid and the Γ → TRIM lines (edges), Cartesian
+stencils at the eight TRIMs (±0.04 Å⁻¹ on 3 axes and 6 diagonals, ±0.08 on the axes: the band
+Hessian, hence m* = ħ²H⁻¹), or the TRIMs with LORBIT 10 (character). Time reversal makes every
+TRIM a stationary point even in P1, and folding leaves the curvature at an extremum unchanged, so
+no unfolding is needed for the masses; the analyzer flags an edge off the TRIMs or a degenerate
+band. The masses come from a least-squares quadratic fit with the cell VASP used, so a relaxed
+cell is handled too. Tested: synthetic bands with a known rotated tensor come back within 1-2 %
+through vasprun's 0.1 meV rounding; both job scripts ran end to end with a stub VASP (level
+chaining, per-level KPOINTS, WAVECAR hand-off to HSE06, `vasp_ncl` for SOC).
+
+`loni_chain.py` gained opt-in options for these (per-level KPOINTS, a `"last"` start, a per-level
+executable, WAVECAR hand-off, extra files copied back); 18 and 19 regenerate byte for byte.
+
+Open before 30 runs: `vasp_ncl` in `vasp6/6.6.1-cpu` is unverified (`module load vasp6/6.6.1-cpu
+&& command -v vasp_ncl`); without it the SOC levels stop with a message and the rest runs.
 
 ## V-site substitution: Nb and Ta
 
@@ -173,6 +396,13 @@ footing. `make_packages.py` turns them into:
   Ba₂BiNbO₆, Ba₂BiTaO₆, and Nb at x = 0.5, relaxed. This checks the Nb_pv and
   Ta_pv POTCARs, that PBE+U puts U on V only (the end members get none, as in the
   Materials Project), and the cost of the doped cells.
+  **Passed (LONI, rerun at 36 h, back 2026-09-30):** `collect_vasp_labels` accepts
+  3/3 (all six OUTCARs vasp.6.5.1; Nb_pv/Ta_pv/V_pv; U = 3.25 eV on V only, so the
+  "PBE+U" level of the two end members is plain PBE). HSE06 took 28.1 h (Ba₂BiNbO₆,
+  56 SCF steps), 21.8 h (Ba₂BiTaO₆) and 12.3 h (Nb x = 0.5) on 64 ranks, hence
+  48 h per 40-atom frame now. The PBE+U times are WAVECAR restarts (2–4 SCF steps),
+  not cost numbers. Results:
+  `D:\MLIP_Work_Folder\hpc_smoke_tests\batch01_2026-09-28\07_vasp_bbvo_doped`.
 - `doped_campaign/`: all 73 frames. Heavy, like the pristine campaign.
 
 Once `doped_campaign/labeled.extxyz` exists, `train.py` trains on both
@@ -278,11 +508,12 @@ the cluster (POTCARs are licensed, so none are copied):
 ### Smoke test (`D:\MLIP_Work_Folder\hpc_smoke_tests\05_vasp_bbvo`)
 
 Three frames: the PBE+U primitive cell itself, a rattled primitive cell, and
-one 40-atom MD frame. On the first, the numbers should land near the earlier
+one 40-atom MD frame. On the first, the numbers were expected near the earlier
 runs of this cell on the same 5×5×5 mesh: HSE06 −84.208 eV (that run used
 PRECFOCK = Fast) and PBE+U −66.071 eV (that run used a 7×7×7 mesh and
-LREAL = Auto, so a few meV apart). The 40-atom frame measures what the campaign
-will cost per frame.
+LREAL = Auto). They came out 0.30 eV and 77 meV higher, more than expected; see
+[The first real labels](#the-first-real-labels-loni-2026-09-29). The 40-atom
+frame took 9.1 h of HSE06 on one node.
 
 Fill in `<ACCOUNT>`, `<PARTITION>`, `<VASP_MODULE>`, `<VASP_COMMAND>` (e.g.
 `srun vasp_std`) and `<POTPAW_PBE_DIR>` in `run_vasp.slurm`, then `sbatch` it.
@@ -297,10 +528,30 @@ could not fit three 40-atom fine-tunes with stress at once. The residual labels
 are computed here first. The smoke test, `hpc_smoke_tests/11_train_bbvo_stress`
 (`--dry-run --smoke`), trains both for 3 epochs on the synthetic labels.
 
+It passed on `gpu2` (2026-09-30): both finish with the stress loss active
+(stress weight 1000 for the direct fine-tune, 10000 for the correction; 109 of 109
+configurations carry stress), about 42 s per job, 1.2–1.8 s per epoch after a 6 s
+first one; `install_models` accepts both and they return stress on a periodic
+frame. The model cards now keep the stress RMSE of the final error table. GPU
+memory was not logged, so whether three seeds fit one GPU is still open.
+
 ### Campaign
 
-All 58 frames. HSE06 on a 40-atom cell takes node-hours, so run the smoke test
-first and adjust nodes, KPAR, and wall time from its timing. After collecting,
+All 58 frames. The smoke tests settled the cost (HSE06 9.1–14.8 h per pristine
+40-atom frame on one node and up to 28.1 h on doped ones, so `make_packages.py`
+asks for 48 h), the VASP build (new
+packages run 6.6.1, bit-identical to 6.5.1 in smoke test 20; this campaign stays
+on 6.5.1, like the 05/07/08 labels it joins) and the labels (05's three frames
+accepted). Two decisions are still to take before it runs:
+
+- **Which structures it samples.** 08 showed that cubic Ba₂BiVO₆ is not the
+  lowest structure at either DFT level; the frames are all cubic-derived. 18 and
+  19 (see [Results](#results-loni-2026-09-30)) show that the perovskite falls to R3
+  without a barrier, so R3 and the rattle-relaxed doped cells belong in the frames;
+  whether Cmc2₁ does too depends on what the model is for.
+- **PRECFOCK.** Fast would roughly halve the HSE06 cost and is what the earlier
+  reference used; Normal is what 05/08 used. Mixing them within one label set is
+  not an option. After collecting,
 copy `campaign/labeled.extxyz` next to this example's data (the default
 `DELTA_DIR` is `D:\MLIP_Work_Folder\delta_hse06_bbvo`) and run `train.py` and
 `evaluate.py`.

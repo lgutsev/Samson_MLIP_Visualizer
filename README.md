@@ -680,6 +680,12 @@ Planned, roughly in priority order:
 - xTB: periodic systems (GFN-FF or tblite) and using xtb's own
   semi-numerical Hessian (`--hess`) instead of 6N subprocess calls.
 
+## Citation
+
+If this software contributes to published work, please cite the archived release.
+Citation metadata is in [`CITATION.cff`](CITATION.cff) (GitHub's "Cite this repository"
+button reads it); each GitHub release is archived on Zenodo with a DOI.
+
 ## License
 
 MIT
