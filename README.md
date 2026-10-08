@@ -1,5 +1,7 @@
 # SAMSON MLIP Visualizer
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23243373.svg)](https://doi.org/10.5281/zenodo.23243373)
+
 Run local [MACE](https://github.com/ACEsuit/mace) and
 [DeepMD-kit](https://github.com/deepmodeling/deepmd-kit) models on structures in
 **[SAMSON Connect](https://www.samson-connect.net/)** — the molecular modeling and
@@ -685,6 +687,9 @@ Planned, roughly in priority order:
 If this software contributes to published work, please cite the archived release.
 Citation metadata is in [`CITATION.cff`](CITATION.cff) (GitHub's "Cite this repository"
 button reads it); each GitHub release is archived on Zenodo with a DOI.
+
+- All versions (resolves to the latest): [10.5281/zenodo.23243373](https://doi.org/10.5281/zenodo.23243373)
+- v0.1.0: [10.5281/zenodo.23243374](https://doi.org/10.5281/zenodo.23243374)
 
 ## License
 
