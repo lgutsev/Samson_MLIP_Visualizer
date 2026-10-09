@@ -383,6 +383,18 @@ relaxation or rattle relaxation continues from its own CONTCAR) and `inplane_gua
 IOPTCELL did not hold a and b). In 30: 72 h, and NCORE 1 for R3's `c_hse06` (SET_INDPW_FULL). In 31:
 both options on the relax and rattle levels.
 
+**Next: packages 37 and 38 (batch 10, written 2026-10-09; PI-approved, not submitted).** Both come
+from `bbvo_analysis_review` (handoff of 2026-10-09). The biaxial c-scan stays on hold until they return.
+
+| Package | Generator / analyzer | What | Cost |
+|---|---|---|---|
+| 37 Ba₂ScVO₆ polymorphs | `sc_polymorph_package.py` / `polymorph_analyze.py` | Bi→Sc in 19's Cmc2₁ (20 atoms) and MACE VO₄ (40 atoms), against 31's BiSc1 perovskite run through the same 19 chain, plus `5_edges`. A VO₄ form more than ~50 meV/f.u. below the perovskite stops the Ba₂ScVO₆ hybrid gap | ≤ 5 nh (≈ 2-3 measured) |
+| 38 optics | `optics_package.py` / `optics_analyze.py` | PBE+U `LOPTICS` for cubic and R3 (30's geometries) at Γ 12³, plus R3 at 14³; α and 500 nm absorptance at gap + 0.1/0.2/0.5 eV, with and without the package-30 scissor (an estimate) | ≤ 6 nh (< 2) |
+
+`polymorph_analyze.py` also reports energies relative to a `reference` frame named in package.json.
+`optics_analyze.py` was checked on a synthetic ε injected into a real vasprun.xml: α matches the
+analytic value to 1e-5, and the current-current block is ignored.
+
 ## V-site substitution: Nb and Ta
 
 `doping.py` replaces V by Nb or Ta in the 40-atom cell. The four V sites there

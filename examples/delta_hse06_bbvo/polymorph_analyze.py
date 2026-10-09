@@ -14,7 +14,8 @@ rest instead of stopping):
 Reports energies per formula unit (10 atoms) relative to the lowest frame **of the same
 composition**, the rattle drop E(4_rattle) − E(3_static), space group (0.01 / 0.1 Å) and V/B-site
 coordination of the static geometry, volume per f.u., and the k-sampling cross-check between the
-10- and 40-atom cubic cells. Nothing here is a hull energy.
+10- and 40-atom cubic cells. A package whose package.json names a ``reference`` frame (37:
+Ba₂ScVO₆) also gets energies relative to it. Nothing here is a hull energy.
 """
 
 import argparse
@@ -121,6 +122,14 @@ for _comp, rs in groups.items():
     e0 = min(r["E_static_eV_per_fu"] for r in rs)
     for r in rs:
         r["dE_meV_per_fu_vs_lowest_same_composition"] = (r["E_static_eV_per_fu"] - e0) * 1000
+# a package may name its reference frame (37: the Ba2ScVO6 perovskite)
+ref = next((r for r in rows if r["name"] == meta.get("reference")), None)
+if meta.get("reference") and ref is None:
+    fail(f"reference frame {meta['reference']} has no usable 3_static")
+for r in rows if ref else ():
+    if Composition(r["formula"]).reduced_formula == Composition(ref["formula"]).reduced_formula:
+        r["dE_meV_per_fu_vs_reference"] = (r["E_static_eV_per_fu"]
+                                           - ref["E_static_eV_per_fu"]) * 1000
 kcheck = {r["name"]: r["E_static_eV_per_fu"] for r in rows
           if r["name"] in ("cubic_Fm-3m", "x0_cubic40")}
 report = {"rows": rows, "problems": problems,
@@ -140,6 +149,10 @@ for r in sorted(rows, key=lambda r: (Composition(r["formula"]).reduced_formula,
                  f"{r.get('rattle_drop_meV_per_fu', float('nan')):.1f} | "
                  f"{r['spg_0.01']} / {r['spg_0.1']} | {r['B_site_CN']} | "
                  f"{r['volume_per_fu_A3']:.1f} | {gap_s} |")
+if ref:
+    lines += ["", f"Relative to the reference {ref['name']} (meV/f.u.): "
+              + ", ".join(f"{r['name']} {r['dE_meV_per_fu_vs_reference']:+.1f}"
+                          for r in rows if "dE_meV_per_fu_vs_reference" in r)]
 lines += ["", "k-sampling cross-check (40- vs 10-atom cubic, same structure): "
           f"{report['kpoint_crosscheck_meV_per_fu']} meV/f.u.",
           "Problems: " + ("; ".join(problems) if problems else "none")]
