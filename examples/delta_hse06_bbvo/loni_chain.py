@@ -232,5 +232,6 @@ uses_ioptcell() { grep -qiE '^[[:space:]]*IOPTCELL' "inputs/$frame/INCAR.$1" 2>/
 
 
 def write_manifest(root, frames, meta):
+    # LF, as everything read on LONI (the desk converted 38's from CRLF)
     Path(root, "package.json").write_text(json.dumps({**meta, "frames": frames}, indent=1),
-                                          encoding="utf-8")
+                                          encoding="utf-8", newline="\n")
