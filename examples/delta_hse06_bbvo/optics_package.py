@@ -118,7 +118,7 @@ Check: `PYTHONPATH=../../src micromamba run -n defects python examples/delta_hse
 EDIFF reached, the dielectric function present in vasprun.xml; eps1, eps2 and alpha(E) 0-5 eV; PBE+U gap
 (fundamental and direct on the mesh); alpha at gap + 0.1, 0.2, 0.5 eV and the single-pass absorptance of a
 500 nm film, unshifted and with the scissor shift (labelled as an estimate); the 12 vs 14 mesh difference for R3.
-""", encoding="utf-8")  # noqa: E501
+""", encoding="utf-8", newline="\n")  # noqa: E501  (LF: read on LONI)
 if args.copy:
     shutil.copytree(args.out, args.copy)
 print(f"-> {args.out}" + (f" and {args.copy}" if args.copy else "") + f": {len(frames)} frames")
