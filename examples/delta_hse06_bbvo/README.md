@@ -358,6 +358,31 @@ executable, WAVECAR hand-off, extra files copied back); 18 and 19 regenerate byt
 Open before 30 runs: `vasp_ncl` in `vasp6/6.6.1-cpu` is unverified (`module load vasp6/6.6.1-cpu
 && command -v vasp_ncl`); without it the SOC levels stop with a message and the rest runs.
 
+**Results of 29, 30 and 31 (LONI, back 2026-10-07/08).** The numbers, the ranking, the
+device-phase decision and the strain-lever choice now live in the BBVO review project,
+`bbvo_analysis_review` (`07_DFT_AND_MLIP_AUDIT.md` §4, `10_CALCULATION_PLAN.md`,
+`13_STRUCTURAL_SHORTLIST.md`). They are not repeated here. Raw results and the analyzer outputs
+(`cbm_analyze.py`, `hybrid_soc_analyze.py`, run by the dispatch desk) are in
+`D:\MLIP_Work_Folder\hpc_smoke_tests`:
+
+| Package | Status | Results / analysis |
+|---|---|---|
+| 29 CBM screen | 17/17 | `29_vasp_bbvo_cbm_screen`, `29_vasp_bbvo_cbm_screen_analysis` |
+| 30 hybrid + SOC | 19/19 (frame 18 HSE06+SOC: 38.8 h) | `30_vasp_bbvo_hybrid_soc`, `30_vasp_bbvo_hybrid_soc_analysis` |
+| 31 levers | 15/17 | `batch09_2026-10-07\31_vasp_bbvo_levers`, `..._analysis` |
+
+31 frames 3-4 (biaxial) stopped after `1_relax`: VASP 6.6.1 applied `IOPTCELL = 0 0 0 0 0 0 0 0 1`
+inverted (a = b relaxed back to the cubic 8.49 Å, c held). They will be regenerated in
+`lever_package.py` once `bbvo_analysis_review` picks the route: a one-step mask test, or a
+c-scan at fixed a = b (ISIF 2).
+
+The desk's fixes to the smoke copies are now in the generators, and 29 and 30 regenerate byte
+for byte against what ran. In `loni_chain.py`: a tracked `logs/README.txt`; a per-level executable
+(`vasp_ncl`) found under `~/bin` is refused; and two new opt-in options, `resume` (a timed-out
+relaxation or rattle relaxation continues from its own CONTCAR) and `inplane_guard` (exit 4 if
+IOPTCELL did not hold a and b). In 30: 72 h, and NCORE 1 for R3's `c_hse06` (SET_INDPW_FULL). In 31:
+both options on the relax and rattle levels.
+
 ## V-site substitution: Nb and Ta
 
 `doping.py` replaces V by Nb or Ta in the 40-atom cell. The four V sites there

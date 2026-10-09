@@ -132,7 +132,12 @@ for name, kind in plan:
         inc["b_pbeu_mesh"] = pbeu(
             atoms, {**BASE, "ISYM": isym, "NBANDS": nb, "LWAVE": ".TRUE."}, title, "b_pbeu_mesh"
         )
-        inc["c_hse06"] = hse(atoms, {**BASE, "ISYM": isym, "NBANDS": nb}, title, "c_hse06")
+        # R3 (6x6x6) stopped in SET_INDPW_FULL (1108 plane waves allocated, 1109 required) at
+        # NCORE 4; NCORE 1 is VASP's fix that keeps ISYM and the mesh (desk, fce1cd7)
+        ncore = {"NCORE": 1} if name == "R3_polar" else {}
+        inc["c_hse06"] = hse(
+            atoms, {**BASE, "ISYM": isym, "NBANDS": nb, **ncore}, title, "c_hse06"
+        )
     elif kind == "soc":
         inc["d_pbeu"] = pbeu(
             atoms, {**BASE, "ISYM": 0, "EDIFF": "1E-7", "NBANDS": nb}, title, "d_pbeu"
@@ -171,7 +176,7 @@ write_script(
     len(frames),
     CHAIN,
     name="bbvo-hybrid-soc",
-    time="48:00:00",
+    time="72:00:00",  # workq maximum; frame 18 (HSE06+SOC) took 38.8 h (desk, eac54fe)
     throttle=8,
     exe=EXE,
     wavecar=WAVE,
@@ -220,8 +225,9 @@ it is missing; the non-SOC levels of every frame still run.
 
 Cost: PBE+U levels minutes to ~1 h; HSE06 10-atom ≈ 3-6 h, Cmc2₁ (20 atoms) ≈ 5-15 h, MACE VO₄
 (40 atoms, P1, 3×3×4) ≈ 15-30 h (the doped 40-atom cells took up to 28 h); SOC single points
-≈ 4-8× their PBE+U; HSE06+SOC on R3 not measured (that is the point of frame 18). 48 h per task,
-8 at once. Roughly 60-110 node-hours, most of it frames 2, 3 and 18.
+≈ 4-8× their PBE+U; HSE06+SOC on R3 took 38.8 h in the first run (frame 18). 72 h per task
+(workq maximum), 8 at once. Frame 1 `c_hse06` runs at NCORE 1 (SET_INDPW_FULL at NCORE 4).
+Roughly 60-110 node-hours, most of it frames 2, 3 and 18.
 
 Check: `PYTHONPATH=../../src micromamba run -n defects python \
 examples/delta_hse06_bbvo/hybrid_soc_analyze.py <this folder>`.

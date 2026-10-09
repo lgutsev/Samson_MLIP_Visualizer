@@ -21,7 +21,12 @@ Optional, per level (``write_script`` keywords; packages that do not use them ar
 - ``exe``: {level: executable} instead of ``vasp_std`` (``vasp_ncl`` for spin-orbit coupling);
 - ``wavecar``: levels that start from the previous level's WAVECAR (that WAVECAR is kept until
   they finish);
-- ``keep``: extra files copied back to outputs/ (e.g. EIGENVAL).
+- ``keep``: extra files copied back to outputs/ (e.g. EIGENVAL);
+- ``resume``: levels whose timed-out attempt continues from its own last CONTCAR in runs/
+  instead of the chain's start (relaxations; a rattle level is not re-rattled);
+- ``inplane_guard``: levels after which a frame whose INCAR.<level> sets IOPTCELL stops (exit 4)
+  if lattice rows 1-2 moved by more than 1e-4 Å from the input POSCAR (IOPTCELL is a VTST tag;
+  VASP 6.6.1 applied ``0 0 0 0 0 0 0 0 1`` inverted in package 31).
 
 A level without an INCAR.<level> in the frame is skipped (the next level chains from the last one
 that exists), and a level whose vasprun.xml is already complete is not rerun, so a resubmitted task
@@ -85,11 +90,12 @@ def write_frame(root, index, atoms, levels, spacing, mesh=None, title=""):
 
 
 def write_script(root, count, chain, *, name, time, throttle=None, cfg=LONI, exe=None,
-                 wavecar=(), keep=(), level_kpoints=False):
+                 wavecar=(), keep=(), level_kpoints=False, resume=(), inplane_guard=()):
     """run_vasp.slurm: array 0..count-1, the levels of ``chain`` (ordered dict) in order."""
     levels = list(chain)
     exe = exe or {}
     wavecar = set(wavecar)
+    resume, inplane_guard = set(resume), set(inplane_guard)
     # a level's WAVECAR is kept when the next level of the chain reads it
     feeds = {levels[i] for i in range(len(levels) - 1) if levels[i + 1] in wavecar}
     copied = " ".join(["vasprun.xml", "OUTCAR", "OSZICAR", "CONTCAR", "vasp.out", "POSCAR",
@@ -133,9 +139,18 @@ POTCARS="{cfg['potcars']}"
 : > "$work/POTCAR"
 for name in $(cat "inputs/$frame/POTCAR.names"); do cat "$POTCARS/$name/POTCAR" >> "$work/POTCAR"; done
 grep TITEL "$work/POTCAR" | awk '{{print $4}}' > "outputs/$frame/POTCAR.used"
-done_level() {{ [ -f "outputs/$frame/$1/vasprun.xml" ] && tail -n 3 "outputs/$frame/$1/vasprun.xml" | grep -q "</modeling>"; }}
-previous=
 """.splitlines()  # noqa: E501
+    if inplane_guard:
+        lines += r"""# Frames that fix a and b with IOPTCELL (biaxial strain): stop if VASP moved them anyway, i.e.
+# if this build ignores the (VTST) tag. Compares lattice rows 1-2 of the input and the CONTCAR.
+inplane_kept() {  # input POSCAR, CONTCAR
+  awk 'FNR==2{s=$1} FNR==3||FNR==4{for(i=1;i<=3;i++) v[FILENAME,FNR,i]=$i*s; f[FNR]=1}
+       END{for(r=3;r<=4;r++) for(i=1;i<=3;i++){d=v[ARGV[1],r,i]-v[ARGV[2],r,i]; if(d<0)d=-d; if(d>1e-4) bad=1}; exit bad}' "$1" "$2"
+}
+uses_ioptcell() { grep -qiE '^[[:space:]]*IOPTCELL' "inputs/$frame/INCAR.$1" 2>/dev/null; }""".splitlines()  # noqa: E501
+    lines += ['done_level() { [ -f "outputs/$frame/$1/vasprun.xml" ] && tail -n 3 '
+              '"outputs/$frame/$1/vasprun.xml" | grep -q "</modeling>"; }',
+              "previous="]
     for level in levels:
         how = chain[level]
         lines += [f"# --- {level} ---", f'if [ ! -f "inputs/$frame/INCAR.{level}" ]; then',
@@ -147,8 +162,12 @@ previous=
         if level_kpoints:
             lines += [f'  if [ -f "inputs/$frame/KPOINTS.{level}" ]; then '
                       f'cp "inputs/$frame/KPOINTS.{level}" "$work/{level}/KPOINTS"; fi']
+        # a resumed level continues a timed-out attempt from its own last geometry
+        own = (f'if [ -s "$work/{level}/CONTCAR" ]; then '
+               f'cp "$work/{level}/CONTCAR" "$work/{level}/POSCAR"')
         if how == "poscar":
-            lines += [f'  cp "inputs/$frame/POSCAR" "$work/{level}/POSCAR"']
+            start = f'cp "inputs/$frame/POSCAR" "$work/{level}/POSCAR"'
+            lines += [f"  {own}; else {start}; fi" if level in resume else f"  {start}"]
         elif how == "last":
             lines += ['  if [ -n "$previous" ]; then',
                       '    [ -s "outputs/$frame/$previous/CONTCAR" ] || '
@@ -160,11 +179,14 @@ previous=
             lines += [f'  [ -s {src} ] || '
                       f'{{ echo "{level}: no CONTCAR from $previous" >&2; exit 1; }}']
             if how == "contcar":
-                lines += [f'  cp {src} "$work/{level}/POSCAR"']
+                start = f'cp {src} "$work/{level}/POSCAR"'
+                lines += [f"  {own}; else {start}; fi" if level in resume else f"  {start}"]
             else:
                 _, sigma, seed = how
-                lines += [f'  awk -v sigma={sigma} -v seed={seed} -f rattle.awk {src} '
-                          f'> "$work/{level}/POSCAR"']
+                start = (f'awk -v sigma={sigma} -v seed={seed} -f rattle.awk {src} '
+                         f'> "$work/{level}/POSCAR"')
+                lines += ([f"  {own}", f"  else {start}; fi"] if level in resume
+                          else [f"  {start}"])
         if level in wavecar:
             lines += ['  if [ -n "$previous" ] && [ -s "$work/$previous/WAVECAR" ]; then '
                       f'cp "$work/$previous/WAVECAR" "$work/{level}/"; '
@@ -173,9 +195,14 @@ previous=
         run = cfg["run"]
         if level in exe:
             run = run.replace("vasp_std", exe[level])
+            # refuse a copy under ~/bin, as for vasp_std (desk, 8a59fab)
             lines += [f'  x=$(command -v {exe[level]} || true)',
-                      f'  [ -n "$x" ] || {{ echo "{level}: no {exe[level]} after module load '
-                      f'{cfg["module"]}" >&2; exit 2; }}']
+                      '  case "$x" in',
+                      f'    "") echo "{level}: no {exe[level]} after module load '
+                      f'{cfg["module"]}" >&2; exit 2 ;;',
+                      f'    "$HOME"/bin/*) echo "{level}: {exe[level]} resolves to $x, '
+                      'not the module; check PATH" >&2; exit 2 ;;',
+                      '  esac']
         lines += ['  wrapper_ok || { sleep 30; wrapper_ok || '
                   '{ echo "vasp_std wrapper broken before srun" >&2; exit 2; }; }',
                   f'  (cd "$work/{level}" && {run} > vasp.out 2>&1) || true',
@@ -189,10 +216,19 @@ previous=
         if level in wavecar:
             lines += [f'  rm -f "$work/{level}/WAVECAR"',
                       '  if [ -n "$previous" ]; then rm -f "$work/$previous/WAVECAR"; fi']
+        if level in inplane_guard:
+            lines += [f'  if uses_ioptcell {level} && ! inplane_kept "inputs/$frame/POSCAR" '
+                      f'"outputs/$frame/{level}/CONTCAR"; then',
+                      f'    echo "{level}: a or b changed although IOPTCELL fixes them: this VASP '
+                      'ignores IOPTCELL; strain lost, stopping" >&2; exit 4',
+                      "  fi"]
         lines += ["fi", f'if [ -f "inputs/$frame/INCAR.{level}" ]; then previous={level}; fi']
     Path(root, "run_vasp.slurm").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     Path(root, "rattle.awk").write_text(RATTLE_AWK.lstrip(), encoding="utf-8", newline="\n")
+    # tracked, so a plain sbatch from a fresh clone finds logs/ (Slurm does not create it)
     (Path(root) / "logs").mkdir(exist_ok=True)
+    Path(root, "logs", "README.txt").write_text(
+        "SLURM logs of run_vasp.slurm (Slurm does not create this folder).\n", newline="\n")
 
 
 def write_manifest(root, frames, meta):
