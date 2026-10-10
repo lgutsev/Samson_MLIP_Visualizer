@@ -442,6 +442,17 @@ Tests:
   B1 1.136 / 1.734 eV, CB1 Γ mass 1.67/1.67/1.86 mₑ, 38's scissored α, and 18's sc40 frequencies
   (exactly, through the relaxed-cell rebuild).
 
+**45, Sc-col (batch 10, written 2026-10-10; PI-approved, 8-15 nh):** `sc_columnar_package.py`
+compares rock-salt and columnar B-site ordering in Ba₂ScVO₆. Berger & Neaton (PRB 86, 165211,
+2012; LDA) put columnar about 80 meV/f.u. lower, and every Ba₂ScVO₆ cell so far is rock salt.
+- Frames: frame 0 is 37's ref_BiSc1; frames 1-5 are columnar (centrosymmetric, polar +c, −c, +a,
+  rattle). The start structures are bbvo_analysis_review's, used as given: sha256 checked; the
+  B-site ordering (0/6 vs 2/4 like/unlike neighbours) and the space groups were re-verified here.
+- Settings: 19's chain with ISIF 3, ISYM 0, NSW 300, then `3_static`, `4_rattle` and 31's
+  `5_edges`; 4×4×4. bbvo_analysis_review analyses it.
+- **PI submit/hold split (2026-10-10), enforced on the desk by `SUBMIT_TASKS`:** submit 41, 45 and
+  42 frame 1 (B3). Hold 42 frame 0, 43 and 44 until 41 and 45 are back.
+
 ## V-site substitution: Nb and Ta
 
 `doping.py` replaces V by Nb or Ta in the 40-atom cell. The four V sites there
