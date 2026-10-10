@@ -400,7 +400,26 @@ the desk's `optics_analyze.py` output are in
 `D:\MLIP_Work_Folder\hpc_smoke_tests\batch10_2026-10-09\38_vasp_bbvo_optics`; re-running it here gives
 the same table. R3 12³ → 14³ changes α by at most 3.5 % near the onset, so the mesh is converged.
 The interpretation (device section, phase-labelled) belongs to `bbvo_analysis_review` (item A3).
-NBANDS 112 is 3.1× the 36 occupied bands (NELECT 72 in the OUTCAR). 37 is still with the desk.
+NBANDS 112 is 3.1× the 36 occupied bands (NELECT 72 in the OUTCAR).
+
+**37 is back (LONI job 1082177, 2026-10-10):** 3/3 frames, every relax converged. Results are in
+`D:\MLIP_Work_Folder\hpc_smoke_tests\batch10_2026-10-09\37_vasp_bbvo_sc_polymorphs`.
+
+| Frame | vs `ref_BiSc1` (meV/f.u.) | Rattle drop | SG (0.01 / 0.1 Å) | V CN | Å³/f.u. | Gap (mesh) |
+|---|---|---|---|---|---|---|
+| ref_BiSc1 (perovskite) | 0 | ≈ 0 | Imm2 / Fm‑3m | 6 | 135.1 | 1.47 |
+| MACE_VO4_Sc | +0.6 | ≈ 0 | I4mm / Fm‑3m | 6 | 135.2 | 1.47 |
+| OQMD_Cmc21_Sc | +661.5 (+41.4 after the rattle) | −620.2 | Cmc2₁ | 4 | 182.5 | 3.08 |
+
+MACE VO₄ relaxed back into the perovskite, so it is not a separate polymorph. Cmc2₁‑Sc stays VO₄, but
+its fixed-cell rattle brings it to +41 meV/f.u., near the PI's 50 meV/f.u. line, in a cell 35 %
+larger per f.u. `ref_BiSc1` agrees with 31 frame 12 to 1.0 meV/f.u. (4×4×4 vs 3×3×3).
+The decision (A2) belongs to `bbvo_analysis_review`.
+
+**41 (batch 10, written 2026-10-10; PI-approved, not submitted):** `sc_cmc21_relax_package.py`
+re-relaxes the rattled Cmc2₁‑Sc with the cell free: ISIF 3 with 19's relax tags, NSW 300, then
+`3_static` and `4_rattle` with `ref_BiSc1`'s tags. `polymorph_analyze.py` takes the reference from
+37 (`reference_package` in package.json). This is 1-2 node-hours, inside 37's budget.
 
 ## V-site substitution: Nb and Ta
 
