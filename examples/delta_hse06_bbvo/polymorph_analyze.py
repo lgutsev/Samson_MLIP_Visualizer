@@ -122,8 +122,21 @@ for _comp, rs in groups.items():
     e0 = min(r["E_static_eV_per_fu"] for r in rs)
     for r in rs:
         r["dE_meV_per_fu_vs_lowest_same_composition"] = (r["E_static_eV_per_fu"] - e0) * 1000
-# a package may name its reference frame (37: the Ba2ScVO6 perovskite)
+# a package may name its reference frame (37: the Ba2ScVO6 perovskite), or take it from another
+# package next to it in the results clone (41: 37's ref_BiSc1)
 ref = next((r for r in rows if r["name"] == meta.get("reference")), None)
+if ref is None and meta.get("reference_package"):
+    other = a.package.parents[1] / meta["reference_package"]
+    om = json.loads((other / "package.json").read_text(encoding="utf-8"))
+    of = next((f for f in om["frames"] if f["name"] == meta["reference"]), None)
+    try:
+        if of is None:
+            raise OutputError(f"no frame {meta['reference']} in {other}")
+        st = parse_vasp_run(other / "outputs" / f"frame_{of['frame']:04d}" / "3_static")
+        ref = {"name": f"{meta['reference']} ({om['package']})", "formula": of["formula"],
+               "E_static_eV_per_fu": st["energy"] / (of["natoms"] / 10)}
+    except (OutputError, OSError) as ex:
+        fail(f"reference {meta['reference']} in {other}: {ex}")
 if meta.get("reference") and ref is None:
     fail(f"reference frame {meta['reference']} has no usable 3_static")
 for r in rows if ref else ():
