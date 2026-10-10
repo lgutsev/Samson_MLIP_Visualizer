@@ -162,7 +162,7 @@ V coordination, rattle drop, gap on the mesh. Cross-check `ref_BiSc1` against 31
 Decision (PI-approved): if either VO4 frame lies more than ~50 meV/f.u. below `ref_BiSc1`, Ba2ScVO6 is
 flagged as thermodynamically disfavoured in the same way as BBVO and its hybrid gap (B1) is not run;
 otherwise B1 is proposed to the PI. Not hull energies.
-""", encoding="utf-8")  # noqa: E501
+""", encoding="utf-8", newline="\n")  # noqa: E501  (LF: read on LONI)
 if args.copy:
     shutil.copytree(args.out, args.copy)
 print(f"-> {args.out}" + (f" and {args.copy}" if args.copy else "") + f": {len(frames)} frames")

@@ -395,6 +395,13 @@ from `bbvo_analysis_review` (handoff of 2026-10-09). The biaxial c-scan stays on
 `optics_analyze.py` was checked on a synthetic ε injected into a real vasprun.xml: α matches the
 analytic value to 1e-5, and the current-current block is ignored.
 
+**38 is back (LONI job 1082178, 2026-10-09):** 3/3 frames, EDIFF reached, 1-6 min each. Results and
+the desk's `optics_analyze.py` output are in
+`D:\MLIP_Work_Folder\hpc_smoke_tests\batch10_2026-10-09\38_vasp_bbvo_optics`; re-running it here gives
+the same table. R3 12³ → 14³ changes α by at most 3.5 % near the onset, so the mesh is converged.
+The interpretation (device section, phase-labelled) belongs to `bbvo_analysis_review` (item A3).
+NBANDS 112 is 3.1× the 36 occupied bands (NELECT 72 in the OUTCAR). 37 is still with the desk.
+
 ## V-site substitution: Nb and Ta
 
 `doping.py` replaces V by Nb or Ta in the 40-atom cell. The four V sites there
