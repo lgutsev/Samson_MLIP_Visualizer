@@ -13,7 +13,10 @@ Per level, ``chain[level]`` is one of:
 - ``"contcar"``: start from the previous level's CONTCAR;
 - ``"last"``: the previous level's CONTCAR if the frame ran an earlier level, else its POSCAR
   (frames that relax first and frames that do not can share the later levels);
-- ``("rattle", sigma, seed)``: the previous level's CONTCAR, rattled by ``sigma`` Å.
+- ``("rattle", sigma, seed)``: the previous level's CONTCAR, rattled by ``sigma`` Å;
+- ``("awk", script, extra)``: ``awk -f <script> <previous CONTCAR> inputs/frame_NNNN/<extra>``
+  writes the POSCAR (a package's own transform, e.g. a phonon supercell built on the cluster from
+  a cell relaxed earlier in the same frame); the script comes from ``write_script(scripts=...)``.
 
 Optional, per level (``write_script`` keywords; packages that do not use them are unchanged):
 - ``level_kpoints``: ``inputs/frame_NNNN/KPOINTS.<level>``, if present, replaces the frame's
@@ -90,7 +93,8 @@ def write_frame(root, index, atoms, levels, spacing, mesh=None, title=""):
 
 
 def write_script(root, count, chain, *, name, time, throttle=None, cfg=LONI, exe=None,
-                 wavecar=(), keep=(), level_kpoints=False, resume=(), inplane_guard=()):
+                 wavecar=(), keep=(), level_kpoints=False, resume=(), inplane_guard=(),
+                 scripts=None):
     """run_vasp.slurm: array 0..count-1, the levels of ``chain`` (ordered dict) in order."""
     levels = list(chain)
     exe = exe or {}
@@ -181,6 +185,10 @@ uses_ioptcell() { grep -qiE '^[[:space:]]*IOPTCELL' "inputs/$frame/INCAR.$1" 2>/
             if how == "contcar":
                 start = f'cp {src} "$work/{level}/POSCAR"'
                 lines += [f"  {own}; else {start}; fi" if level in resume else f"  {start}"]
+            elif how[0] == "awk":
+                _, script, extra = how
+                lines += [f'  awk -f {script} {src} "inputs/$frame/{extra}" '
+                          f'> "$work/{level}/POSCAR"']
             else:
                 _, sigma, seed = how
                 start = (f'awk -v sigma={sigma} -v seed={seed} -f rattle.awk {src} '
@@ -225,6 +233,8 @@ uses_ioptcell() { grep -qiE '^[[:space:]]*IOPTCELL' "inputs/$frame/INCAR.$1" 2>/
         lines += ["fi", f'if [ -f "inputs/$frame/INCAR.{level}" ]; then previous={level}; fi']
     Path(root, "run_vasp.slurm").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     Path(root, "rattle.awk").write_text(RATTLE_AWK.lstrip(), encoding="utf-8", newline="\n")
+    for fname, text in (scripts or {}).items():
+        Path(root, fname).write_text(text.lstrip(), encoding="utf-8", newline="\n")
     # tracked, so a plain sbatch from a fresh clone finds logs/ (Slurm does not create it)
     (Path(root) / "logs").mkdir(exist_ok=True)
     Path(root, "logs", "README.txt").write_text(

@@ -56,10 +56,11 @@ if args.mace:
     calc = mace_mp0()
 
 
-def frame_result(i):
-    """(atoms with forces, energy per atom, notes) of frame i, or SystemExit with the reason."""
+def frame_result(i, ran=False):
+    """(atoms with forces, energy per atom, notes) of frame i, or SystemExit with the reason.
+    ``ran``: the supercell was built on the cluster (44); compare with the POSCAR it ran."""
     folder = pkg / "outputs" / f"frame_{i:04d}" / "pbe_u"
-    inp = read(pkg / "inputs" / f"frame_{i:04d}" / "POSCAR", format="vasp")
+    inp = read((folder if ran else pkg / "inputs" / f"frame_{i:04d}") / "POSCAR", format="vasp")
     if calc is not None:
         inp.calc = calc
         return inp.get_forces(), inp.get_potential_energy(), inp
@@ -77,6 +78,40 @@ def frame_result(i):
     if np.linalg.norm(shift, axis=1).max() > 1e-3:
         sys.exit(f"frame {i}: geometry differs from its input")
     return run["forces"], run["energy"], inp
+
+
+def relaxed_phonopy(loaded, s, f0, f1):
+    """Phonopy on the relaxed primitive cell (every frame's ``unitcell_from`` CONTCAR, which must
+    agree), with the package's displacement dataset; its displaced supercells must equal the
+    POSCARs the frames ran."""
+    from phonopy import Phonopy
+    from phonopy.structure.atoms import PhonopyAtoms
+    cells = [read(pkg / "outputs" / f"frame_{i:04d}" / s["unitcell_from"] / "CONTCAR",
+                  format="vasp") for i in range(f0, f1 + 1)]
+    ref = cells[0]
+    for i, c in enumerate(cells):
+        d = c.get_scaled_positions() - ref.get_scaled_positions()
+        d -= np.round(d)
+        if (np.abs(c.cell[:] - ref.cell[:]).max() > 1e-4 or np.abs(d @ ref.cell[:]).max() > 1e-4
+                or c.get_chemical_symbols() != ref.get_chemical_symbols()):
+            sys.exit(f"frame {f0 + i}: {s['unitcell_from']} cell differs from frame {f0}'s")
+    if ref.get_chemical_symbols() != list(loaded.unitcell.symbols):
+        sys.exit("relaxed cell's species order differs from the phonopy unit cell")
+    ph = Phonopy(PhonopyAtoms(symbols=ref.get_chemical_symbols(), cell=ref.cell[:],
+                              scaled_positions=ref.get_scaled_positions()),
+                 supercell_matrix=loaded.supercell_matrix, primitive_matrix=np.eye(3))
+    ph.dataset = loaded.dataset
+    for i, sc in enumerate(ph.supercells_with_displacements):
+        got = read(pkg / "outputs" / f"frame_{f0 + i:04d}" / "pbe_u" / "POSCAR", format="vasp")
+        d = got.get_scaled_positions() - sc.scaled_positions
+        d -= np.round(d)
+        if (np.abs(got.cell[:] - sc.cell).max() > 1e-6 or np.abs(d @ sc.cell).max() > 1e-6
+                or got.get_chemical_symbols() != list(sc.symbols)):
+            sys.exit(f"frame {f0 + i}: the POSCAR it ran is not phonopy's displaced supercell "
+                     "of the relaxed cell")
+    print(f"relaxed cell from {s['unitcell_from']}: a1 = {np.linalg.norm(ref.cell[0]):.5f} A; "
+          f"{f1 - f0 + 1} run POSCARs match phonopy's displaced supercells")
+    return ph
 
 
 report = {"package": str(pkg),
@@ -99,9 +134,12 @@ for name, s in meta["sets"].items():
         continue
     ph = phonopy.load(pkg / s["phonopy_yaml"], produce_fc=False, log_level=0)
     f0, f1 = s["frames"]
+    ran = "unitcell_from" in s
+    if ran:  # 44: displacements fixed by symmetry, positions from the cell relaxed on the cluster
+        ph = relaxed_phonopy(ph, s, f0, f1)
     forces, drift = [], []
     for i in range(f0, f1 + 1):
-        f, _, _ = frame_result(i)
+        f, _, _ = frame_result(i, ran)
         drift.append(float(np.abs(f.sum(axis=0)).max()))
         forces.append(f)
     ph.forces = np.array(forces)
@@ -156,7 +194,8 @@ for name, s in meta["sets"].items():
 ax.axhline(0, color="0.5", lw=0.5)
 ax.set_ylabel("frequency (THz)")
 ax.set_title(("MACE-MP-0 PREVIEW (not DFT)" if args.mace else "PBE+U")
-             + ": cubic Ba$_2$BiVO$_6$; exact only at commensurate q", fontsize=8)
+             + f": {meta.get('title', 'cubic Ba$_2$BiVO$_6$')}; exact only at commensurate q",
+             fontsize=8)
 ax.legend(frameon=False, fontsize=7)
 fig.tight_layout()
 fig.savefig(out / "dispersion.png", dpi=150)

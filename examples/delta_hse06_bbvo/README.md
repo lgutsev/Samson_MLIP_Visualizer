@@ -421,6 +421,27 @@ re-relaxes the rattled Cmc2₁‑Sc with the cell free: ISIF 3 with 19's relax t
 `3_static` and `4_rattle` with `ref_BiSc1`'s tags. `polymorph_analyze.py` takes the reference from
 37 (`reference_package` in package.json). This is 1-2 node-hours, inside 37's budget.
 
+**42-44, the Ba₂ScVO₆ "Sc-B" set (batch 10, written 2026-10-10; PI-approved, ≤ 5 nh, run with 41):**
+`scb_package.py` writes all three from one start, 37's ref_BiSc1 symmetrized to Fm‑3m (0.1 Å) as a
+10-atom cell in package 18's basis.
+
+| Package | What | Analyzer |
+|---|---|---|
+| 42 electronic | frame 0: relax (ISIF 3, ISYM 2) → `3_static` (E vs ref_BiSc1) → 30's hybrid levels without SOC (B1); frame 1: 31 frame 12's cell, Γ mass stencil and Γ character with LORBIT 11 (B3: V d_xy/d_yz/d_xz weights of CB1-3) | `scb_analyze.py` |
+| 43 optics | relax → 38's LOPTICS level, Γ 12³ (B2); scissor taken from 42's B1 | `optics_analyze.py` |
+| 44 phonons | relax → 18's sc40 displacements, 8 frames (A2: Γ, X); 80 atoms (L) deferred for budget | `phonon_analyze.py` |
+
+The relaxed cell does not exist until LONI runs, so each frame that needs it relaxes it first
+(identical inputs, about a minute). In 44, `supercell.awk` (a new `("awk", script, file)` step in
+`loni_chain.py`) builds each displaced supercell from that CONTCAR and a per-frame template. The
+displacement pattern is fixed by Fm‑3m symmetry, so only the positions follow the relaxed cell.
+Tests:
+- the awk matches phonopy to 1e-13 Å on the start cell and on a changed one;
+- all three run scripts pass end to end with a stub VASP;
+- mock packages built from 30, 31, 37, 38 and 18's real outputs reproduce their known numbers:
+  B1 1.136 / 1.734 eV, CB1 Γ mass 1.67/1.67/1.86 mₑ, 38's scissored α, and 18's sc40 frequencies
+  (exactly, through the relaxed-cell rebuild).
+
 ## V-site substitution: Nb and Ta
 
 `doping.py` replaces V by Nb or Ta in the 40-atom cell. The four V sites there

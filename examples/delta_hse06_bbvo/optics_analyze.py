@@ -91,8 +91,23 @@ def main():
     out = a.out or a.package / "analysis"
     out.mkdir(parents=True, exist_ok=True)
     rows, problems, curves = [], [], {}
+    scissor_src = None
+    if meta.get("scissor_from"):  # 43: B1's HSE06 - PBE+U on the mesh, from package 42
+        s = meta["scissor_from"]
+        try:
+            other = a.package.parents[1] / s["package"] / "outputs" / f"frame_{s['frame']:04d}"
+            g = {}
+            for key in ("pbeu", "hse"):
+                parse_vasp_run(other / s[key])
+                g[key] = gaps(ET.parse(other / s[key] / "vasprun.xml").getroot())[0]
+            scissor_src = {"eV": g["hse"] - g["pbeu"], "from": f"{s['package']} frame "
+                           f"{s['frame']}: {s['hse']} {g['hse']:.3f} - {s['pbeu']} "
+                           f"{g['pbeu']:.3f} eV"}
+        except (OutputError, OSError, ET.ParseError) as ex:
+            problems.append(f"scissor from {s['package']}: {ex} (is it next to this package?)")
     for f in meta["frames"]:
-        folder = a.package / "outputs" / f"frame_{f['frame']:04d}" / "1_optics"
+        folder = (a.package / "outputs" / f"frame_{f['frame']:04d}"
+                  / meta.get("optics_level", "1_optics"))
         try:
             parse_vasp_run(folder)
             root = ET.parse(folder / "vasprun.xml").getroot()
@@ -104,6 +119,11 @@ def main():
         eps = eps6[:, :3].mean(axis=1)
         alpha = absorption(e, eps)
         d = f["scissor_eV"]
+        if d is None:
+            if scissor_src is None:
+                problems.append(f"{f['name']}: no scissor (scissor_from unavailable)")
+                continue
+            d = scissor_src["eV"]
         eps_s = shifted(e, eps, d)
         alpha_s = absorption(e, eps_s)
         curves[f["name"]] = (e, alpha)
@@ -136,8 +156,9 @@ def main():
             kconv[phase]["meshes"] = [rs[0]["kmesh"], rs[1]["kmesh"]]
             kconv[phase]["gap_change_eV"] = rs[1]["gap_pbeu_eV"] - rs[0]["gap_pbeu_eV"]
     report = {"rows": rows, "k_convergence_relative_alpha": kconv, "problems": problems,
+              "scissor_source": scissor_src["from"] if scissor_src else "package.json",
               "note": "independent-particle PBE+U; the scissor columns are an estimate "
-                      "(rigid shift by HSE06 - PBE+U from package 30), not hybrid optics"}
+                      "(rigid shift by HSE06 - PBE+U on the mesh), not hybrid optics"}
     (out / "optics_report.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     lines = ["| Frame | Name | Mesh | Gap / direct (eV) | α at +0.1/+0.2/+0.5 eV (cm⁻¹) | "
              "A(500 nm) at +0.1/+0.2/+0.5 | Scissor gap (eV) | α scissor (cm⁻¹) |",
@@ -155,7 +176,8 @@ def main():
                                                if k[f"+{x}"] is None else f"{k[f'+{x}']:+.1%}")
                                  for x in OFFSETS)
                      + f"; gap change {k['gap_change_eV']:+.3f} eV")
-    lines += ["", "Scissor columns: rigid shift by HSE06 - PBE+U (package 30); an estimate.",
+    lines += ["", "Scissor columns: rigid shift by HSE06 - PBE+U on the mesh ("
+              + (scissor_src["from"] if scissor_src else "package 30") + "); an estimate.",
               "Problems: " + ("; ".join(problems) if problems else "none")]
     (out / "optics_report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
