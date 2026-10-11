@@ -105,8 +105,14 @@ for f in meta["frames"]:
         el: sorted({len([n for n in s.get_neighbors(site, 2.4) if n.specie.symbol == "O"])
                     for site in s if site.specie.symbol == el})
         for el in ("V", "Nb", "Ta") if el in s.composition}
-    why = relax_ok(base / "4_rattle")
-    if why:
+    lat = s.lattice
+    row["cell_abc_A"] = [round(x, 4) for x in lat.abc]
+    row["c_over_a"] = round(lat.c / lat.a, 4)
+    has_rattle = (a.package / "inputs" / f"frame_{f['frame']:04d}" / "INCAR.4_rattle").exists()
+    why = relax_ok(base / "4_rattle") if has_rattle else None
+    if not has_rattle:
+        pass  # no rattle level in this frame by design (47's rock salt)
+    elif why:
         fail(f"{f['name']} 4_rattle: {why}")
     else:
         e4 = float(re.findall(r"free  energy\s+TOTEN\s+=\s+(-?\d+\.\d+)",

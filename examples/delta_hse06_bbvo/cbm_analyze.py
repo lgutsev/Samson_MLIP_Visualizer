@@ -47,11 +47,14 @@ def load(frame, level):
     problem = finished(folder)
     if problem:
         return None, problem
+    incar_text = (pkg / "inputs" / f"frame_{frame:04d}" / f"INCAR.{level}").read_text()
+    lorbit11 = any(line.split("=")[0].strip() == "LORBIT" and line.split("=")[1].strip() == "11"
+                   for line in incar_text.splitlines() if "=" in line)
     vr = Vasprun(
         str(folder / "vasprun.xml"),
         parse_dos=False,
         parse_potcar_file=False,
-        parse_projected_eigen=(level == "7_char"),
+        parse_projected_eigen=(level == "7_char" or lorbit11),
     )
     labels = json.loads(
         (pkg / "inputs" / f"frame_{frame:04d}" / f"KPOINTS.{level}.labels.json").read_text(
@@ -190,17 +193,62 @@ for f in meta["frames"]:
     symbols = [s.specie.symbol for s in vr.final_structure]
     lab7 = runs["7_char"]["labels"]
     char = {}
+    # LORBIT 10: s, p, d columns; LORBIT 11: s, py, pz, px, dxy, dyz, dz2, dxz, dx2
+    groups = ({"s": [0], "p": [1, 2, 3], "d": [4, 5, 6, 7, 8]} if proj.shape[-1] == 9
+              else {o: [i] for i, o in enumerate("spd"[: proj.shape[-1]])})
     for which, trim, band in (("cbm", row["cbm_trim"], cb), ("vbm", row["vbm_trim"], vb)):
         w = proj[lab7.index(trim), band]  # ions x orbitals
         tot = w.sum() or 1.0
         parts = {}
         for ion, s in enumerate(symbols):
-            for o, orb in enumerate("spd"[: w.shape[1]]):
-                parts[f"{s} {orb}"] = parts.get(f"{s} {orb}", 0.0) + float(w[ion, o]) / tot
+            for orb, cols in groups.items():
+                parts[f"{s} {orb}"] = (parts.get(f"{s} {orb}", 0.0)
+                                       + float(w[ion, cols].sum()) / tot)
         char[which] = {
             k: round(v, 3) for k, v in sorted(parts.items(), key=lambda t: -t[1]) if v >= 0.03
         }
     row["character"] = char
+    # 6_mass with LORBIT 11: CB1-3 at the CBM TRIM read per orbital and direction (sorted-band
+    # tensors mislead where the t2g bands lie within DEGENERATE_MEV and cross on the stencil)
+    run6 = runs["6_mass"]
+    if run6["vr"].projected_eigenvalues:
+        ((_, p6),) = run6["vr"].projected_eigenvalues.items()
+        if p6.shape[-1] == 9:
+            sym6 = [s.specie.symbol for s in run6["vr"].final_structure]
+            vions = [i for i, s in enumerate(sym6) if s == "V"]
+            d_orb = {"dxy": 4, "dyz": 5, "dz2": 6, "dxz": 7, "dx2": 8}
+            idx = {lab: i for i, lab in enumerate(run6["labels"])}
+            t = row["cbm_trim"]
+            c0 = idx[f"{t} c"]
+            h0 = bk.STEPS[0]
+
+            def dweights(i, band, p6=p6, vions=vions, d_orb=d_orb):
+                w = {o: float(p6[i, band, vions, j].sum()) for o, j in d_orb.items()}
+                vd = sum(w.values()) or 1.0
+                return {"V_d_share": round(vd / (float(p6[i, band].sum()) or 1.0), 3),
+                        **{o: round(v / vd, 3) for o, v in w.items()}}
+
+            orb = {"trim": t, "cb_splitting_meV": [
+                round(1000 * float(E6[c0, cb + n] - E6[c0, cb]), 2) for n in range(3)],
+                "bands": {}}
+            for n in range(3):
+                band = cb + n
+                pts = {lab: {"E_eV": round(float(E6[i, band]), 5), **dweights(i, band)}
+                       for lab, i in idx.items() if lab.startswith(f"{t} ")}
+                dirs = {}
+                for _, name in bk.directions():
+                    ip, im = idx[f"{t} +{name} h0"], idx[f"{t} -{name} h0"]
+                    curv = (E6[ip, band] + E6[im, band] - 2 * E6[c0, band]) / h0**2
+                    dom = {o: (dweights(ip, band)[o] + dweights(im, band)[o]) / 2 for o in d_orb}
+                    top = max(dom, key=dom.get)
+                    dirs[name] = {"mass_me": (round(float(bk.HBAR2_OVER_ME / curv), 3)
+                                              if curv > 0 else None),
+                                  "orbital": top, "orbital_weight": round(dom[top], 2)}
+                orb["bands"][f"CB{n + 1}"] = {"points": pts, "directional": dirs}
+            row["cbm_orbitals"] = orb
+            if min(orb["cb_splitting_meV"][1:]) < DEGENERATE_MEV:
+                row["flags"].append("CB1-3 within 5 meV at the CBM: read the per-orbital, "
+                                    "per-direction masses (cbm_orbitals), not the tensors")
     report.append(row)
 
 # relaxed vs cubic reference, per composition
@@ -251,6 +299,17 @@ for r in report:
         f"{fmt(e['conductivity_me'])} / {fmt(e['dos_me'])} | {pr} | "
         f"{fmt(h['conductivity_me'])} | {ch} | {'; '.join(r['flags']) or '—'} |"
     )
+for r in report:
+    o = r.get("cbm_orbitals")
+    if not o:
+        continue
+    lines += ["", f"Frame {r['frame']} {r['name']}: CB1-3 at {o['trim']} (splitting "
+              f"{o['cb_splitting_meV']} meV), directional mass (m_e) and dominant V d orbital",
+              "| Band | " + " | ".join(n for _, n in bk.directions()) + " |",
+              "|---|" + "---|" * len(bk.directions())]
+    for b, v in o["bands"].items():
+        lines.append(f"| {b} | " + " | ".join(
+            f"{fmt(d['mass_me'])} {d['orbital']}" for d in v["directional"].values()) + " |")
 md = "\n".join(lines) + "\n\nProblems: " + ("; ".join(problems) or "none") + "\n"
 (out / "cbm_report.md").write_text(md, encoding="utf-8")
 print(md)

@@ -453,6 +453,24 @@ compares rock-salt and columnar B-site ordering in Ba₂ScVO₆. Berger & Neaton
 - **PI submit/hold split (2026-10-10), enforced on the desk by `SUBMIT_TASKS`:** submit 41, 45 and
   42 frame 1 (B3). Hold 42 frame 0, 43 and 44 until 41 and 45 are back.
 
+**46-47 (batch 11, written 2026-10-11; PI-approved, about 3-6 nh):** 45 put polar columnar
+Ba₂ScVO₆ (P4mm, VO₅ pyramids) 131 meV/f.u. below rock salt, and 41 put Cmc2₁ at −11.
+`sc_polar_package.py` reduces 45 frame 2's cell to 10 atoms (spglib; P4mm, a = 5.721, c = 4.252 Å)
+and rotates it so the in-plane V–O bonds lie along x and y, making d_xy / d_yz / d_xz the pyramid's.
+
+| Package | What |
+|---|---|
+| 46 | PBE+U, 31's band levels on that cell; `6_mass` (all eight TRIMs) and `7_char` with LORBIT 11 |
+| 47 | r2SCAN, no U: rock salt, polar columnar and Cmc2₁ relaxed (ISIF 3, ISYM 0) |
+
+Analyzer changes:
+- `cbm_analyze.py` now reads LORBIT 11. At the CBM it reports CB1–3 per orbital and direction
+  (d weights, splitting, directional masses), because sorted-band tensors mislead for degenerate
+  t2g. Tested on 42 frame 1: light 0.68–0.70 mₑ, heavy 6.8–10 mₑ, one t2g orbital per direction.
+- `polymorph_analyze.py` adds cell lengths and c/a.
+
+42 frame 0, 43 and 44 stay held. They compute rock salt; retargeting them to P4mm waits for 47.
+
 ## V-site substitution: Nb and Ta
 
 `doping.py` replaces V by Nb or Ta in the 40-atom cell. The four V sites there
