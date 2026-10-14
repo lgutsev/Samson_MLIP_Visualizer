@@ -10,6 +10,11 @@ the first calculation pays for the import.
 Request: ``{"symbols", "positions" (Å), "method", "basis", "charge",
 "multiplicity", "threads", "memory_mb", "options"}``.
 Reply: ``{"energy" (Eh), "gradient" (Eh/bohr)}`` or ``{"error"}``.
+
+With ``"task": "matrices"`` (:mod:`.hamiltonian`) the reply is instead the AO
+``"overlap"`` and ``"shells"`` layout, plus (unless ``"overlap_only"``) the
+converged ``"hamiltonian"`` (Kohn-Sham/Fock matrix, Eh), ``"eigenvalues"``,
+``"n_occupied"``, and ``"energy"``.
 """
 
 import json
@@ -66,6 +71,9 @@ def main() -> None:
                 f"{int(request.get('charge', 0))} {multiplicity}\n{atoms}\n"
                 "units angstrom\nsymmetry c1\nno_reorient\nno_com\n"
             )
+            if request.get("task") == "matrices":
+                reply(_matrices(psi4, np, request, molecule))
+                continue
             gradient, wavefunction = psi4.gradient(
                 request["method"], molecule=molecule, return_wfn=True
             )
@@ -74,6 +82,33 @@ def main() -> None:
             reply({"error": f"{type(exc).__name__}: {exc}"})
         finally:
             psi4.core.clean()
+
+
+def _matrices(psi4, np, request, molecule):
+    """The AO overlap and (unless ``overlap_only``) the converged Kohn-Sham/Fock
+    matrix, both in Hartree units and Psi4's AO order, with the shell layout
+    (atom index and angular momentum of every shell) needed to reorder them."""
+    if request.get("overlap_only"):
+        wavefunction = None
+        basis = psi4.core.BasisSet.build(molecule, "ORBITAL", request["basis"])
+    else:
+        _, wavefunction = psi4.energy(request["method"], molecule=molecule, return_wfn=True)
+        basis = wavefunction.basisset()
+    if not basis.has_puream():
+        raise ValueError("Hamiltonian export needs a spherical (pure) basis set")
+    shells = [[basis.shell_to_center(i), basis.shell(i).am] for i in range(basis.nshell())]
+    overlap = np.asarray(psi4.core.MintsHelper(basis).ao_overlap())
+    answer = {"shells": shells, "overlap": overlap.tolist()}
+    if wavefunction is not None:
+        if wavefunction.nalpha() != wavefunction.nbeta():
+            raise ValueError("Hamiltonian export supports closed-shell (RHF/RKS) runs only")
+        answer.update(
+            energy=wavefunction.energy(),
+            hamiltonian=np.asarray(wavefunction.Fa()).tolist(),
+            eigenvalues=np.asarray(wavefunction.epsilon_a()).tolist(),
+            n_occupied=wavefunction.nalpha(),
+        )
+    return answer
 
 
 if __name__ == "__main__":
