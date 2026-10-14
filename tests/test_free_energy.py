@@ -7,6 +7,9 @@ from ase.calculators.calculator import Calculator, all_changes
 
 from samson_mlip_visualizer import free_energy as fe
 
+# np.trapezoid is NumPy >= 2.0; SAMSON's embedded Python pins numpy 1.24.
+trapezoid = getattr(np, "trapezoid", None) or np.trapz
+
 T = 300.0
 KT = fe.KB * T
 
@@ -50,7 +53,7 @@ def exact_free_energy(grid, k=2.0, r0=1.5):
         r1 = r2 + xi
         integrand = np.where(r1 > 0, r1**2 * r2**2 * np.exp(
             -(0.5 * k * (r1 - r0) ** 2 + 0.5 * k * (r2 - r0) ** 2) / KT), 0.0)
-        density.append(np.trapezoid(integrand, r2))
+        density.append(trapezoid(integrand, r2))
     return -KT * np.log(np.array(density))
 
 
@@ -166,4 +169,4 @@ def test_rate_helpers():
     # Eyring with ΔA‡ gives back the same rate.
     assert KT / fe.PLANCK * np.exp(-phenomenological / KT) == pytest.approx(rate, rel=1e-9)
     centers, density = fe.probability_density(np.random.default_rng(0).normal(size=5000), 40)
-    assert np.trapezoid(density, centers) == pytest.approx(1.0, abs=0.05)
+    assert trapezoid(density, centers) == pytest.approx(1.0, abs=0.05)
