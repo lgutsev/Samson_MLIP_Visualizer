@@ -295,6 +295,9 @@ ph = Phonopy(PhonopyAtoms(symbols=prim.get_chemical_symbols(), cell=prim.cell[:]
 ph.generate_displacements(distance=0.01, is_plusminus=True)
 (root / "phonopy").mkdir(parents=True)
 ph.save(root / "phonopy" / "sc40.yaml")
+# phonopy writes text-mode (CRLF on Windows); the desk flagged it (2026-10-15): keep LF
+yml = root / "phonopy" / "sc40.yaml"
+yml.write_bytes(yml.read_bytes().replace(b"\r\n", b"\n"))
 sup = ph.supercell
 Mrow = np.round(sup.cell @ np.linalg.inv(prim.cell[:])).astype(int)
 if not np.allclose(Mrow @ prim.cell[:], sup.cell, atol=1e-8) or not np.allclose(

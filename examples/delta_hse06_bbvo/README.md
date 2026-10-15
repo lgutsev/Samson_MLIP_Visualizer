@@ -471,6 +471,24 @@ Analyzer changes:
 
 42 frame 0, 43 and 44 stay held. They compute rock salt; retargeting them to P4mm waits for 47.
 
+**41, 42 (task 1), 45, 46 and 47 are back (LONI, 2026-10-10 to 10-12; taken in 2026-10-15).** All
+passed. Results are under `D:\MLIP_Work_Folder\hpc_smoke_tests\batch10_2026-10-09` and `batch11_2026-10-11`.
+The desk ran this repo's analyzers, and re-running them here gives the same numbers. The
+interpretation and the decisions belong to `bbvo_analysis_review`.
+
+| Package | Result |
+|---|---|
+| 41 | Cmc2₁‑Sc after a full cell relax: −11.1 meV/f.u. vs the rock-salt perovskite (+41 at fixed cell), V CN 4, 177.2 Å³/f.u. |
+| 42 task 1 | rock-salt CBM: three t2g bands within 1 meV at Γ, one orbital per direction (light ≈ 0.68 mₑ, heavy 7–10 mₑ); sorted-band masses mislead |
+| 45 | polar columnar (P4mm, V 0.31 Å off-centre, VO₅) −131 meV/f.u. vs rock salt from three starts; centrosymmetric columnar +214 and not a minimum |
+| 46 | polar columnar PBE+U gap 1.543 eV at Γ; CB1 d_xy 0.60 / 0.60 mₑ in-plane, 3.59 along c; d_xz/d_yz 514 meV higher. The reduced cell's first-step energy is 0.5 meV/f.u. from 45 |
+| 47 | r2SCAN: polar columnar lowest; rock salt +230.2, Cmc2₁ +490.9 meV/f.u.; rattle drops ≈ 0 |
+
+The desk made no changes to these packages; every one regenerates byte for byte. It flagged 44's
+`phonopy/sc40.yaml` as CRLF (phonopy writes text mode on Windows); `scb_package.py` now writes LF.
+Next, per routes 45 and 47: the held rock-salt set (42 frame 0, 43, 44) is to be regenerated for the
+P4mm structure, once bbvo_analysis_review and the PI confirm.
+
 ## V-site substitution: Nb and Ta
 
 `doping.py` replaces V by Nb or Ta in the 40-atom cell. The four V sites there
