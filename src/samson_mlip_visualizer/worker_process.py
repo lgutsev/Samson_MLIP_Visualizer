@@ -93,6 +93,10 @@ class WorkerCalculator(Calculator):
                 ready.get("error", f"The {self.label_name} worker did not start")
             )
         self.version = ready.get("version")
+        self._ready(ready)
+
+    def _ready(self, message: dict) -> None:
+        """For subclasses: what the worker said when it started."""
 
     def _read(self, process, replies) -> None:
         for line in process.stdout:

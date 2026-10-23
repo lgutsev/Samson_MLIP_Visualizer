@@ -48,15 +48,36 @@ def _build_parser() -> argparse.ArgumentParser:
         help="AIMNet2 network: registry name (aimnet2 = wB97M-D3) or a .pt file",
     )
     parser.add_argument(
+        "--uma-preset",
+        choices=["standard", "d4rev", "r2scan", "custom"],
+        default=None,
+        help="UMA model preset: standard (uma-s-1p2p1), d4rev (molecules, wB97M-D4rev), "
+        "r2scan (materials, r2SCAN+D3, nonmagnetic), custom (--uma-model). Default: "
+        "custom with --uma-model, else standard",
+    )
+    parser.add_argument(
         "--uma-model",
         default=None,
-        help="UMA checkpoint: a .pt file (e.g. uma-s-1p1.pt) or a fairchem name",
+        help="UMA checkpoint: a fairchem name (e.g. uma-s-1p2p1) or a .pt file",
     )
     parser.add_argument(
         "--uma-task",
-        choices=["omol", "omat", "oc20", "odac", "omc"],
-        default="omol",
-        help="UMA task head: omol for molecules and ions (takes --charge and --multiplicity)",
+        choices=["omol", "omat", "oc20", "odac", "omc", "oc25", "oc22"],
+        default=None,
+        help="UMA task head (default: the preset's; omol takes --charge and --multiplicity)",
+    )
+    parser.add_argument(
+        "--uma-dispersion",
+        choices=["none", "pbe-d3bj", "r2scan-d3bj"],
+        default=None,
+        help="D3(BJ) added to UMA (default: the preset's). pbe-d3bj only on omat/oc22; "
+        "never on tasks whose labels include dispersion",
+    )
+    parser.add_argument(
+        "--uma-inference",
+        choices=["nitro", "high-precision", "turbo"],
+        default="nitro",
+        help="UMA inference mode; turbo (removed in fairchem 2.24) means nitro",
     )
     parser.add_argument(
         "--xtb-method", choices=["gfn2", "gfn1", "gfnff"], default="gfn2", help="xTB method"
@@ -68,7 +89,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--psi4-method", default="pbe", help="Psi4 method, e.g. pbe, pbe0, b3lyp-d3bj, mp2"
     )
     parser.add_argument("--basis", default="def2-tzvp", help="Psi4 basis set")
-    parser.add_argument("--device", default="cpu", help="MACE device, e.g. cpu or cuda")
+    parser.add_argument("--device", default="cpu", help="MACE / UMA device: cpu or cuda")
     parser.add_argument("--dtype", default="float64", choices=["float64", "float32"])
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
@@ -448,6 +469,9 @@ def backend_settings(args, backend: str):
         multiplicity=args.multiplicity,
         solvent=args.solvent,
         task=args.uma_task if backend == "uma" else None,
+        preset=args.uma_preset if backend == "uma" else None,
+        dispersion=args.uma_dispersion if backend == "uma" else None,
+        inference=args.uma_inference if backend == "uma" else None,
     )
 
 
@@ -469,6 +493,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         options=settings,
     )
     atoms.calc = calculator
+    if hasattr(calculator, "on_message"):  # UMA: preset notes, then backend events
+        for message in calculator.messages:
+            print("Note:", message)
+        calculator.on_message = lambda text: print("UMA:", text)
 
     provenance = collect_provenance(
         backend=args.backend,
@@ -583,8 +611,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         if hint:
             print("Note:", hint)
 
+    run_metadata = getattr(calculator, "run_metadata", None)
+    if run_metadata is not None:  # what actually ran (UMA: effective inference mode)
+        details = run_metadata()
+        print("\n".join(f"{name:<26} {value}" for name, value in details.items()))
     if args.output is not None:
         atoms.info.update(provenance.as_dict())
+        if run_metadata is not None:
+            atoms.info.update({f"mlip_{k}": v for k, v in details.items()})
         write(args.output, atoms)
         print(f"Wrote {args.output}")
     if args.export_qm is not None:

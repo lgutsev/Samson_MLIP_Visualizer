@@ -103,12 +103,18 @@ def program_options(
     multiplicity: int = 1,
     solvent: str | None = None,
     task: str | None = None,
+    preset: str | None = None,
+    dispersion: str | None = None,
+    inference: str | None = None,
+    magnetic: bool | None = None,
 ) -> dict[str, Any] | None:
     """Options for an xTB, Psi4, AIMNet2, or UMA calculator (``None`` for other
     MLIPs), with defaults GFN2-xTB, PBE/def2-TZVP, and AIMNet2 ωB97M-D3 (for AIMNet2
-    and UMA, ``method`` is the model: a registry name or a .pt path; UMA has no
-    default checkpoint, and ``task`` is its task head, default ``omol``). Also what
-    provenance records as settings."""
+    and UMA, ``method`` is the model: a registry name or a .pt path). UMA takes a
+    ``preset`` (``standard`` uma-s-1p2p1 by default, ``d4rev``, ``r2scan``, or
+    ``custom`` for the checkpoint in ``method``), a ``task`` (default: the preset's),
+    a ``dispersion`` and an ``inference`` mode (``nitro`` or ``high-precision``); see
+    :mod:`.uma_config`. Also what provenance records as settings."""
     if backend == "xtb":
         return {
             "method": method or "gfn2",
@@ -126,8 +132,17 @@ def program_options(
     if backend == "aimnet2":
         return {"model": method or "aimnet2", "charge": charge, "multiplicity": multiplicity}
     if backend == "uma":
-        return {"model": method or None, "task": task or "omol", "charge": charge,
-                "multiplicity": multiplicity}
+        from .uma_config import PRESETS
+
+        if preset is None:  # older settings: a checkpoint means a custom one
+            preset = "custom" if method else "standard"
+        options = {"preset": preset, "model": method or None,
+                   "task": task or PRESETS.get(preset, PRESETS["standard"]).default_task,
+                   "dispersion": dispersion or None, "inference": inference or "nitro",
+                   "charge": charge, "multiplicity": multiplicity}
+        if magnetic is not None:
+            options["magnetic"] = magnetic
+        return options
     return None
 
 
@@ -166,7 +181,8 @@ def create_calculator(
     :class:`~.aimnet2_backend.AIMNet2Calculator` options (model, charge,
     multiplicity); for ``backend="uma"`` it is the Python of an environment with
     fairchem and ``options`` are :class:`~.uma_backend.UMACalculator` options
-    (model, task, charge, multiplicity). Device and dtype apply to MACE only.
+    (preset, model, task, dispersion, inference, charge, multiplicity; ``device``
+    is passed on). Device and dtype apply to MACE; device also to UMA.
 
     A MACE model whose card names a ``delta_baseline`` is a Δ-learning
     correction (:mod:`.delta`), not a potential: it is returned wrapped in its
@@ -223,8 +239,10 @@ def create_calculator(
                 "fairchem (`pip install fairchem-core` in an env of its own); the UMA "
                 "checkpoint (.pt) is the model option."
             )
+        # unlike AIMNet2, UMA takes the device: its worker's torch decides whether CUDA works
+        options = {"device": device, **dict(options or {})}
         try:
-            return UMACalculator(paths[0], **dict(options or {}))
+            return UMACalculator(paths[0], **options)
         except (TypeError, ValueError) as exc:
             raise CalculatorLoadError(f"Invalid UMA settings: {exc}") from exc
 

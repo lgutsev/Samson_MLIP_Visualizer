@@ -33,8 +33,11 @@ _REMEMBERED = (
     "xtb_multiplicity",
     "psi4_method",
     "psi4_basis",
+    "uma_preset",
     "uma_model",
     "uma_task",
+    "uma_dispersion",
+    "uma_inference",
     "bench_reference",
     "bench_points",
     "min_distance",
@@ -233,31 +236,73 @@ def _make_window():
             )
             self.psi4_basis = QtWidgets.QLineEdit("def2-tzvp")
             self.psi4_basis.setToolTip("Psi4 basis set, e.g. def2-svp, def2-tzvp, cc-pvtz.")
+            from .uma_config import DISPERSIONS, INFERENCE_MODES, PRESETS, TASKS
+
+            self.uma_preset = QtWidgets.QComboBox()
+            self.uma_preset.addItems(list(PRESETS))
+            for index, preset in enumerate(PRESETS.values()):
+                self.uma_preset.setItemData(
+                    index, preset.label, QtCore.Qt.ItemDataRole.ToolTipRole
+                )
+            self.uma_preset.setToolTip(
+                "standard: uma-s-1p2p1, any task. d4rev: molecules at ωB97M-D4rev (omol, "
+                "dispersion included). r2scan: materials at r²SCAN (omat) + D3(BJ), NOT "
+                "spin-polarized. custom: the checkpoint in the field on the right."
+            )
             self.uma_model = QtWidgets.QLineEdit()
-            self.uma_model.setPlaceholderText("uma-s-1p1.pt, or a fairchem name")
+            self.uma_model.setPlaceholderText("preset's checkpoint (or a .pt / fairchem name)")
             self.uma_model.setToolTip(
-                "UMA checkpoint: the path of a downloaded .pt (facebook/UMA on Hugging Face), "
-                "or a fairchem name such as uma-s-1p1, downloaded to fairchem's cache."
+                "Optional: a local .pt of the preset's checkpoint, or, for the custom preset, "
+                "any UMA checkpoint (.pt path or fairchem name such as uma-s-1p1). Empty: the "
+                "preset's checkpoint from the Hugging Face cache."
             )
             self.uma_task = QtWidgets.QComboBox()
-            self.uma_task.addItems(["omol", "omat", "oc20", "odac", "omc"])
+            self.uma_task.addItems(list(TASKS))
             self.uma_task.setToolTip(
-                "UMA task head: omol for molecules and ions (uses the charge and multiplicity), "
-                "omat for inorganic materials, oc20 catalysis, odac MOFs, omc molecular crystals."
+                "UMA task head: omol molecules and ions (uses the charge and multiplicity), "
+                "omat inorganic materials, oc20/oc25 catalysis, oc22 oxides, odac MOFs, omc "
+                "molecular crystals."
             )
+            self.uma_dispersion = QtWidgets.QComboBox()
+            self.uma_dispersion.addItems(list(DISPERSIONS))
+            self.uma_dispersion.setToolTip(
+                "D3(BJ) from fairchem's DFTD3Calculator (15 Å cutoff). pbe-d3bj only with a "
+                "PBE task (omat, oc22); never with omol, omc, odac, oc25 or d4rev, whose labels "
+                "include dispersion. r2scan-d3bj for the r2scan preset."
+            )
+            self.uma_inference = QtWidgets.QComboBox()
+            self.uma_inference.addItems(list(INFERENCE_MODES))
+            self.uma_inference.setToolTip(
+                "nitro: fairchem's default, UMA Nitro kernels on Ampere/Hopper/Blackwell GPUs "
+                "(reduced precision, TF32); other cases fall back and the log says to what. "
+                "high-precision: FP32 without TF32."
+            )
+            self.uma_note = QtWidgets.QLabel()
+            self.uma_note.setWordWrap(True)
+            self.uma_preset.currentTextChanged.connect(self._uma_preset_changed)
+            uma_row = QtWidgets.QHBoxLayout()
+            uma_row.addWidget(self.uma_preset)
+            uma_row.addWidget(self.uma_model, 1)
+            uma_options = QtWidgets.QHBoxLayout()
+            uma_options.addWidget(self.uma_task)
+            uma_options.addWidget(self.uma_dispersion)
+            uma_options.addWidget(self.uma_inference)
             self._xtb_widgets = (self.xtb_method, self.xtb_solvent)
             self._psi4_widgets = (self.psi4_method, self.psi4_basis)
-            self._uma_widgets = (self.uma_model, self.uma_task)
+            self._uma_widgets = (self.uma_preset, self.uma_model, self.uma_task,
+                                 self.uma_dispersion, self.uma_inference, self.uma_note)
             self._charge_widgets = (self.xtb_charge, self.xtb_multiplicity)
 
             settings = grid(
                 [
                     [("Backend", self.backend)],
                     [("Model file(s)", model_row)],
-                    [("MACE device", self.device), ("MACE dtype", self.dtype)],
+                    [("Device", self.device), ("MACE dtype", self.dtype)],
                     [("xTB / solvent", xtb_row), ("Charge, mult.", charge_row)],
                     [("Psi4 method", self.psi4_method), ("Basis", self.psi4_basis)],
-                    [("UMA checkpoint", self.uma_model), ("UMA task", self.uma_task)],
+                    [("UMA preset", uma_row)],
+                    [("UMA task / D3 / mode", uma_options)],
+                    [("", self.uma_note)],
                     [
                         ("Min. atom distance", self.min_distance),
                         ("Max committee σ", self.max_force_std),
@@ -362,6 +407,8 @@ def _make_window():
             self.model_path.setText(_default_model_path())
             self._restore_settings()
             self._remember_settings()
+            self._uma_preset_changed(self.uma_preset.currentText())
+            self._backend_changed(self.backend.currentText())
             self.tabs.currentChanged.connect(self._fit_tabs)
             self._fit_tabs(self.tabs.currentIndex())
 
@@ -696,7 +743,7 @@ def _make_window():
             from .calculators import PROGRAMS, find_program, is_program
 
             backend = text.lower()
-            self.device.setEnabled(backend == "mace")
+            self.device.setEnabled(backend in ("mace", "uma"))
             self.dtype.setEnabled(backend == "mace")
             for widget in self._xtb_widgets:
                 widget.setEnabled(backend == "xtb")
@@ -704,6 +751,8 @@ def _make_window():
                 widget.setEnabled(backend == "psi4")
             for widget in self._uma_widgets:
                 widget.setEnabled(backend == "uma")
+            if backend == "uma":
+                self._uma_preset_changed(self.uma_preset.currentText())
             for widget in self._charge_widgets:
                 widget.setEnabled(backend in PROGRAMS)
             # For xTB, Psi4, AIMNet2, and UMA the model field holds the program; swap it with
@@ -727,6 +776,7 @@ def _make_window():
                 "aimnet2": None,  # the default network, ωB97M-D3
                 "uma": self.uma_model.text().strip() or None,
             }
+            uma = backend == "uma"
             return program_options(
                 backend,
                 method=methods.get(backend),
@@ -734,8 +784,30 @@ def _make_window():
                 charge=self.xtb_charge.value(),
                 multiplicity=self.xtb_multiplicity.value(),
                 solvent=self.xtb_solvent.text().strip() or None,
-                task=self.uma_task.currentText() if backend == "uma" else None,
+                task=self.uma_task.currentText() if uma else None,
+                preset=self.uma_preset.currentText() if uma else None,
+                dispersion=self.uma_dispersion.currentText() if uma else None,
+                inference=self.uma_inference.currentText() if uma else None,
             )
+
+        def _uma_preset_changed(self, name):
+            """Single-task presets fix the task; each preset has its own dispersion."""
+            from .uma_config import PRESETS
+
+            preset = PRESETS.get(name)
+            if preset is None:
+                return
+            if len(preset.tasks) == 1 or self.uma_task.currentText() not in preset.tasks:
+                self.uma_task.setCurrentText(preset.default_task)
+            self.uma_task.setEnabled(len(preset.tasks) > 1)
+            if self.uma_dispersion.currentText() not in preset.dispersions:
+                self.uma_dispersion.setCurrentText(preset.default_dispersion)
+            note = f"{preset.label}: {preset.level_of_theory}."
+            if not preset.spin_polarized:
+                note += " \u26a0 " + preset.notes[0]
+            elif preset.dispersion_in_labels:
+                note += " Dispersion is in the labels: no D3 is added."
+            self.uma_note.setText(note)
 
         def _ensemble_changed(self, text):
             self.temperature.setEnabled(text != "NVE")
@@ -885,6 +957,10 @@ def _make_window():
             calculator = create_calculator(
                 backend, model_files, device=device, dtype=dtype, options=options
             )
+            if hasattr(calculator, "on_message"):  # UMA: preset notes, backend events
+                for note in calculator.config.notes:
+                    self._log("UMA note: " + note)
+                calculator.on_message = lambda text: self._log("UMA: " + text)
             first_model = model_files if isinstance(model_files, str) else model_files[0]
             try:
                 provenance = collect_provenance(

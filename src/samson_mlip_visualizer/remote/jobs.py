@@ -203,6 +203,10 @@ class JobManager:
             multiplicity=_get(params, "multiplicity", int, 1),
             solvent=_get(params, "solvent", str, None),
             task=_get(params, "uma_task", str, None) if backend == "uma" else None,
+            preset=_get(params, "uma_preset", str, None) if backend == "uma" else None,
+            dispersion=_get(params, "uma_dispersion", str, None) if backend == "uma" else None,
+            inference=_get(params, "uma_inference", str, None) if backend == "uma" else None,
+            magnetic=_get(params, "uma_magnetic", bool, None) if backend == "uma" else None,
         )
         key = (backend, tuple(paths), device, dtype, tuple(sorted((options or {}).items())))
         if key not in self._calculators:
@@ -225,6 +229,9 @@ class JobManager:
             if job.stop_requested:
                 raise _Stopped
             calculator, provenance = self._calculator(job.params)
+            if hasattr(calculator, "on_message"):  # UMA: notes and backend fallbacks
+                job.log.extend(f"Note: {note}" for note in calculator.config.notes)
+                calculator.on_message = job.log.append
             which = _get(job.params, "models", str, "auto")
             models = None
             if job.kind == "qst":
@@ -282,6 +289,9 @@ class JobManager:
                     result.update(publish())
                 except Exception as exc:  # noqa: BLE001
                     result.setdefault("publish_errors", []).append(f"{type(exc).__name__}: {exc}")
+            if hasattr(calculator, "run_metadata"):  # what actually ran
+                provenance = {**provenance, **{f"mlip_{k}": v for k, v
+                                               in calculator.run_metadata().items()}}
             job.result = {**result, "provenance": provenance}
             job.state = "stopped" if result.get("stopped") else "finished"
         except _Stopped:

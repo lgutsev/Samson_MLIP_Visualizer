@@ -109,7 +109,9 @@ _JOB_KEYS = {
     "xtb": {"method": "xtb_method"},
     "psi4": {"method": "psi4_method"},
     "aimnet2": {"model": "aimnet_model"},
-    "uma": {"model": "uma_model", "task": "uma_task"},
+    "uma": {"model": "uma_model", "task": "uma_task", "preset": "uma_preset",
+            "dispersion": "uma_dispersion", "inference": "uma_inference",
+            "magnetic": "uma_magnetic"},
 }
 
 
