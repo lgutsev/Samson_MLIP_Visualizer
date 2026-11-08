@@ -1,0 +1,8 @@
+6
+Properties=species:S:1:pos:R:3 formula=Fe2H2O2 charge=0 multiplicity=7 name=fe2h2o2_m7_guess reaction="O-H -> Fe-H (H from a bridging OH to Fe)" source="IDPP midpoint of the two W2 minima (stand-in TS frame)" pbc="F F F"
+Fe      -1.05853447      -0.67092021      -0.30661022
+Fe       0.70263558       0.46524112       0.24950852
+O       -1.10605914       1.07566927      -0.53205342
+O        0.52101189      -1.18986864       0.30979553
+H        1.97955471       1.16177895       0.92205440
+H        0.28266443       2.29063450      -0.20499881

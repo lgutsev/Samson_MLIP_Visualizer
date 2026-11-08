@@ -1,0 +1,8 @@
+6
+Properties=species:S:1:pos:R:3 formula=Fe2H2O2 charge=0 multiplicity=7 name=fe2h2o2_m7_reactant reaction="O-H -> Fe-H (H from a bridging OH to Fe)" source="W2 dataset_spin_v0 key frame, UBPW91 minimum" record_id=94ba59a4c2a16976d6fe-ladder-m9-m5-s01__frame000033 REF_energy=-72908.460680261 pbc="F F F"
+Fe      -0.87172800      -0.41924700      -0.29212700
+Fe       0.95381700       0.57687900       0.30960100
+O       -0.57604500       1.44634000      -0.72551100
+O        0.57975100      -1.12895900       0.56564400
+H        2.37960700       0.51000300       0.94149400
+H       -1.14412900       2.14751900      -0.36140500

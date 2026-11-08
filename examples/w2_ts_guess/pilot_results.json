@@ -1,0 +1,171 @@
+{
+ "model": "D:\\MLIP_Work_Folder\\fe_spin_ladder\\fe2_spin\\seed1\\fe2_spin_seed1.model",
+ "cases": {
+  "fe2h2_m9": {
+   "reaction": "terminal Fe-H -> Fe-H-Fe bridge",
+   "frame": {
+    "ok": true,
+    "saddle": true,
+    "method": "prfo",
+    "converged": true,
+    "steps": 27,
+    "n_imaginary": 1,
+    "imaginary_cm": [
+     -395.4
+    ],
+    "barrier_forward_ev": 0.347,
+    "barrier_reverse_ev": 0.341,
+    "rmsd_from_start": 0.443,
+    "endpoint_rmsd": {},
+    "irc_connects_endpoints": null,
+    "notes": [
+     "template molecule spec is 0 7; the frame's 0 9 is written"
+    ],
+    "attempts": []
+   },
+   "frame+ends": {
+    "ok": false,
+    "saddle": true,
+    "method": "prfo",
+    "converged": true,
+    "steps": 27,
+    "n_imaginary": 1,
+    "imaginary_cm": [
+     -395.4
+    ],
+    "barrier_forward_ev": 0.261,
+    "barrier_reverse_ev": 0.261,
+    "rmsd_from_start": 0.443,
+    "endpoint_rmsd": {
+     "reactant": 0.2812,
+     "product": 0.7747
+    },
+    "irc_connects_endpoints": false,
+    "notes": [
+     "template molecule spec is 0 7; the frame's 0 9 is written",
+     "the MLIP IRC does not reach the given endpoints (RMSD 0.44 / 0.69 \u00c5): another saddle",
+     "QST3 did not pass either (2 imaginary modes, IRC connects: False); kept P-RFO"
+    ],
+    "attempts": [
+     {
+      "method": "qst3",
+      "n_imaginary": 2,
+      "imaginary_cm": [
+       -543.8,
+       -146.4
+      ],
+      "irc_connects_endpoints": false
+     }
+    ]
+   },
+   "W2_minima_at_UBPW91_geometries": {
+    "dE_product_minus_reactant_UBPW91_eV": -0.38,
+    "dE_product_minus_reactant_MLIP_eV": -0.009
+   }
+  },
+  "fe2h2o2_m7": {
+   "reaction": "O-H -> Fe-H (H from a bridging OH to Fe)",
+   "frame": {
+    "ok": true,
+    "saddle": true,
+    "method": "prfo",
+    "converged": true,
+    "steps": 113,
+    "n_imaginary": 1,
+    "imaginary_cm": [
+     -792.8
+    ],
+    "barrier_forward_ev": 0.857,
+    "barrier_reverse_ev": 0.061,
+    "rmsd_from_start": 0.373,
+    "endpoint_rmsd": {},
+    "irc_connects_endpoints": null,
+    "notes": [],
+    "attempts": []
+   },
+   "frame+ends": {
+    "ok": false,
+    "saddle": true,
+    "method": "prfo",
+    "converged": true,
+    "steps": 113,
+    "n_imaginary": 1,
+    "imaginary_cm": [
+     -792.8
+    ],
+    "barrier_forward_ev": 0.784,
+    "barrier_reverse_ev": 0.556,
+    "rmsd_from_start": 0.373,
+    "endpoint_rmsd": {
+     "reactant": 0.7756,
+     "product": 0.9201
+    },
+    "irc_connects_endpoints": false,
+    "notes": [
+     "the MLIP IRC does not reach the given endpoints (RMSD 0.54 / 0.85 \u00c5): another saddle",
+     "QST3 did not pass either (1 imaginary modes, IRC connects: False); kept P-RFO"
+    ],
+    "attempts": [
+     {
+      "method": "qst3",
+      "n_imaginary": 1,
+      "imaginary_cm": [
+       -1432.7
+      ],
+      "irc_connects_endpoints": false
+     }
+    ]
+   },
+   "W2_minima_at_UBPW91_geometries": {
+    "dE_product_minus_reactant_UBPW91_eV": 0.148,
+    "dE_product_minus_reactant_MLIP_eV": 0.228
+   }
+  },
+  "fe2h2o3_m7": {
+   "reaction": "O-H -> Fe-H (H from a bridging OH to Fe)",
+   "frame": {
+    "ok": true,
+    "saddle": true,
+    "method": "prfo",
+    "converged": true,
+    "steps": 13,
+    "n_imaginary": 1,
+    "imaginary_cm": [
+     -519.7
+    ],
+    "barrier_forward_ev": 0.025,
+    "barrier_reverse_ev": 0.592,
+    "rmsd_from_start": 0.283,
+    "endpoint_rmsd": {},
+    "irc_connects_endpoints": null,
+    "notes": [],
+    "attempts": []
+   },
+   "frame+ends": {
+    "ok": true,
+    "saddle": true,
+    "method": "prfo",
+    "converged": true,
+    "steps": 13,
+    "n_imaginary": 1,
+    "imaginary_cm": [
+     -519.7
+    ],
+    "barrier_forward_ev": 0.608,
+    "barrier_reverse_ev": 0.029,
+    "rmsd_from_start": 0.283,
+    "endpoint_rmsd": {
+     "reactant": 0.449,
+     "product": 0.2359
+    },
+    "irc_connects_endpoints": true,
+    "notes": [],
+    "attempts": []
+   },
+   "W2_minima_at_UBPW91_geometries": {
+    "dE_product_minus_reactant_UBPW91_eV": -0.463,
+    "dE_product_minus_reactant_MLIP_eV": 0.026
+   }
+  }
+ }
+}

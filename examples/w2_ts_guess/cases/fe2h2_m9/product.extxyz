@@ -1,0 +1,6 @@
+4
+Properties=species:S:1:pos:R:3 formula=Fe2H2 charge=0 multiplicity=9 name=fe2h2_m9_product reaction="terminal Fe-H -> Fe-H-Fe bridge" source="W2 dataset_spin_v0 key frame, UBPW91 minimum" record_id=543d76937e436da98d57-ladder-m9-m3-s00__frame000010 REF_energy=-68810.715445663 pbc="F F F"
+Fe       1.11466934      -0.45124199      -0.00427489
+Fe      -0.43648363       1.17145887       0.00427496
+H        1.29910518       1.33541412       0.00261441
+H       -1.97728990       0.74436900      -0.00261448

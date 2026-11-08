@@ -1,0 +1,6 @@
+4
+Properties=species:S:1:pos:R:3 formula=Fe2H2 charge=0 multiplicity=9 name=fe2h2_m9_guess reaction="terminal Fe-H -> Fe-H-Fe bridge" source="IDPP midpoint of the two W2 minima (stand-in TS frame)" pbc="F F F"
+Fe       1.13396307      -0.23203732      -0.00219176
+Fe      -0.66606861       0.51600090       0.00251820
+H        1.53765911       1.41167928       0.00131487
+H       -2.00555257       1.10435715      -0.00164130
