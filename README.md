@@ -328,6 +328,17 @@ GFN2-xTB finds its TS at r(C–H) 1.16 Å, r(N–H) 1.32 Å (−1426 cm⁻¹) wi
 value. xTB is a subprocess, ~0.1 s per call for small molecules, so exact
 Hessians and scans take tens of seconds rather than seconds.
 
+**Restarting failed Gaussian TS searches.** The same chain works offline, with a
+campaign's own route section. `ts_guess.refine_guess` refines the best index-1
+frame of a failed run (P-RFO, or QST3 when IRC endpoints are known). It then
+checks for one imaginary mode and an MLIP IRC to the endpoints.
+`qm_export.gaussian_ts_input_from_template` writes the restart: the template's
+route with only `Opt=(TS,CalcFC,NoEigenTest)` and `Freq` changed, explicit
+Cartesians, and no `Geom=Checkpoint`. It refuses a route without `IOP(5/13=1)`.
+[`examples/w2_ts_guess/`](examples/w2_ts_guess/) applies this to ClusterMLIP's
+Fe₂ saddles (UBPW91, Gaussian 09) with the spin-embedded Fe₂ MACE. The MLIP only
+proposes the saddle; the Gaussian Freq run decides.
+
 ### Benchmarking a model along a reaction path
 
 A barrier that is off says *that* the model is wrong, not *where*. The benchmark

@@ -1,0 +1,9 @@
+%chk=failed_saddle.chk
+%mem=24GB
+%nprocshared=20
+#p UBPW91/6-311++G* Opt=(TS,CalcFC,NoEigenTest,MaxCycles=200) Freq SCF=(VShift=5,NoIncFock,MaxCyc=200,Tight,NoVarAcc) IOP(5/13=1) Int=UltraFine Pop=Regular Geom=Checkpoint Guess=Read
+
+Illustrative W2-style saddle restart (stand-in for the real campaign .gjf)
+
+0 7
+
