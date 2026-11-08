@@ -216,7 +216,8 @@ def _characterize(calc, reference, ts, ts_result, method, guess, ends, end_energ
             return aligned_rmsd(side[1], ends[name].positions)
 
         # orient the IRC so that its first side is the reactant's
-        if distance(sides[0], "reactant") + distance(sides[1], "product") >                 distance(sides[1], "reactant") + distance(sides[0], "product"):
+        straight = distance(sides[0], "reactant") + distance(sides[1], "product")
+        if straight > distance(sides[1], "reactant") + distance(sides[0], "product"):
             sides.reverse()
         gaps = [distance(sides[0], "reactant"), distance(sides[1], "product")]
         result.irc_connects_endpoints = bool(max(gaps) < 0.25)
