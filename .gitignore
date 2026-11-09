@@ -21,3 +21,7 @@ ijk.dat
 # Psi4 process files (clean-up list) and output sent to "nul"
 psi.*.clean
 nul.log
+
+# Jupyter / OS
+.ipynb_checkpoints/
+.DS_Store
