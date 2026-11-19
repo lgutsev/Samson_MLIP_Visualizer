@@ -18,7 +18,6 @@ import json
 import warnings
 from pathlib import Path
 
-import numpy as np
 from ase.build import minimize_rotation_and_translation
 from ase.data import covalent_radii
 from ase.io import read, write
@@ -134,7 +133,11 @@ def main() -> None:
               f"barrier {'' if barrier is None else f'{barrier:.2f} eV':<8} {result['status']}",
               flush=True)
 
-    report = {"reactant_smiles": summary["reactant_smiles"], "model": args.model, "results": results}
+    report = {
+        "reactant_smiles": summary["reactant_smiles"],
+        "model": args.model,
+        "results": results,
+    }
     (args.run / "results.json").write_text(json.dumps(report, indent=2))
 
 

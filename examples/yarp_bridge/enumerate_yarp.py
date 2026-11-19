@@ -72,7 +72,7 @@ def main() -> None:
 
     def bonds_of(molecule) -> set[tuple[int, int]]:
         i, j = np.nonzero(np.triu(molecule.adj_mat))
-        return {(int(a), int(b)) for a, b in zip(i, j)}
+        return {(int(a), int(b)) for a, b in zip(i, j, strict=True)}
 
     reactant = yarpecule(source, mode="smiles")
     reactant.get_smiles()
@@ -124,7 +124,8 @@ def main() -> None:
           f"{sum(c['geometry'] for c in candidates)} with a geometry")
     for c in candidates:
         note = "" if c["geometry"] else "  (no force-field geometry, skipped)"
-        print(f"  {c['id']}  {c['product_smiles']:<24} broken {c['broken']} formed {c['formed']}{note}")
+        bonds = f"broken {c['broken']} formed {c['formed']}"
+        print(f"  {c['id']}  {c['product_smiles']:<24} {bonds}{note}")
 
 
 if __name__ == "__main__":
